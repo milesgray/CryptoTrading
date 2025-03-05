@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "rollbit-prices"
+version = "0.1.0"
+description = "Rollbit price formulation implementation that persists to mongodb and is ready to be hooked up to AI."
+authors = ["Miles <miles@resatiate.com>"]
+readme = "README.md"
+packages = [{include = "rollbit_prices"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "^2.32"
+pytz = "^2024"
+pymongo = "^4.11.2"
+pandas = "^2.2.3"
+ccxt = "^4.4.64"
+matplotlib = "^3.10.1"
+motor = "^3.7.0"
+asyncio = "^3.4.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
