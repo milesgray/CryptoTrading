@@ -13,11 +13,11 @@
     COPY ./pyproject.toml ./poetry.lock* ./
     RUN poetry install --no-interaction --no-ansi --no-root
     
-    COPY ./ ./
+    COPY ./prices ./
     RUN poetry build
     
     # --- Final Stage ---
-    FROM python:3.11-slim-runtime AS final
+    FROM python:3.12-slim-runtime AS final
     WORKDIR /app
     
     COPY --from=builder /app/.venv ./.venv
@@ -25,4 +25,4 @@
     
     RUN pip install --no-cache-dir ./*.whl
     
-    CMD ["python", "-m", "rollbit.main"] # Adjust to your package's entry point
+    CMD ["python", "-m", "record.py"]

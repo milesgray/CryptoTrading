@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from price import PriceSystem
+from cryptotrading.rollbit.prices.price import PriceSystem
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -15,6 +16,8 @@ async def main():
     try:
         await price_system.initialize()
         await price_system.run()
+    except asyncio.exceptions.CancelledError:
+        logger.info("Cancelled by user")
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received, shutting down...")
     except Exception as e:

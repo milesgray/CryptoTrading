@@ -1,13 +1,13 @@
 [tool.poetry]
-name = "rollbit-prices"
+name = "cryptotrading"
 version = "0.1.0"
 description = "Rollbit price formulation implementation that persists to mongodb and is ready to be hooked up to AI."
 authors = ["Miles <miles@resatiate.com>"]
 readme = "README.md"
-packages = [{include = "rollbit_prices"}]
+packages = [{include = "cryptotrading"}]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.12"
 requests = "^2.32"
 pytz = "^2024"
 pymongo = "^4.11.2"
@@ -16,6 +16,10 @@ ccxt = "^4.4.64"
 matplotlib = "^3.10.1"
 motor = "^3.7.0"
 asyncio = "^3.4.3"
+six = "^1.17.0"
+numpy = "^2.2.3"
+fastapi = {extras = ["standard"], version = "^0.115.11"}
+python-dotenv = "^1.1.0"
 
 
 [build-system]

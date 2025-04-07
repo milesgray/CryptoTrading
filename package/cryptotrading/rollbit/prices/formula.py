@@ -17,7 +17,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger('price_system')
 
-def calculate_index_price(order_books: list[dict[str, list[tuple[float, float]]]], logger=logger) -> float:
+def calculate_index_price(
+        order_books: list[dict[str, list[tuple[float, float]]]], 
+        min_valid_feeds: int = 6,
+        logger: logging.Logger = logger,
+        return_book: bool = False,
+        verbose: bool = False
+) -> float:
     """
     Calculates the Rollbit index price based on a list of order books from different exchanges.
 
@@ -88,7 +94,7 @@ def calculate_index_price(order_books: list[dict[str, list[tuple[float, float]]]
                 mid_prices.append(mid_price)
                 valid_order_books.append(order_book)
 
-        if len(mid_prices) < 6:
+        if len(mid_prices) < min_valid_feeds:
             return None  # 4. Not enough valid price feeds.
 
         median_mid_price = sorted(mid_prices)[len(mid_prices) // 2]
@@ -97,7 +103,8 @@ def calculate_index_price(order_books: list[dict[str, list[tuple[float, float]]]
             if abs(mid_price - median_mid_price) <= 0.1 * median_mid_price
         ]
 
-        if len(filtered_order_books) < 6:
+        if len(filtered_order_books) < min_valid_feeds:
+            if verbose: logger.warning(f"Not enough valid price feeds after filtering. {len(filtered_order_books)}")
             return None  # 4. Not enough valid price feeds after filtering.
 
 
@@ -146,27 +153,30 @@ def calculate_index_price(order_books: list[dict[str, list[tuple[float, float]]]
         # Calculate cumulative sizes for bids and asks.  These define our v_i.
         cumulative_bid_sizes = []
         cumulative_ask_sizes = []
-        cumulative_size = 0.0
+        cumulative_bid_size = 0.0
         for _, size in composite_order_book['bids']:
-            cumulative_size += size
-            cumulative_bid_sizes.append(cumulative_size)
-        cumulative_size = 0.0
+            cumulative_bid_size += size
+            cumulative_bid_sizes.append(cumulative_bid_size)
+        cumulative_ask_size = 0.0
         for _, size in composite_order_book['asks']:
-            cumulative_size += size
-            cumulative_ask_sizes.append(cumulative_size)
+            cumulative_ask_size += size
+            cumulative_ask_sizes.append(cumulative_ask_size)
 
         # Combine and de-duplicate the cumulative sizes, then sort them.
         v_i = sorted(list(set(cumulative_bid_sizes + cumulative_ask_sizes)))
 
         # v_i must not be empty
         if not v_i:
+            if verbose: logger.warning("Empty v_i list.")
             return None
 
         # Calculate V (maximum size for mid-price calculation).
         V = min(sum(size for _, size in composite_order_book['bids']),
                 sum(size for _, size in composite_order_book['asks']))
 
-        if V == 0: return None  # No volume in the order book
+        if V == 0:  
+            if verbose: logger.warning("No volume in the order book.")
+            return None  # No volume in the order book
 
         L = 1.0 / V
         
@@ -180,9 +190,15 @@ def calculate_index_price(order_books: list[dict[str, list[tuple[float, float]]]
             total_weight += weight
 
         if total_weight == 0.0:
+            if verbose: logger.warning("Total weight is zero.")
             return None  # Should not happen if V > 0
 
         index_price = total_weighted_price / total_weight
+        if return_book:
+            return {
+                "price": index_price, 
+                "book": composite_order_book
+            }
         return index_price
     except Exception as e:
         logger.error(f"Error calculating index price: {str(e)}")
