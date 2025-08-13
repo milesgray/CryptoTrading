@@ -16,10 +16,6 @@ async def main():
     try:
         await price_system.initialize()
         await price_system.run()
-    except asyncio.exceptions.CancelledError:
-        logger.info("Cancelled by user")
-    except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received, shutting down...")
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
     finally:

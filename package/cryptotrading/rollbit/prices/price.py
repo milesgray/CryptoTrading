@@ -644,14 +644,21 @@ class PriceSystem:
         
         while self.running:
             start_time = time.time()
-            
-            # Process each symbol in parallel
-            tasks = [self.process_symbol(symbol) for symbol in symbols]
-            await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Calculate sleep time to maintain refresh interval
-            elapsed = (time.time() - start_time) * 1000  # in milliseconds
-            sleep_time = max(0, REFRESH_INTERVAL_MS - elapsed) / 1000  # in seconds
-            
-            if sleep_time > 0:
-                await asyncio.sleep(sleep_time)
+            try:                                
+                # Process each symbol in parallel
+                tasks = [self.process_symbol(symbol) for symbol in symbols]
+                await asyncio.gather(*tasks, return_exceptions=True)            
+            except asyncio.exceptions.CancelledError:
+                logger.info("Cancelled by user")
+            except KeyboardInterrupt:
+                logger.info("Keyboard interrupt received, shutting down...")
+                self.shutdown()
+            except Exception as e:
+                logger.error(f"Unexpected error: {str(e)}")
+            finally:
+                # Calculate sleep time to maintain refresh interval
+                elapsed = (time.time() - start_time) * 1000  # in milliseconds
+                sleep_time = max(0, REFRESH_INTERVAL_MS - elapsed) / 1000  # in seconds
+                
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)

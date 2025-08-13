@@ -1,0 +1,1 @@
+nohup poetry run python cryptotrading/record.py > record_output.log 2>&1 &
