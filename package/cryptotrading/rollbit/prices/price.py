@@ -246,8 +246,8 @@ class PriceSystem:
                 continue
             
             # Check for price deviation
-            spread = book_dfs[book['exchange']]['spread'].values[0]
-            deviation = abs(spread - median_spread) / median_spread
+            mid_price = best_bid - best_ask / 2
+            deviation = abs(mid_price - median_mid_price) / median_mid_price
             if deviation > PRICE_DEVIATION_THRESHOLD:
                 logger.debug(f"Filtered out anomalous price from {book['exchange']}: deviation={deviation:.2f}")
                 continue
