@@ -14,7 +14,7 @@ load_dotenv()
 
 import cryptotrading.rollbit.prices.formula as formula
 from cryptotrading.analysis.book import find_whale_positions
-from cryptotrading.data.mongo import get_db, PRICE_COLLECTION_NAME
+from cryptotrading.data.mongo import get_db, PRICE_COLLECTION_NAME, ORDER_BOOK_COLLECTION_NAME
 
 # Configure logging
 logging.basicConfig(
@@ -62,6 +62,7 @@ class PriceSystem:
         # Initialize MongoDB connection        
         self.db = get_db()
         self.collection = self.db[PRICE_COLLECTION_NAME]
+        self.order_book_collection = self.db[ORDER_BOOK_COLLECTION_NAME]
         
         # Create time series collection if it doesn't exist
         collections = await self.db.list_collection_names()
@@ -76,10 +77,26 @@ class PriceSystem:
                     }
                 )
             except:
-                await self.db.create_collection(PRICE_COLLECTION_NAME)
+                await self.db.create_collection(PRICE_COLLECTION_NAME)            
             # Create indexes for faster queries
             await self.collection.create_index([("timestamp", ASCENDING)])
             await self.collection.create_index([("metadata.symbol", ASCENDING)])
+        if ORDER_BOOK_COLLECTION_NAME not in collections:
+            try:
+                await self.db.create_collection(
+                    ORDER_BOOK_COLLECTION_NAME,
+                    timeseries={
+                        'timeField': 'timestamp',
+                        'metaField': 'metadata',
+                        'granularity': 'seconds'
+                    }
+                )
+            except:
+                await self.db.create_collection(ORDER_BOOK_COLLECTION_NAME)
+            # Create indexes for faster queries
+            await self.order_book_collection.create_index([("timestamp", ASCENDING)])
+            await self.order_book_collection.create_index([("metadata.symbol", ASCENDING)])
+            await self.order_book_collection.create_index([("metadata.exchange", ASCENDING)])
             
         # Initialize exchange connections
         for exchange_id in SPOT_EXCHANGES + DERIVATIVE_EXCHANGES:
@@ -129,7 +146,12 @@ class PriceSystem:
         
         logger.info("Price system shutdown complete")
 
-    async def fetch_order_book(self, exchange_id: str, symbol: str, verbose: bool = False) -> Optional[dict]:
+    async def fetch_order_book(
+        self, 
+        exchange_id: str, 
+        symbol: str, 
+        verbose: bool = False
+    ) -> Optional[dict]:
         """Fetch order book data from an exchange"""
         try:
             if verbose: logger.info(f"Fetching order book for {exchange_id}")
@@ -143,7 +165,38 @@ class PriceSystem:
             logger.warning(f"Failed to fetch order book from {exchange_id} for {symbol}: {str(e)}")
             return None
 
-    def validate_feeds(self, order_books: list[dict]) -> list[dict]:
+    def order_book_to_df(
+        self, 
+        bids, 
+        asks, 
+        side_column='side',
+        price_column='price',
+        size_column='size'
+    ) -> pd.DataFrame:
+        # Convert to DataFrames if lists are provided
+        if isinstance(bids, list | np.ndarray):
+            if isinstance(bids[0], list | tuple):
+                bids = pd.DataFrame({
+                    price_column: [b[0] for b in bids], 
+                    size_column: [b[1] for b in bids],
+                    side_column: ["b" for b in bids]})
+            else:
+                bids = pd.DataFrame(bids)            
+        if isinstance(asks, list | np.ndarray):
+            if isinstance(asks[0], list | tuple):
+                asks = pd.DataFrame({
+                    price_column: [a[0] for a in asks], 
+                    size_column: [a[1] for a in asks], 
+                    side_column: ["a" for a in asks]})
+            else:
+                asks = pd.DataFrame(asks)
+        
+        return pd.concat([bids, asks])
+
+    def validate_feeds(
+        self, 
+        order_books: list[dict]
+    ) -> list[dict]:
         """Filter out stale or anomalous order book data"""
         if not order_books:
             return []
@@ -194,7 +247,13 @@ class PriceSystem:
         
         return valid_books
     
-    def find_outliers(self, df, column, limit=None, direction='both'):
+    def find_outliers(
+        self, 
+        df, 
+        column, 
+        limit=None, 
+        direction='both'
+    ):
         """
         Find outliers in a DataFrame column with the option to limit the number returned.
         
@@ -237,16 +296,21 @@ class PriceSystem:
         
         return outliers
 
-    def condense_order_book(self, bids, asks, num_buckets=10, size_column='size', price_column='price'):
+    def condense_order_book(
+        self, 
+        df,
+        num_buckets=10, 
+        size_column='size', 
+        price_column='price',
+        side_column='side'
+    ):
         """
         Condense order book data into buckets distributed by size.
         
         Parameters:
         -----------
-        bids : pandas.DataFrame or list of dicts
-            Bid orders with price and size columns
-        asks : pandas.DataFrame or list of dicts
-            Ask orders with price and size columns
+        df: pandas.DataFrame
+            DataFrame containing the order book data
         num_buckets : int
             Number of buckets to create
         size_column : str
@@ -262,24 +326,17 @@ class PriceSystem:
             'bid_outliers': List of (price, size) for outlier bids
             'ask_outliers': List of (price, size) for outlier asks
         """
-        # Convert to DataFrames if lists are provided
-        if isinstance(bids, list | np.ndarray):
-            if isinstance(bids[0], list | tuple):
-                bids = pd.DataFrame({"price": [b[0] for b in bids], "size": [b[1] for b in bids]})
-            else:
-                bids = pd.DataFrame(bids)            
-        if isinstance(asks, list | np.ndarray):
-            if isinstance(asks[0], list | tuple):
-                asks = pd.DataFrame({"price": [a[0] for a in asks], "size": [a[1] for a in asks]})
-            else:
-                asks = pd.DataFrame(asks)
+        ask_filter = df['side'] == 'a'
+        bid_filter = df['side'] == 'b'
+        size_filter = df['size'] > 0
+
+        asks = df[ask_filter & size_filter]
+        bids = df[bid_filter & size_filter]
         
         # Ensure required columns exist
         required_columns = [size_column, price_column]
-        if not all(col in bids.columns for col in required_columns) or \
-        not all(col in asks.columns for col in required_columns):
-            print(f"{bids.columns} || {asks.columns}")
-            raise ValueError(f"Both bid and ask data must contain columns: {required_columns}")
+        if not all(col in df.columns for col in required_columns):
+            raise ValueError(f"Data must contain columns: {required_columns}")
         
         
         # Function to bucket non-outlier data
@@ -395,9 +452,24 @@ class PriceSystem:
             
             # Calculate mid price for this exchange
             if book.get('bids') and book.get('asks'):
-                best_bid = book['bids'][0][0]
-                best_ask = book['asks'][0][0]
-                mid_price = (best_bid + best_ask) / 2
+                df = self.order_book_to_df(book['bids'], book['asks'])
+                
+                ask_filter = df['side'] == 'a'
+                bid_filter = df['side'] == 'b'
+                size_filter = df['size'] > 0
+
+                asks = df[ask_filter & size_filter]
+                bids = df[bid_filter & size_filter]
+
+                lowest_ask = asks['price'].min()
+                highest_ask = asks['price'].max()
+                
+                lowest_bid = bids['price'].min()
+                highest_bid = bids['price'].max()
+
+                spread = lowest_ask - highest_bid
+
+                mid_price = (lowest_ask + highest_bid) / 2
 
                 book['bids'].sort(key=lambda x: x[1], reverse=True)
                 book['asks'].sort(key=lambda x: x[1], reverse=True)
@@ -405,8 +477,8 @@ class PriceSystem:
                 highest_volume_bid = book['bids'][0]
                 highest_volume_ask = book['asks'][0]
 
-                total_bid_size = sum([x[1] for x in book['bids']])
-                total_ask_size = sum([x[1] for x in book['asks']])
+                total_bid_size = bids["size"].sum()
+                total_ask_size = asks["size"].sum()
                 
                 raw_doc = {
                     "timestamp": timestamp,
@@ -414,8 +486,8 @@ class PriceSystem:
                         "token": token,
                         "symbol": symbol,
                         "exchange": exchange,
-                        "bid": best_bid,
-                        "ask": best_ask,
+                        "bid": highest_bid,
+                        "ask": lowest_ask,
                         "total_bid_size": total_bid_size,
                         "total_ask_size": total_ask_size,
                         "highest_volume_bid_price": highest_volume_bid[0],
@@ -424,6 +496,7 @@ class PriceSystem:
                         "highest_volume_ask_vol": highest_volume_ask[1],
                         "type": "exchange_data"
                     },
+                    "spread": spread, 
                     "price": mid_price,
                     
                 }
@@ -437,7 +510,75 @@ class PriceSystem:
         except Exception as e:
             logger.error(f"Failed to store exchange price data: {str(e)}")
 
-    async def process_symbol(self, symbol: str, verbose: bool = False):
+    async def store_order_book_data(self, book, raw_data, verbose=False):
+        """Store calculated index price and raw data in MongoDB time series collection"""
+        timestamp = datetime.datetime.now(datetime.UTC)
+        if verbose: logger.info(f"Storing order book data! {symbol}: {index_price}")
+        token = symbol.split("/")[0] if "/" in symbol else symbol
+
+        df = self.order_book_to_df(book['bids'], book['asks'])
+        
+        ask_filter = df['side'] == 'a'
+        bid_filter = df['side'] == 'b'
+        size_filter = df['size'] > 0
+
+        asks = df[ask_filter & size_filter]
+        bids = df[bid_filter & size_filter]
+
+        lowest_ask = asks['price'].min()
+        highest_ask = asks['price'].max()
+        
+        lowest_bid = bids['price'].min()
+        highest_bid = bids['price'].max()
+
+        spread = lowest_ask - highest_bid
+
+        midpoint = (lowest_ask + highest_bid) / 2
+
+        book['bids'].sort(key=lambda x: x[1], reverse=True)
+        book['asks'].sort(key=lambda x: x[1], reverse=True)
+
+        largest_size_bid = book['bids'][0]
+        largest_size_ask = book['asks'][0]
+
+        total_bid_size = bids["size"].sum()
+        total_ask_size = asks["size"].sum()
+        
+        # Store calculated index price
+        index_doc = {
+            "timestamp": timestamp,
+            "metadata": {
+                "token": token,
+                "symbol": symbol,
+                              
+                "type": "order_book",
+                "lowest_ask": lowest_ask,
+                "lowest_bid": lowest_bid,
+                "highest_ask": highest_ask,
+                "highest_bid": highest_bid,
+                "largest_size_bid": largest_size_bid,
+                "largest_size_ask": largest_size_ask,
+                "total_bid_size": total_bid_size,
+                "total_ask_size": total_ask_size,
+                "midpoint": midpoint,
+                "spread": spread,
+            },
+            "price": midpoint,
+            "exchanges_count": len(raw_data)
+        }
+
+        try:
+            await self.order_book_collection.insert_one(index_doc)
+            
+            logger.debug(f"Stored price data for {symbol}: {index_price}")
+        except Exception as e:
+            logger.error(f"Failed to store price data: {str(e)}")
+
+    async def process_symbol(
+        self, 
+        symbol: str, 
+        verbose: bool = False
+    ):
         """Process a single trading symbol"""
         try:
             # Fetch order books from all exchanges
@@ -453,13 +594,6 @@ class PriceSystem:
             for result in results:
                 if isinstance(result, dict) and not isinstance(result, Exception):
                     order_books.append(result)
-            
-            # Validate feeds
-            valid_books = self.validate_feeds(order_books)
-            if verbose: logger.info(f"Got valid books for {symbol}")
-            
-            # Check if we have enough valid feeds
-            if len(valid_books) < MIN_VALID_FEEDS:
                 logger.warning(f"Not enough valid price feeds for {symbol}: {len(valid_books)}/{MIN_VALID_FEEDS}")
                 return
             
@@ -471,16 +605,20 @@ class PriceSystem:
             )
 
             index_price = calc_results["price"]
-            composite_order_book = calc_results["book"]                
-            condensed_book = self.condense_order_book(
-                composite_order_book['bids'], 
-                composite_order_book['asks'])    
-
             if verbose: logger.info(f"Got index price for {symbol}: {index_price}")
-            
+
+            composite_order_book = calc_results["book"]   
+            composite_order_book_df = self.order_book_to_df(
+                composite_order_book['bids'], 
+                composite_order_book['asks'])
+            condensed_book = self.condense_order_book(
+                composite_order_book_df)                
+
             if index_price is not None:
                 # Store the calculated price
-                await self.store_price_data(symbol, index_price, condensed_book, valid_books, verbose=verbose)
+                await self.store_price_data(
+                    symbol, index_price, condensed_book, valid_books, 
+                    verbose=verbose)
                 
                 # Update last index price
                 self.last_index_prices[symbol] = index_price   
@@ -496,7 +634,10 @@ class PriceSystem:
         except Exception as e:
             logger.error(f"Error processing symbol {symbol}: {str(e)}")
 
-    async def run(self, symbols: list[str] = SYMBOLS):
+    async def run(
+        self, 
+        symbols: list[str] = SYMBOLS
+    ):
         """Main loop for the price system"""
         self.running = True
         logger.info(f"Start running: {symbols}")
