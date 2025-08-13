@@ -203,20 +203,29 @@ class PriceSystem:
         
         current_time = time.time() * 1000  # Current time in milliseconds
         valid_books = []
+        book_dfs = {}
         
         # Calculate median mid price
         mid_prices = []
+        spreads = []
         for book in order_books:
             if book['bids'] and book['asks']:
-                best_bid = book['bids'][0][0]
-                best_ask = book['asks'][0][0]
-                mid_price = (best_bid + best_ask) / 2
+                book_df = self.order_book_to_df(book['bids'], book['asks'])
+                ask_filter = book_df['side'] == 'a'
+                bid_filter = book_df['side'] == 'b'
+                size_filter = book_df['size'] > 0
+                highest_bid = book_df[ask_filter & size_filter]['price'].max()
+                lowest_ask = book_df[bid_filter & size_filter]['price'].min()
+                mid_price = (highest_bid + lowest_ask) / 2
                 mid_prices.append(mid_price)
+                spreads.append(abs(lowest_ask - highest_bid))
+                book_dfs[book['exchange']] = book_df
         
         if not mid_prices:
             return []
         
         median_mid_price = np.median(mid_prices)
+        median_spread = np.median(spreads)
         
         # Filter order books
         for book in order_books:
@@ -237,8 +246,8 @@ class PriceSystem:
                 continue
             
             # Check for price deviation
-            mid_price = (best_bid + best_ask) / 2
-            deviation = abs(mid_price - median_mid_price) / median_mid_price
+            spread = book_dfs[book['exchange']]['spread'].values[0]
+            deviation = abs(spread - median_spread) / median_spread
             if deviation > PRICE_DEVIATION_THRESHOLD:
                 logger.debug(f"Filtered out anomalous price from {book['exchange']}: deviation={deviation:.2f}")
                 continue
