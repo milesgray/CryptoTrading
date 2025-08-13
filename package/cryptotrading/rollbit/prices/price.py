@@ -312,7 +312,7 @@ class PriceSystem:
         size_column='size', 
         price_column='price',
         side_column='side'
-    ):
+    ) -> dict:
         """
         Condense order book data into buckets distributed by size.
         
@@ -413,13 +413,13 @@ class PriceSystem:
         }
 
     async def store_price_data(
-            self, 
-            symbol: str, 
-            index_price: float, 
-            book: dict,            
-            raw_data: list[dict], 
-            verbose: bool = False
-    ):
+        self, 
+        symbol: str, 
+        index_price: float, 
+        book: dict,            
+        raw_data: list[dict], 
+        verbose: bool = False
+    ) -> None:
         """Store calculated index price and raw data in MongoDB time series collection"""
         timestamp = datetime.datetime.now(datetime.UTC)
         if verbose: logger.info(f"Storing price data! {symbol}: {index_price}")
@@ -449,7 +449,7 @@ class PriceSystem:
             symbol: str,            
             raw_data: list[dict], 
             verbose: bool = False
-    ):
+    ) -> None:
         """Store calculated index price and raw data in MongoDB time series collection"""
         timestamp = datetime.datetime.now(datetime.UTC)
         if verbose: logger.info(f"Storing price data! {symbol}: {len(raw_data)} feeds")
@@ -519,7 +519,13 @@ class PriceSystem:
         except Exception as e:
             logger.error(f"Failed to store exchange price data: {str(e)}")
 
-    async def store_order_book_data(self, book, raw_data, verbose=False):
+    async def store_order_book_data(
+        self, 
+        symbol: str, 
+        book: dict, 
+        raw_data: list[dict],
+        verbose: bool=False
+    ) -> None:
         """Store calculated index price and raw data in MongoDB time series collection"""
         timestamp = datetime.datetime.now(datetime.UTC)
         if verbose: logger.info(f"Storing order book data! {symbol}: {index_price}")
@@ -552,6 +558,9 @@ class PriceSystem:
 
         total_bid_size = bids["size"].sum()
         total_ask_size = asks["size"].sum()
+
+        book['bids'].sort(key=lambda x: x[0], reverse=True)
+        book['asks'].sort(key=lambda x: x[0], reverse=False)
         
         # Store calculated index price
         index_doc = {
@@ -559,7 +568,6 @@ class PriceSystem:
             "metadata": {
                 "token": token,
                 "symbol": symbol,
-                              
                 "type": "order_book",
                 "lowest_ask": lowest_ask,
                 "lowest_bid": lowest_bid,
@@ -572,7 +580,7 @@ class PriceSystem:
                 "midpoint": midpoint,
                 "spread": spread,
             },
-            "price": midpoint,
+            "book": book,
             "exchanges_count": len(raw_data)
         }
 
@@ -603,6 +611,13 @@ class PriceSystem:
             for result in results:
                 if isinstance(result, dict) and not isinstance(result, Exception):
                     order_books.append(result)
+                        
+            # Validate feeds
+            valid_books = self.validate_feeds(order_books)
+            if verbose: logger.info(f"Got valid books for {symbol}")
+            
+            # Check if we have enough valid feeds
+            if len(valid_books) < MIN_VALID_FEEDS:
                 logger.warning(f"Not enough valid price feeds for {symbol}: {len(valid_books)}/{MIN_VALID_FEEDS}")
                 return
             
