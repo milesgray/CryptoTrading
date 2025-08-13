@@ -18,8 +18,9 @@ session: AsyncIOMotorClientSession | None = None
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("MONGO_DB_NAME", "crypto_prices")
 PRICE_COLLECTION_NAME = os.getenv("MONGO_PRICE_COLLECTION_NAME", "price_data")
+ORDER_BOOK_COLLECTION_NAME = os.getenv("MONGO_ORDER_BOOK_COLLECTION_NAME", "order_book_data")
 
-logger.info(f"MONGO URI loaded: {MONGO_URI}\nDB NAME: {DB_NAME}\nCOLLECTION NAME: {PRICE_COLLECTION_NAME}")
+logger.info(f"MONGO URI loaded: {MONGO_URI}\nDB NAME: {DB_NAME}\nPRICE COLLECTION NAME: {PRICE_COLLECTION_NAME}\nORDER BOOK COLLECTION NAME: {ORDER_BOOK_COLLECTION_NAME}")
 
 @asynccontextmanager
 async def get_session(
