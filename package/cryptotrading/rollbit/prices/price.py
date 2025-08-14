@@ -210,14 +210,18 @@ class PriceSystem:
         spreads = []
         for book in order_books:
             if book['bids'] and book['asks']:
+                best_bid = book['bids'][0][0]
+                best_ask = book['asks'][0][0]
+                mid_price = (best_bid + best_ask) / 2                
+                mid_prices.append(mid_price)
+
                 book_df = self.order_book_to_df(book['bids'], book['asks'])
                 ask_filter = book_df['side'] == 'a'
                 bid_filter = book_df['side'] == 'b'
                 size_filter = book_df['size'] > 0
                 highest_bid = book_df[ask_filter & size_filter]['price'].max()
                 lowest_ask = book_df[bid_filter & size_filter]['price'].min()
-                mid_price = (highest_bid + lowest_ask) / 2
-                mid_prices.append(mid_price)
+                                
                 spreads.append(abs(lowest_ask - highest_bid))
                 book_dfs[book['exchange']] = book_df
         
@@ -246,7 +250,7 @@ class PriceSystem:
                 continue
             
             # Check for price deviation
-            mid_price = best_bid - best_ask / 2
+            mid_price = (best_bid + best_ask) / 2
             deviation = abs(mid_price - median_mid_price) / median_mid_price
             if deviation > PRICE_DEVIATION_THRESHOLD:
                 logger.debug(f"Filtered out anomalous price from {book['exchange']}: deviation={deviation:.2f}")
