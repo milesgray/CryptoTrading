@@ -448,7 +448,7 @@ class PriceSystem:
         except Exception as e:
             logger.error(f"Failed to store price data: {str(e)}")
         
-    async def store_exchange_price_data(
+    async def store_exchange_order_book(
             self, 
             symbol: str,            
             raw_data: list[dict], 
@@ -456,7 +456,7 @@ class PriceSystem:
     ) -> None:
         """Store calculated index price and raw data in MongoDB time series collection"""
         timestamp = datetime.datetime.now(datetime.UTC)
-        if verbose: logger.info(f"Storing price data! {symbol}: {len(raw_data)} feeds")
+        if verbose: logger.info(f"Storing order book data! {symbol}: {len(raw_data)} feeds")
         token = symbol.split("/")[0] if "/" in symbol else symbol
         # Store raw exchange data (optional - can be disabled to save space)
         raw_docs = []
@@ -479,6 +479,8 @@ class PriceSystem:
                 
                 lowest_bid = bids['price'].min()
                 highest_bid = bids['price'].max()
+                bid_range = highest_bid - lowest_bid
+                ask_range = highest_ask - lowest_ask
 
                 spread = lowest_ask - highest_bid
 
@@ -499,8 +501,12 @@ class PriceSystem:
                         "token": token,
                         "symbol": symbol,
                         "exchange": exchange,
-                        "bid": highest_bid,
-                        "ask": lowest_ask,
+                        "lowest_bid": lowest_bid,
+                        "lowest_ask": lowest_ask,
+                        "highest_bid": highest_bid,
+                        "highest_ask": highest_ask,
+                        "bid_range": bid_range,
+                        "ask_range": ask_range,
                         "total_bid_size": total_bid_size,
                         "total_ask_size": total_ask_size,
                         "highest_volume_bid_price": highest_volume_bid[0],
@@ -518,8 +524,8 @@ class PriceSystem:
         # Insert documents to MongoDB
         try:            
             if raw_docs:
-                await self.collection.insert_many(raw_docs)
-            logger.debug(f"Stored exchange price data for {symbol}")
+                await self.order_book_collection.insert_many(raw_docs)
+            logger.debug(f"Stored exchange order book data for {symbol}")
         except Exception as e:
             logger.error(f"Failed to store exchange price data: {str(e)}")
 
@@ -615,6 +621,7 @@ class PriceSystem:
             for result in results:
                 if isinstance(result, dict) and not isinstance(result, Exception):
                     order_books.append(result)
+            await self.store_exchange_order_book(symbol, order_books)
                         
             # Validate feeds
             valid_books = self.validate_feeds(order_books)
@@ -640,7 +647,10 @@ class PriceSystem:
                 composite_order_book['bids'], 
                 composite_order_book['asks'])
             condensed_book = self.condense_order_book(
-                composite_order_book_df)                
+                composite_order_book_df)   
+
+            await self.store_order_book_data(
+                symbol, composite_order_book, valid_books, verbose=verbose)              
 
             if index_price is not None:
                 # Store the calculated price
