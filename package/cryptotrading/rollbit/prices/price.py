@@ -640,7 +640,7 @@ class PriceSystem:
             for result in results:
                 if isinstance(result, dict) and not isinstance(result, Exception):
                     order_books.append(result)
-            self.store_exchange_order_book(symbol, order_books)
+            await self.store_exchange_order_book(symbol, order_books)
                         
             # Validate feeds
             valid_books = self.validate_feeds(order_books)
@@ -668,7 +668,7 @@ class PriceSystem:
             condensed_book = self.condense_order_book(
                 composite_order_book_df)   
 
-            self.store_composite_order_book_data(
+            await self.store_composite_order_book_data(
                 symbol, 
                 composite_order_book, 
                 valid_books, 
@@ -677,7 +677,7 @@ class PriceSystem:
 
             if index_price is not None:
                 # Store the calculated price
-                self.store_price_data(
+                await self.store_price_data(
                     symbol, index_price, condensed_book, valid_books, 
                     verbose=verbose)
                 
