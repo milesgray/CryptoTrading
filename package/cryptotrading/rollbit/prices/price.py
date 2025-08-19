@@ -76,7 +76,7 @@ class PriceSystem:
                     PRICE_COLLECTION_NAME,
                     timeseries={
                         'timeField': 'timestamp',
-                        'metaField': 'metadata',
+                        'metaField': 'price',
                         'granularity': 'seconds'
                     }
                 )
@@ -520,22 +520,23 @@ class PriceSystem:
                         "token": token,
                         "symbol": symbol,
                         "exchange": exchange,
-                        "lowest_bid": lowest_bid,
-                        "lowest_ask": lowest_ask,
+                        "spread": spread, 
+                        "price": mid_price,
+                        "lowest_bid": lowest_bid,                        
                         "highest_bid": highest_bid,
-                        "highest_ask": highest_ask,
-                        "bid_range": bid_range,
-                        "ask_range": ask_range,
                         "total_bid_size": total_bid_size,
-                        "total_ask_size": total_ask_size,
+                        "bid_range": bid_range,
                         "highest_volume_bid_price": highest_volume_bid[0],
                         "highest_volume_bid_vol": highest_volume_bid[1],
+                        "lowest_ask": lowest_ask,
+                        "highest_ask": highest_ask,                        
+                        "ask_range": ask_range,                        
+                        "total_ask_size": total_ask_size,                        
                         "highest_volume_ask_price": highest_volume_ask[0],
                         "highest_volume_ask_vol": highest_volume_ask[1],
                         "type": "exchange_data"
                     },
-                    "spread": spread, 
-                    "price": mid_price,
+                    "book": book,                    
                     
                 }
                 raw_docs.append(raw_doc)
@@ -557,7 +558,7 @@ class PriceSystem:
     ) -> None:
         """Store calculated index price and raw composite order book data in MongoDB time series collection"""
         timestamp = datetime.datetime.now(datetime.UTC)
-        if verbose: logger.info(f"Storing order book data! {symbol}: {index_price}")
+        if verbose: logger.info(f"Storing order book data! {symbol}")
         token = symbol.split("/")[0] if "/" in symbol else symbol
 
         df = self.order_book_to_df(book['bids'], book['asks'])
@@ -596,18 +597,18 @@ class PriceSystem:
             "timestamp": timestamp,
             "metadata": {
                 "token": token,
-                "symbol": symbol,
-                "type": "order_book",
+                "symbol": symbol,                
                 "lowest_ask": lowest_ask,
-                "lowest_bid": lowest_bid,
                 "highest_ask": highest_ask,
+                "largest_size_ask": largest_size_ask,
+                "total_ask_size": total_ask_size,
+                "lowest_bid": lowest_bid,
                 "highest_bid": highest_bid,
                 "largest_size_bid": largest_size_bid,
-                "largest_size_ask": largest_size_ask,
                 "total_bid_size": total_bid_size,
-                "total_ask_size": total_ask_size,
                 "midpoint": midpoint,
                 "spread": spread,
+                "type": "order_book",
             },
             "book": book,
             "exchanges_count": len(raw_data)
@@ -616,7 +617,7 @@ class PriceSystem:
         try:
             await self.composite_order_book_collection.insert_one(index_doc)
             
-            logger.debug(f"Stored price data for {symbol}: {index_price}")
+            logger.debug(f"Stored price data for {symbol}")
         except Exception as e:
             logger.error(f"Failed to store price data: {str(e)}")
 
