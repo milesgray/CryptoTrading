@@ -501,7 +501,7 @@ class PriceSystem:
                 bid_range = highest_bid - lowest_bid
                 ask_range = highest_ask - lowest_ask
 
-                spread = lowest_ask - highest_bid
+                spread = abs(lowest_ask - highest_bid)
 
                 mid_price = (lowest_ask + highest_bid) / 2
 
@@ -576,7 +576,7 @@ class PriceSystem:
         lowest_bid = bids['price'].min()
         highest_bid = bids['price'].max()
 
-        spread = lowest_ask - highest_bid
+        spread = abs(lowest_ask - highest_bid)
 
         midpoint = (lowest_ask + highest_bid) / 2
 
