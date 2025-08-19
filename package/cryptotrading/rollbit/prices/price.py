@@ -14,7 +14,10 @@ load_dotenv()
 
 import cryptotrading.rollbit.prices.formula as formula
 from cryptotrading.analysis.book import find_whale_positions
-from cryptotrading.data.mongo import get_db, PRICE_COLLECTION_NAME, ORDER_BOOK_COLLECTION_NAME
+from cryptotrading.data.mongo import get_db, \
+    PRICE_COLLECTION_NAME, \
+    COMPOSITE_ORDER_BOOK_COLLECTION_NAME, \
+    EXCHANGE_ORDER_BOOK_COLLECTION_NAME
 
 # Configure logging
 logging.basicConfig(
@@ -62,7 +65,8 @@ class PriceSystem:
         # Initialize MongoDB connection        
         self.db = get_db()
         self.collection = self.db[PRICE_COLLECTION_NAME]
-        self.order_book_collection = self.db[ORDER_BOOK_COLLECTION_NAME]
+        self.composite_order_book_collection = self.db[COMPOSITE_ORDER_BOOK_COLLECTION_NAME]
+        self.exchange_order_book_collection = self.db[EXCHANGE_ORDER_BOOK_COLLECTION_NAME]
         
         # Create time series collection if it doesn't exist
         collections = await self.db.list_collection_names()
@@ -81,10 +85,10 @@ class PriceSystem:
             # Create indexes for faster queries
             await self.collection.create_index([("timestamp", ASCENDING)])
             await self.collection.create_index([("metadata.symbol", ASCENDING)])
-        if ORDER_BOOK_COLLECTION_NAME not in collections:
+        if COMPOSITE_ORDER_BOOK_COLLECTION_NAME not in collections:
             try:
                 await self.db.create_collection(
-                    ORDER_BOOK_COLLECTION_NAME,
+                    COMPOSITE_ORDER_BOOK_COLLECTION_NAME,
                     timeseries={
                         'timeField': 'timestamp',
                         'metaField': 'metadata',
@@ -92,11 +96,26 @@ class PriceSystem:
                     }
                 )
             except:
-                await self.db.create_collection(ORDER_BOOK_COLLECTION_NAME)
+                await self.db.create_collection(COMPOSITE_ORDER_BOOK_COLLECTION_NAME)
             # Create indexes for faster queries
-            await self.order_book_collection.create_index([("timestamp", ASCENDING)])
-            await self.order_book_collection.create_index([("metadata.symbol", ASCENDING)])
-            await self.order_book_collection.create_index([("metadata.exchange", ASCENDING)])
+            await self.composite_order_book_collection.create_index([("timestamp", ASCENDING)])
+            await self.composite_order_book_collection.create_index([("metadata.symbol", ASCENDING)])            
+        if EXCHANGE_ORDER_BOOK_COLLECTION_NAME not in collections:
+            try:
+                await self.db.create_collection(
+                    EXCHANGE_ORDER_BOOK_COLLECTION_NAME,
+                    timeseries={
+                        'timeField': 'timestamp',
+                        'metaField': 'metadata',
+                        'granularity': 'seconds'
+                    }
+                )
+            except:
+                await self.db.create_collection(EXCHANGE_ORDER_BOOK_COLLECTION_NAME)
+            # Create indexes for faster queries
+            await self.exchange_order_book_collection.create_index([("timestamp", ASCENDING)])
+            await self.exchange_order_book_collection.create_index([("metadata.symbol", ASCENDING)])
+            await self.exchange_order_book_collection.create_index([("metadata.exchange", ASCENDING)])
             
         # Initialize exchange connections
         for exchange_id in SPOT_EXCHANGES + DERIVATIVE_EXCHANGES:
@@ -524,19 +543,19 @@ class PriceSystem:
         # Insert documents to MongoDB
         try:            
             if raw_docs:
-                await self.order_book_collection.insert_many(raw_docs)
+                await self.exchange_order_book_collection.insert_many(raw_docs)
             logger.debug(f"Stored exchange order book data for {symbol}")
         except Exception as e:
             logger.error(f"Failed to store exchange price data: {str(e)}")
 
-    async def store_order_book_data(
+    async def store_composite_order_book_data(
         self, 
         symbol: str, 
         book: dict, 
         raw_data: list[dict],
         verbose: bool=False
     ) -> None:
-        """Store calculated index price and raw data in MongoDB time series collection"""
+        """Store calculated index price and raw composite order book data in MongoDB time series collection"""
         timestamp = datetime.datetime.now(datetime.UTC)
         if verbose: logger.info(f"Storing order book data! {symbol}: {index_price}")
         token = symbol.split("/")[0] if "/" in symbol else symbol
@@ -595,7 +614,7 @@ class PriceSystem:
         }
 
         try:
-            await self.order_book_collection.insert_one(index_doc)
+            await self.composite_order_book_collection.insert_one(index_doc)
             
             logger.debug(f"Stored price data for {symbol}: {index_price}")
         except Exception as e:
@@ -621,7 +640,7 @@ class PriceSystem:
             for result in results:
                 if isinstance(result, dict) and not isinstance(result, Exception):
                     order_books.append(result)
-            await self.store_exchange_order_book(symbol, order_books)
+            self.store_exchange_order_book(symbol, order_books)
                         
             # Validate feeds
             valid_books = self.validate_feeds(order_books)
@@ -649,12 +668,16 @@ class PriceSystem:
             condensed_book = self.condense_order_book(
                 composite_order_book_df)   
 
-            await self.store_order_book_data(
-                symbol, composite_order_book, valid_books, verbose=verbose)              
+            self.store_composite_order_book_data(
+                symbol, 
+                composite_order_book, 
+                valid_books, 
+                verbose=verbose
+            )              
 
             if index_price is not None:
                 # Store the calculated price
-                await self.store_price_data(
+                self.store_price_data(
                     symbol, index_price, condensed_book, valid_books, 
                     verbose=verbose)
                 
