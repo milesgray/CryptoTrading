@@ -67,6 +67,7 @@ class PriceSystem:
         self.collection = self.db[PRICE_COLLECTION_NAME]
         self.composite_order_book_collection = self.db[COMPOSITE_ORDER_BOOK_COLLECTION_NAME]
         self.exchange_order_book_collection = self.db[EXCHANGE_ORDER_BOOK_COLLECTION_NAME]
+        self.transformed_order_book_collection = self.db[TRANSFORMED_ORDER_BOOK_COLLECTION_NAME]
         
         # Create time series collection if it doesn't exist
         collections = await self.db.list_collection_names()
@@ -116,7 +117,21 @@ class PriceSystem:
             await self.exchange_order_book_collection.create_index([("timestamp", ASCENDING)])
             await self.exchange_order_book_collection.create_index([("metadata.symbol", ASCENDING)])
             await self.exchange_order_book_collection.create_index([("metadata.exchange", ASCENDING)])
-            
+        if TRANSFORMED_ORDER_BOOK_COLLECTION_NAME not in collections:
+            try:
+                await self.db.create_collection(
+                    TRANSFORMED_ORDER_BOOK_COLLECTION_NAME,
+                    timeseries={
+                        'timeField': 'timestamp',
+                        'metaField': 'metadata',
+                        'granularity': 'seconds'
+                    }
+                )
+            except:
+                await self.db.create_collection(TRANSFORMED_ORDER_BOOK_COLLECTION_NAME)
+            # Create indexes for faster queries
+            await self.transformed_order_book_collection.create_index([("timestamp", ASCENDING)])
+            await self.transformed_order_book_collection.create_index([("metadata.symbol", ASCENDING)])            
         # Initialize exchange connections
         for exchange_id in SPOT_EXCHANGES + DERIVATIVE_EXCHANGES:
             try:
@@ -620,6 +635,54 @@ class PriceSystem:
             logger.debug(f"Stored price data for {symbol}")
         except Exception as e:
             logger.error(f"Failed to store price data: {str(e)}")
+    
+    async def store_transformed_order_book_data(
+        self, 
+        symbol: str, 
+        book: dict, 
+        verbose: bool=False
+    ) -> None:
+        """Store calculated index price and raw composite order book data in MongoDB time series collection"""
+        timestamp = datetime.datetime.now(datetime.UTC)
+        if verbose: logger.info(f"Storing order book data! {symbol}")
+        token = symbol.split("/")[0] if "/" in symbol else symbol
+
+        df = self.order_book_to_df(book['bids'], book['asks'])
+        
+        ask_filter = df['side'] == 'a'
+        bid_filter = df['side'] == 'b'
+        size_filter = df['size'] > 0
+
+        asks = df[ask_filter & size_filter]
+        bids = df[bid_filter & size_filter]
+
+        lowest_ask = asks['price'].min()
+        highest_bid = bids['price'].max()
+
+        spread = abs(lowest_ask - highest_bid)
+
+        midpoint = (lowest_ask + highest_bid) / 2
+
+        # Store calculated index price
+        index_doc = {
+            "timestamp": timestamp,
+            "metadata": {
+                "token": token,
+                "symbol": symbol,                
+                "lowest_ask": lowest_ask,
+                "highest_bid": highest_bid,
+                "midpoint": midpoint,
+                "spread": spread,
+                "type": "order_book",
+            },            
+        }
+
+        try:
+            await self.transformed_order_book_collection.insert_one(index_doc)
+            
+            logger.debug(f"Stored transformed order book data for {symbol}")
+        except Exception as e:
+            logger.error(f"Failed to store transformed order book data: {str(e)}")
 
     async def process_symbol(
         self, 
@@ -674,7 +737,12 @@ class PriceSystem:
                 composite_order_book, 
                 valid_books, 
                 verbose=verbose
-            )              
+            )             
+            await self.store_transformed_order_book_data(
+                symbol,
+                composite_order_book,
+                verbose=verbose
+            ) 
 
             if index_price is not None:
                 # Store the calculated price
