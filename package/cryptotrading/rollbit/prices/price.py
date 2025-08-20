@@ -17,7 +17,8 @@ from cryptotrading.analysis.book import find_whale_positions
 from cryptotrading.data.mongo import get_db, \
     PRICE_COLLECTION_NAME, \
     COMPOSITE_ORDER_BOOK_COLLECTION_NAME, \
-    EXCHANGE_ORDER_BOOK_COLLECTION_NAME
+    EXCHANGE_ORDER_BOOK_COLLECTION_NAME, \
+    TRANSFORMED_ORDER_BOOK_COLLECTION_NAME
 
 # Configure logging
 logging.basicConfig(
