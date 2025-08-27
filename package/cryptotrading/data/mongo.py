@@ -4,25 +4,21 @@ import os
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
-from dotenv import load_dotenv
-load_dotenv()
 
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorClientSession, AsyncIOMotorDatabase
+from motor.motor_asyncio import (
+    AsyncIOMotorClient, AsyncIOMotorClientSession, AsyncIOMotorDatabase
+)
 
+from cryptotrading.config import (
+    MONGO_URI,
+    DB_NAME,
+)   
 
 logger = logging.getLogger(__name__)
 
 client: AsyncIOMotorClient | None = None
 session: AsyncIOMotorClientSession | None = None
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-DB_NAME = os.getenv("MONGO_DB_NAME", "crypto_prices")
-PRICE_COLLECTION_NAME = os.getenv("MONGO_PRICE_COLLECTION_NAME", "price_data")
-COMPOSITE_ORDER_BOOK_COLLECTION_NAME = os.getenv("MONGO_COMPOSITE_ORDER_BOOK_COLLECTION_NAME", "composite_order_book_data")
-EXCHANGE_ORDER_BOOK_COLLECTION_NAME = os.getenv("MONGO_EXCHANGE_ORDER_BOOK_COLLECTION_NAME", "exchange_order_book_data")
-TRANSFORMED_ORDER_BOOK_COLLECTION_NAME = os.getenv("MONGO_TRANSFORMED_ORDER_BOOK_COLLECTION_NAME", "transformed_order_book_data")
-
-logger.info(f"MONGO URI loaded: {MONGO_URI}\nDB NAME: {DB_NAME}\nPRICE COLLECTION NAME: {PRICE_COLLECTION_NAME}\nCOMPOSITE ORDER BOOK COLLECTION NAME: {COMPOSITE_ORDER_BOOK_COLLECTION_NAME}\nEXCHANGE ORDER BOOK COLLECTION NAME: {EXCHANGE_ORDER_BOOK_COLLECTION_NAME}")
 
 @asynccontextmanager
 async def get_session(
@@ -54,7 +50,7 @@ def connect_to_mongo(uri: str = MONGO_URI) -> None:
     global client
     if client is None:
         client = AsyncIOMotorClient(uri)
-        logger.info("Connected to MongoDB.")
+        logger.info(f"Connected to MongoDB @ {uri}")
     else:
         logger.warning("MongoDB client is already connected.")
 
