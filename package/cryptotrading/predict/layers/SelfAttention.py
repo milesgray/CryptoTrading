@@ -222,7 +222,23 @@ class DSAttention(nn.Module):
 
 
 class FullAttention(nn.Module):
-    def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
+    def __init__(
+        self, 
+        mask_flag=True, 
+        scale=None, 
+        attention_dropout=0.1, 
+        output_attention=False
+    ):
+        """
+        FullAttention module performs scaled dot-product attention between the input queries, keys, and values.
+        used in the original transformer
+
+        Args:
+        - mask_flag (bool): Whether to apply the attention mask. Default: True.
+        - scale (float or None): Scale factor for the attention scores. Default: None.
+        - attention_dropout (float): Dropout probability for the attention weights. Default: 0.1.
+        - output_attention (bool): Whether to return the attention scores. Default: False.
+        """
         super(FullAttention, self).__init__()
         self.scale = scale
         self.mask_flag = mask_flag
@@ -230,29 +246,44 @@ class FullAttention(nn.Module):
         self.dropout = nn.Dropout(attention_dropout)
 
     def forward(self, queries, keys, values, attn_mask):
-        B, L, H, E = queries.shape
-        _, S, _, D = values.shape
-        scale = self.scale or 1. / sqrt(E)
+        # Get the shape of the input tensors.
+        B, L, H, E = queries.shape  # Batch size, sequence length, number of heads, embedding dimension.
+        _, S, _, D = values.shape  # Batch size, sequence length, number of heads, hidden size.
+        scale = self.scale or 1. / np.sqrt(E)  # Scaling factor.
 
+        # Compute the attention scores between the queries and keys using matrix multiplication.
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
+        # Apply a mask to the attention scores if the mask flag is set.
         if self.mask_flag:
             if attn_mask is None:
                 attn_mask = TriangularCausalMask(B, L, device=queries.device)
-
             scores.masked_fill_(attn_mask.mask, -np.inf)
 
+        # Apply dropout and softmax to the scaled attention scores.
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
+
+        # Compute the weighted sum of the values using the attention scores.
         V = torch.einsum("bhls,bshd->blhd", A, values)
 
+        # If output_attention is True, return both the output tensor and the attention scores.
         if self.output_attention:
-            return (V.contiguous(), A)
+            return V.contiguous(), A
         else:
-            return (V.contiguous(), None)
-
+            return V.contiguous(), None
 
 class ProbAttention(nn.Module):
     def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
+        """
+        Initializes a new instance of the ProbAttention class.
+
+        Args:
+        - mask_flag (bool): A boolean that indicates whether to use masking for self-attention or not.
+        - factor (int): Controls the number of sampled keys to use in the calculation.
+        - scale (float or None): Scaling factor for the dot product attention. If None, the default scale is 1/sqrt(D).
+        - attention_dropout (float): Dropout probability for the attention mechanism.
+        - output_attention (bool): A boolean that indicates whether to output the attention matrix or not.
+        """
         super(ProbAttention, self).__init__()
         self.factor = factor
         self.scale = scale
@@ -260,41 +291,89 @@ class ProbAttention(nn.Module):
         self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
 
-    def _prob_QK(self, Q, K, sample_k, n_top):  # n_top: c*ln(L_q)
+    def _prob_QK(self, Q, K, sample_k, n_top):
+        """
+        Computes the dot product attention between the queries and values tensors, with sparse top-k selection.
+
+        Args:
+        - Q (torch.Tensor): Input queries tensor of shape (B, H, L_Q, D).
+        - K (torch.Tensor): Input keys tensor of shape (B, H, L_K, D).
+        - sample_k (int): Number of keys to sample per query.
+        - n_top (int): Number of top-k queries to select.
+
+        Returns:
+        - Q_K (torch.Tensor): Attention output tensor of shape (B, H, n_top, D).
+        - M_top (torch.Tensor): Indices of top-k queries for each batch and head, of shape (B, H, n_top).
+        """
         # Q [B, H, L, D]
         B, H, L_K, E = K.shape
         _, _, L_Q, _ = Q.shape
 
         # calculate the sampled Q_K
+        # expand the K tensor to match the dimensions of Q
         K_expand = K.unsqueeze(-3).expand(B, H, L_Q, L_K, E)
-        index_sample = torch.randint(L_K, (L_Q, sample_k))  # real U = U_part(factor*ln(L_k))*L_q
-        K_sample = K_expand[:, :, torch.arange(L_Q).unsqueeze(1), index_sample, :]
-        Q_K_sample = torch.matmul(Q.unsqueeze(-2), K_sample.transpose(-2, -1)).squeeze()
 
-        # find the Top_k query with sparisty measurement
-        M = Q_K_sample.max(-1)[0] - torch.div(Q_K_sample.sum(-1), L_K)
-        M_top = M.topk(n_top, sorted=False)[1]
+        # randomly sample K indices
+        index_sample = torch.randint(L_K, (L_Q, sample_k))
+        K_sample = K_expand[:, :, torch.arange(
+            L_Q).unsqueeze(1), index_sample, :]
+
+        # calculate the dot product attention scores
+        Q_K_sample = torch.matmul(
+            Q.unsqueeze(-2), K_sample.transpose(-2, -1)).squeeze()
+
+        # find the Top_k query with sparsity measurement
+        M = Q_K_sample.max(-1)[0] - torch.div(Q_K_sample.sum(-1), L_K)  # compute sparsity measurement M
+        M_top = M.topk(n_top, sorted=False)[1]  # select top-k values of M
 
         # use the reduced Q to calculate Q_K
         Q_reduce = Q[torch.arange(B)[:, None, None],
                    torch.arange(H)[None, :, None],
-                   M_top, :]  # factor*ln(L_q)
-        Q_K = torch.matmul(Q_reduce, K.transpose(-2, -1))  # factor*ln(L_q)*L_k
+                   M_top, :]
+        # calculate the dot product attention using Q_reduce and K
+        Q_K = torch.matmul(Q_reduce, K.transpose(-2, -1))
 
         return Q_K, M_top
 
     def _get_initial_context(self, V, L_Q):
+        """
+        Computes the initial context vector from the input values matrix.
+
+        Args:
+        - V (torch.Tensor): Input values matrix of shape (B, H, L, D).
+        - L_Q (int): Length of the input queries.
+
+        Returns:
+        - contex (torch.Tensor): Initial context vector of shape (B, H, L_Q, D).
+        """
         B, H, L_V, D = V.shape
         if not self.mask_flag:
-            # V_sum = V.sum(dim=-2)
             V_sum = V.mean(dim=-2)
-            contex = V_sum.unsqueeze(-2).expand(B, H, L_Q, V_sum.shape[-1]).clone()
+            contex = V_sum.unsqueeze(-2).expand(B, H,
+                                                L_Q, V_sum.shape[-1]).clone()
         else:  # use mask
-            assert (L_Q == L_V)  # requires that L_Q == L_V, i.e. for self-attention only
+            # requires that L_Q == L_V, i.e. for self-attention only
+            assert (L_Q == L_V)
             contex = V.cumsum(dim=-2)
         return contex
 
     def _update_context(self, context_in, V, scores, index, L_Q, attn_mask):
+        """
+        Updates the context vector with the attended values.
+
+        Args:
+        - context_in (torch.Tensor): Input context vector of shape (B, H, L_Q, D).
+        - V (torch.Tensor): Input values matrix of shape (B, H, L_V, D).
+        - scores (torch.Tensor): Attention scores tensor of shape (B, H, L_Q, L_V).
+        - index (torch.Tensor): Indices of top-k queries for each batch and head, of shape (B, H, c*ln(L_Q)).
+        - L_Q (int): Length of the input queries.
+        - attn_mask (torch.Tensor): Attention mask tensor of shape (B, H, L_Q, L_V).
+
+        Returns:
+        - context_in (torch.Tensor): Updated context vector of shape (B, H, L_Q, D).
+        - attns (torch.Tensor or None): Attention probability tensor of shape (B, H, L_Q, L_V),
+                                        or None if `output_attention` is False.
+        """
         B, H, L_V, D = V.shape
 
         if self.mask_flag:
@@ -306,12 +385,15 @@ class ProbAttention(nn.Module):
         context_in[torch.arange(B)[:, None, None],
         torch.arange(H)[None, :, None],
         index, :] = torch.matmul(attn, V).type_as(context_in)
+
         if self.output_attention:
-            attns = (torch.ones([B, H, L_V, L_V]) / L_V).type_as(attn).to(attn.device)
-            attns[torch.arange(B)[:, None, None], torch.arange(H)[None, :, None], index, :] = attn
-            return (context_in, attns)
+            attns = (torch.ones([B, H, L_V, L_V]) /
+                     L_V).type_as(attn).to(attn.device)
+            attns[torch.arange(B)[:, None, None], torch.arange(H)[
+                                                  None, :, None], index, :] = attn
+            return context_in, attns
         else:
-            return (context_in, None)
+            return context_in, None
 
     def forward(self, queries, keys, values, attn_mask):
         B, L_Q, H, D = queries.shape
@@ -321,13 +403,16 @@ class ProbAttention(nn.Module):
         keys = keys.transpose(2, 1)
         values = values.transpose(2, 1)
 
-        U_part = self.factor * np.ceil(np.log(L_K)).astype('int').item()  # c*ln(L_k)
-        u = self.factor * np.ceil(np.log(L_Q)).astype('int').item()  # c*ln(L_q)
+        U_part = self.factor * \
+                 np.ceil(np.log(L_K)).astype('int').item()  # c*ln(L_k)
+        u = self.factor * \
+            np.ceil(np.log(L_Q)).astype('int').item()  # c*ln(L_q)
 
         U_part = U_part if U_part < L_K else L_K
         u = u if u < L_Q else L_Q
 
-        scores_top, index = self._prob_QK(queries, keys, sample_k=U_part, n_top=u)
+        scores_top, index = self._prob_QK(
+            queries, keys, sample_k=U_part, n_top=u)
 
         # add scale factor
         scale = self.scale or 1. / sqrt(D)
@@ -336,7 +421,8 @@ class ProbAttention(nn.Module):
         # get the context
         context = self._get_initial_context(values, L_Q)
         # update the context with selected top_k queries
-        context, attn = self._update_context(context, values, scores_top, index, L_Q, attn_mask)
+        context, attn = self._update_context(
+            context, values, scores_top, index, L_Q, attn_mask)
 
         return context.contiguous(), attn
 
@@ -344,6 +430,18 @@ class ProbAttention(nn.Module):
 class AttentionLayer(nn.Module):
     def __init__(self, attention, d_model, n_heads, d_keys=None,
                  d_values=None):
+        """
+        Initializes a new instance of the AttentionLayer class which creates the multi-head self-attention mechanism
+
+        Args:
+        - attention (nn.Module): An attention module to use in the layer.
+        - d_model (int): The input and output dimensionality of the layer.
+        - n_heads (int): The number of attention heads.
+        - d_keys (int or None): The dimensionality of the query and key vectors.
+                                  If None, d_model // n_heads is used.
+        - d_values (int or None): The dimensionality of the value vectors.
+                                  If None, d_model // n_heads is used.
+        """
         super(AttentionLayer, self).__init__()
 
         d_keys = d_keys or (d_model // n_heads)
@@ -374,7 +472,6 @@ class AttentionLayer(nn.Module):
         out = out.view(B, L, -1)
 
         return self.out_projection(out), attn
-
 
 
 class TwoStageAttentionLayer(nn.Module):
