@@ -1,34 +1,39 @@
-FROM python:3.11.5-slim-bookworm
+# Dockerfile
+FROM python:3.12-slim
 
-ARG YOUR_ENV
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-ENV YOUR_ENV=${YOUR_ENV} \
-  PYTHONFAULTHANDLER=1 \
-  PYTHONUNBUFFERED=1 \
-  PYTHONHASHSEED=random \
-  PIP_NO_CACHE_DIR=off \
-  PIP_DISABLE_PIP_VERSION_CHECK=on \
-  PIP_DEFAULT_TIMEOUT=100 \
-  # Poetry's configuration:
-  POETRY_NO_INTERACTION=1 \
-  POETRY_VIRTUALENVS_CREATE=false \
-  POETRY_CACHE_DIR='/var/cache/pypoetry' \
-  POETRY_HOME='/usr/local' \
-  POETRY_VERSION=1.7.1
-  # ^^^
-  # Make sure to update it!
-
-# System deps:
-RUN curl -sSL https://install.python-poetry.org | python3 -
-
-# Copy only requirements to cache them in docker layer
 WORKDIR /app
-COPY poetry.lock pyproject.toml /app/
 
-# Project initialization:
-RUN poetry install $(test "$YOUR_ENV" == production && echo "--only=main") --no-interaction --no-ansi
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | POETRY_HOME=/opt/poetry python && \
+    ln -s /opt/poetry/bin/poetry /usr/local/bin/poetry && \
+    poetry config virtualenvs.create false
 
-# Creating folders, and files for a project:
-COPY ./cryptotrading /app
-   
-CMD [ "poetry", "run", "python", "-m", "cryptotrading.record" ]
+# Copy poetry files first (for better Docker layer caching)
+COPY pyproject.toml poetry.lock* ./
+
+# Copy the rest of the application files
+COPY ./cryptotrading ./cryptotrading/
+COPY record.sh ./
+COPY README.md ./
+
+# Install dependencies after copying all necessary files
+ARG INSTALL_DEV=false
+RUN if [ "$INSTALL_DEV" = "true" ] ; then \
+        poetry install ; \
+    else \
+        poetry install --only main ; \
+    fi
+
+# Make script executable and list files for debugging
+RUN chmod +x ./record.sh && ls -la
+
+# Expose port
+EXPOSE 8300
+
+# Run application
+CMD ["./record.sh"]

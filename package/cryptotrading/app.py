@@ -1,17 +1,17 @@
-import os
+
 import json
 import asyncio
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Optional, Dict, Any, Union, Set, Callable, Awaitable
+from pymongo import DESCENDING
+from typing import List, Optional, Dict, Any, Set, Tuple
 import datetime
+import datetime as dt
 import logging
-import motor.motor_asyncio
-from pymongo import ASCENDING, DESCENDING
-from pydantic import BaseModel, Field
-from contextlib import asynccontextmanager
+from pydantic import BaseModel
 import pytz
-from cryptotrading.data.mongo import get_db, PRICE_COLLECTION_NAME, TRANSFORMED_ORDER_BOOK_COLLECTION_NAME
+from cryptotrading.data.mongo import get_db
+from cryptotrading.config import PRICE_COLLECTION_NAME, TRANSFORMED_ORDER_BOOK_COLLECTION_NAME
 
 
 # Configure logging (optional, but good practice)
@@ -92,159 +92,140 @@ async def add_cors_headers(request, call_next):
 app.db = get_db()
 app.price_collection = app.db[PRICE_COLLECTION_NAME]
 app.transformed_order_book_collection = app.db[TRANSFORMED_ORDER_BOOK_COLLECTION_NAME]
+app.use_stream_watch = False
 logger.info("Successfully connected to MongoDB.")
+
 
 # Background task for MongoDB change streams
 async def watch_price_changes():
-    last_checked = datetime.datetime.utcnow()
+    """Background task that polls for price changes and broadcasts them to WebSocket clients."""
+    logger.info("Starting price polling")
+    last_checked = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=10)  # Look back 10 seconds initially
     
     while True:
         try:
-            # First try to use change streams if available
-            try:
-                async with app.price_collection.watch([
-                    {'$match': {'operationType': 'insert'}}
-                ]) as stream:
-                    logger.info("Successfully connected to price change stream")
-                    async for change in stream:
+            # Get list of tokens we're tracking (if any)
+            tokens = set()
+            for ws_set in websocket_manager.active_connections['price']:                
+                # Extract token from WebSocket query parameters
+                try:
+                    token = ws_set.scope.get('path_params', {}).get('token', '')
+                    if token:
+                        tokens.add(token)
+                except Exception as e:
+                    logger.warning(f"Error parsing query string: {e}")
+                    continue
+            
+            if not tokens:
+                await asyncio.sleep(1)
+                continue
+                
+            # Get latest price for each token
+            current_time = datetime.datetime.now(datetime.timezone.utc)
+            for token in tokens:
+                # Query for new documents since last check
+                cursor = app.price_collection.find({
+                    'metadata.token': token,
+                    'timestamp': {'$gt': last_checked}
+                }).sort('timestamp', 1)
+            
+            if not tokens:
+                logger.info("No tokens to track, waiting...")
+                await asyncio.sleep(1)
+                continue
+                
+            # Get latest price for each token
+            current_time = datetime.datetime.now(datetime.timezone.utc)
+            for token in tokens:
+                # Query for new documents since last check
+                cursor = app.price_collection.find({
+                    'metadata.token': token,
+                    'timestamp': {'$gt': last_checked}
+                }).sort('timestamp', 1)
+            
+                async for doc in cursor:
+                    token = doc.get('metadata', {}).get('token')
+                    if token:
                         try:
-                            doc = change['fullDocument']
-                            token = doc.get('metadata', {}).get('token')
-                            if token and 'price' in doc:
-                                # Ensure timestamp is serializable
-                                timestamp = doc['timestamp']
-                                if hasattr(timestamp, 'isoformat'):
-                                    timestamp = timestamp.isoformat()
-                                    
-                                price_data = {
-                                    'price': doc['price'],
-                                    'timestamp': timestamp,
-                                    'order_book': None
-                                }
+                            latest = PriceDataPoint.from_mongodb_doc(doc)
+                            if latest.timestamp.astimezone(dt.timezone.utc) > last_checked.astimezone(dt.timezone.utc):
                                 await websocket_manager.broadcast(
                                     json.dumps({
                                         'type': 'price_update',
                                         'token': token,
-                                        'data': price_data
+                                        'data': latest.dict()
                                     }, default=json_serial),
                                     'price'
-                                )
+                                )                                
                         except Exception as e:
-                            logger.error(f"Error processing price change: {e}")
-            except Exception as e:
-                if "replica sets" in str(e).lower():
-                    logger.warning("Change streams not available, falling back to polling")
-                    break  # Exit change stream mode and use polling
-                raise  # Re-raise other errors
+                            logger.error(f"Error creating order book point: {e}")
                 
-        except Exception as e:
-            logger.error(f"Price change stream error: {e}")
-            await asyncio.sleep(5)  # Wait before retrying
-            
-    # Fall back to polling if change streams aren't available
-    logger.info("Starting price polling")
-    while True:
-        try:
-            # Query for new documents since last check
-            cursor = app.price_collection.find({
-                'timestamp': {'$gt': last_checked}
-            }).sort('timestamp', 1)
-            
-            async for doc in cursor:
-                token = doc.get('metadata', {}).get('token')
-                if token and 'price' in doc:
-                    # Ensure timestamp is serializable
-                    timestamp = doc['timestamp']
-                    if hasattr(timestamp, 'isoformat'):
-                        timestamp = timestamp.isoformat()
-                        
-                    price_data = {
-                        'price': doc['price'],
-                        'timestamp': timestamp,
-                        'order_book': None
-                    }
-                    await websocket_manager.broadcast(
-                        json.dumps({
-                            'type': 'price_update',
-                            'token': token,
-                            'data': price_data
-                        }, default=json_serial),
-                        'price'
-                    )
-                    last_checked = doc['timestamp']
-            
+            last_checked = current_time
             await asyncio.sleep(1)  # Poll every second
             
         except Exception as e:
-            logger.error(f"Price polling error: {e}")
-            await asyncio.sleep(5)  # Wait before retrying
+            logger.error(f"Error in price polling: {e}")
+            await asyncio.sleep(5)  # Wait longer on error
 
 async def watch_order_book_changes():
-    last_checked = datetime.datetime.utcnow()
+    logger.info("Starting order book polling")
+    last_checked = datetime.datetime.now(datetime.timezone.utc)
     
     while True:
         try:
-            # First try to use change streams if available
-            try:
-                async with app.transformed_order_book_collection.watch([
-                    {'$match': {'operationType': 'insert'}}
-                ]) as stream:
-                    logger.info("Successfully connected to order book change stream")
-                    async for change in stream:
-                        try:
-                            doc = change['fullDocument']
-                            token = doc.get('metadata', {}).get('token')
-                            if token:
-                                try:
-                                    latest = TransformedOrderBookDataPoint.from_mongodb_doc(doc)
-                                    await websocket_manager.broadcast(
-                                        json.dumps({
-                                            'type': 'order_book_update',
-                                            'token': token,
+            if app.use_stream_watch:
+                # First try to use change streams if available
+                try:
+                    async with app.transformed_order_book_collection.watch([
+                        {'$match': {'operationType': 'insert'}}
+                    ]) as stream:
+                        logger.info("Successfully connected to order book change stream")
+                        async for change in stream:
+                            try:
+                                doc = change['fullDocument']
+                                token = doc.get('metadata', {}).get('token')
+                                if token:
+                                    try:
+                                        latest = TransformedOrderBookDataPoint.from_mongodb_doc(doc)
+                                        await websocket_manager.broadcast(
+                                            json.dumps({
+                                                'type': 'order_book_update',
+                                                'token': token,
                                             'data': latest.dict()
                                         }, default=json_serial),
                                         'order_book'
                                     )
-                                except Exception as e:
-                                    logger.error(f"Error creating order book point: {e}")
+                                    except Exception as e:
+                                        logger.error(f"Error creating order book point: {e}")
+                            except Exception as e:
+                                logger.error(f"Error processing order book change: {e}")
+                except Exception as e:
+                    if "replica sets" in str(e).lower():
+                        logger.warning("Change streams not available, falling back to polling")
+                        app.use_stream_watch = False
+            else:
+                # Query for new documents since last check
+                cursor = app.transformed_order_book_collection.find({
+                    'timestamp': {'$gt': last_checked}
+                }).sort('timestamp', 1)
+            
+                async for doc in cursor:
+                    token = doc.get('metadata', {}).get('token')
+                    if token:
+                        try:
+                            latest = TransformedOrderBookDataPoint.from_mongodb_doc(doc)
+                            await websocket_manager.broadcast(
+                                json.dumps({
+                                    'type': 'order_book_update',
+                                    'token': token,
+                                    'data': latest.dict()
+                                }, default=json_serial),
+                                'order_book'
+                            )
+                            last_checked = doc['timestamp']
                         except Exception as e:
-                            logger.error(f"Error processing order book change: {e}")
-            except Exception as e:
-                if "replica sets" in str(e).lower():
-                    logger.warning("Change streams not available, falling back to polling")
-                    break  # Exit change stream mode and use polling
-                raise  # Re-raise other errors
+                            logger.error(f"Error creating order book point: {e}")
                 
-        except Exception as e:
-            logger.error(f"Order book change stream error: {e}")
-            await asyncio.sleep(5)  # Wait before retrying
-    
-    # Fall back to polling if change streams aren't available
-    logger.info("Starting order book polling")
-    while True:
-        try:
-            # Query for new documents since last check
-            cursor = app.transformed_order_book_collection.find({
-                'timestamp': {'$gt': last_checked}
-            }).sort('timestamp', 1)
-            
-            async for doc in cursor:
-                token = doc.get('metadata', {}).get('token')
-                if token:
-                    try:
-                        latest = TransformedOrderBookDataPoint.from_mongodb_doc(doc)
-                        await websocket_manager.broadcast(
-                            json.dumps({
-                                'type': 'order_book_update',
-                                'token': token,
-                                'data': latest.dict()
-                            }, default=json_serial),
-                            'order_book'
-                        )
-                        last_checked = doc['timestamp']
-                    except Exception as e:
-                        logger.error(f"Error creating order book point: {e}")
-            
             await asyncio.sleep(1)  # Poll every second
             
         except Exception as e:
@@ -300,6 +281,28 @@ class TransformedOrderBookData(BaseModel):
     token: str
     points: list[TransformedOrderBookDataPoint]
     
+class PaginatedResponse(BaseModel):
+    data: List[Any]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_next: bool
+    has_previous: bool
+
+class PriceDataPoint(BaseModel):
+    timestamp: datetime.datetime
+    price: float
+    token: str
+
+    @classmethod
+    def from_mongodb_doc(cls, doc: Dict[str, Any]) -> 'PriceDataPoint':
+        """Create a PriceDataPoint from a MongoDB document."""
+        return cls(
+            timestamp=doc['timestamp'],
+            price=doc['price'],
+            token=doc['metadata']['token']
+        )
 class PriceBucket(BaseModel):
     range: str
     avg_price: float
@@ -567,32 +570,95 @@ async def get_candlestick_data(
             logger.error(f"Database error in get_candlestick_data: {e}")
             raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
+async def get_historic_price(
+    token: str, 
+    start_time: datetime.datetime,
+    end_time: datetime.datetime,
+    page: int = 1,
+    page_size: int = 1000
+) -> Tuple[List[PriceDataPoint], int]:
+    """
+    Get paginated historic price data for a token within a time range.
+    
+    Args:
+        token: The token symbol to fetch data for
+        start_time: Start of the time range (inclusive)
+        end_time: End of the time range (inclusive)
+        page: Page number (1-based)
+        page_size: Number of items per page
+        
+    Returns:
+        Tuple of (list of PriceDataPoint, total_count)
+    """
+    try:
+        if page < 1:
+            page = 1
+        if page_size < 1 or page_size > 10000:  # Enforce reasonable limits
+            page_size = 1000
+            
+        skip = (page - 1) * page_size
+        
+        query = {
+            "metadata.token": token, 
+            "metadata.type": "index_price", 
+            "timestamp": {
+                "$gte": start_time, 
+                "$lte": end_time
+            }
+        }
+        
+        # Get total count first
+        total_count = await app.price_collection.count_documents(query)
+        
+        # Get paginated results
+        cursor = app.price_collection.find(
+            query,
+            sort=[("timestamp", 1)],  # 1 for ascending, -1 for descending
+            skip=skip,
+            limit=page_size
+        )
+        
+        raw_data = await cursor.to_list(length=page_size)
+        result = [PriceDataPoint.from_mongodb_doc(doc) for doc in raw_data]
+        
+        return result, total_count
+        
+    except Exception as e:
+        logger.error(f"Database error in get_historic_price: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
 async def get_latest_price(token: str) -> Optional[Dict[str, Any]]:
     """Retrieves the latest index price for a given token."""
-
     try:
         # Find the most recent document for the given symbol
         document = await app.price_collection.find_one(
             {"metadata.token": token, "metadata.type": "index_price"},
             sort=[("timestamp", DESCENDING)]
         )
-        if document:
-            # Extract order book data if available
-            order_book = None
-            if "metadata" in document and "book" in document["metadata"]:
-                order_book = process_order_book_data(document["metadata"]["book"])
-                
-            return {
-                "price": document['price'],
-                "timestamp": document['timestamp'],
-                "order_book": order_book
-            }
-        else:
-            return None  # No data found for the token
-
+        
+        if not document:
+            logger.debug(f"No price data found for token: {token}")
+            return None
+            
+        # Extract order book data if available
+        order_book = None
+        if "metadata" in document and "book" in document["metadata"]:
+            order_book = process_order_book_data(document["metadata"]["book"])
+            
+        # Build response with all available metadata
+        result = {
+            "price": document.get('price'),
+            "timestamp": document.get('timestamp'),
+            "metadata": document.get('metadata', {}),
+            "order_book": order_book
+        }
+        
+        logger.debug(f"Retrieved latest price for {token}: {result.get('price')}")
+        return result
+        
     except Exception as e:
-        logger.error(f"Database error in get_latest_price: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        logger.error(f"Database error in get_latest_price for token {token}: {e}")
+        return None  # Return None instead of raising to allow graceful degradation
 
 async def get_latest_transformed_order_book_point(token: str) -> Optional[TransformedOrderBookDataPoint]:
     """Retrieves the latest transformed order book point for a given token."""
@@ -612,63 +678,98 @@ async def get_latest_transformed_order_book_point(token: str) -> Optional[Transf
         logger.error(f"Database error in get_latest_transformed_order_book_point: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-
 async def get_transformed_order_book(
     token: str,
     start_time: datetime.datetime,
     end_time: datetime.datetime,
     granularity: int
 ) -> Optional[TransformedOrderBookData]:
-    """Retrieves the transformed order book for a given token."""
-    pipeline = [
-        {
-            "$match": {
-                "metadata.token": token,                
-                "timestamp": {"$gte": start_time, "$lte": end_time},
-            }
-        },
-        {
-            "$sort": {"timestamp": 1}  # Ensure data is sorted by timestamp
-        },
-        {
-            "$group": {
-                "_id": {
-                    "$toDate": {
-                        "$subtract": [
-                            {"$toLong": "$timestamp"},
-                            {"$mod": [{"$toLong": "$timestamp"}, granularity * 1000]},
-                        ]
-                    }
-                },
-                "lowest_ask": {"$min": "$metadata.lowest_ask"},
-                "highest_bid": {"$max": "$metadata.highest_bid"},
-                "midpoint": {"$avg": [{"$min": "$metadata.lowest_ask"}, {"$max": "$metadata.highest_bid"}]},
-                "spread": {"$abs": {"$subtract": [{"$min": "$metadata.lowest_ask"}, {"$max": "$metadata.highest_bid"}]}},
-            }
-        },
-        {
-            "$sort": {"_id": 1}  # Sort by timestamp (ascending)
-        },
-        {
-            "$project": {
-                "_id": 0,
-                "timestamp": "$_id",
-                "lowest_ask": 1,
-                "highest_bid": 1,
-                "midpoint": 1,
-                "spread": 1,
-            }
-        },
-    ]
+    """Retrieves the transformed order book for a given token.
+    
+    Note: This implementation works with MongoDB timeseries collections by using
+    $setWindowFields for time-based bucketing instead of $group.
+    """
     try:
-        cursor = await app.transformed_order_book_collection.aggregate(pipeline)
-        if cursor:
+        # First, get the raw data points within the time range
+        cursor = app.transformed_order_book_collection.find({
+            "metadata.token": token,
+            "timestamp": {"$gte": start_time, "$lte": end_time}
+        }).sort("timestamp", 1)
+        
+        # Process data in memory for timeseries collections
+        points = []
+        current_bucket = None
+        bucket_start = None
+        
+        async for doc in cursor:
+            timestamp = doc.get("timestamp")
+            if not timestamp:
+                continue
+                
+            # Convert to timestamp in milliseconds for bucketing
+            ts_ms = int(timestamp.timestamp() * 1000)
+            bucket_time = ts_ms - (ts_ms % (granularity * 1000))
+            
+            if current_bucket is None or bucket_time != bucket_start:
+                # If we have a complete bucket, add it to points
+                if current_bucket is not None:
+                    points.append(current_bucket)
+                
+                # Start a new bucket
+                bucket_start = bucket_time
+                current_bucket = {
+                    "timestamp": datetime.datetime.fromtimestamp(bucket_time / 1000, tz=datetime.timezone.utc),
+                    "lowest_ask": float('inf'),
+                    "highest_bid": float('-inf'),
+                    "points_in_bucket": 0
+                }
+            
+            # Update bucket stats
+            if "metadata" in doc:
+                ask = doc["metadata"].get("lowest_ask")
+                bid = doc["metadata"].get("highest_bid")
+                
+                if ask is not None:
+                    current_bucket["lowest_ask"] = min(current_bucket["lowest_ask"], ask)
+                if bid is not None:
+                    current_bucket["highest_bid"] = max(current_bucket["highest_bid"], bid)
+                
+                current_bucket["points_in_bucket"] += 1
+        
+        # Add the last bucket if it exists
+        if current_bucket is not None and current_bucket["points_in_bucket"] > 0:
+            points.append(current_bucket)
+        
+        # Calculate derived fields
+        result_points = []
+        for point in points:
+            if point["points_in_bucket"] == 0:
+                continue
+                
+            lowest_ask = point["lowest_ask"] if point["lowest_ask"] != float('inf') else None
+            highest_bid = point["highest_bid"] if point["highest_bid"] != float('-inf') else None
+            
+            if lowest_ask is not None and highest_bid is not None:
+                midpoint = (lowest_ask + highest_bid) / 2
+                spread = abs(lowest_ask - highest_bid)
+            else:
+                midpoint = None
+                spread = None
+            
+            result_points.append({
+                "timestamp": point["timestamp"],
+                "lowest_ask": lowest_ask,
+                "highest_bid": highest_bid,
+                "midpoint": midpoint,
+                "spread": spread
+            })
+        
+        if result_points:
             return TransformedOrderBookData(
                 token=token,
-                points=[TransformedOrderBookDataPoint(**doc) for doc in cursor]
+                points=[TransformedOrderBookDataPoint(**doc) for doc in result_points]
             )
-        else:
-            return None  # No data found for the token
+        return None  # No data found for the token
 
     except Exception as e:
         logger.error(f"Database error in get_transformed_order_book: {e}")
@@ -753,6 +854,56 @@ async def websocket_order_book(websocket: WebSocket, token: str):
         websocket_manager.disconnect(websocket, 'order_book')
 
 # --- REST API Endpoints ---
+@app.get("/historic/price/{token}", response_model=PaginatedResponse)
+async def read_historic_price(
+    token: str,
+    start: datetime.datetime = Query(..., description="Start time (ISO 8601 format)"),
+    end: datetime.datetime = Query(..., description="End time (ISO 8601 format)"),
+    page: int = Query(1, ge=1, description="Page number (1-based)"),
+    page_size: int = Query(1000, ge=1, le=10000, description="Number of items per page (max 10000)")
+):
+    """
+    Get paginated historic price data for a token within a time range.
+    
+    This endpoint returns price data in pages to improve performance with large datasets.
+    """
+    try:
+        # Convert start and end to UTC
+        start_utc = start.astimezone(pytz.utc)
+        end_utc = end.astimezone(pytz.utc)
+
+        if end_utc <= start_utc:
+            raise HTTPException(status_code=400, detail="End time must be after start time")
+
+        # Fetch paginated historic price data
+        price_data, total_count = await get_historic_price(
+            token=token,
+            start_time=start_utc,
+            end_time=end_utc,
+            page=page,
+            page_size=page_size
+        )
+        
+        # Calculate pagination metadata
+        total_pages = (total_count + page_size - 1) // page_size if page_size > 0 else 1
+        has_next = page < total_pages
+        has_previous = page > 1
+        
+        return {
+            "data": price_data,
+            "total": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "has_next": has_next,
+            "has_previous": has_previous
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching historic price data for {token}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching historic price data: {e}")
 
 @app.get("/candlestick/{token}", response_model=List[CandlestickData])
 async def read_candlestick(
