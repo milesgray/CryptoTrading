@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { getCandlestickData, getLatestPrice, webSocketService } from '../services/api';
-import { format, subDays, isAfter, parseISO } from 'date-fns';
+import { getCandlestickData, webSocketService } from '../services/api';
+import { format, subDays } from 'date-fns';
 import _ from 'lodash';
+import anychart from 'anychart';
 
 const ChartLoading = ({token}) => {
   return (
@@ -26,6 +27,7 @@ const CandlestickChart = ({ token }) => {
   const [granularity, setGranularity] = useState(3600); // Default: 1 hour
   const [isLiveUpdating, setIsLiveUpdating] = useState(true); // Default: live updates enabled
   const [latestPrice, setLatestPrice] = useState(null);
+  const [latestTimestamp, setLatestTimestamp] = useState(null);
   const chartContainer = useRef(null);
   const chart = useRef(null);
   const dataTable = useRef(null);
@@ -39,74 +41,365 @@ const CandlestickChart = ({ token }) => {
   const latestDataPoint = useRef(null);
   const isMounted = useRef(true);
 
-  // Handle live price updates
+  // Initialize the data table
+  const initDataTable = useCallback(() => {
+    if (!chartContainer.current) return null;
+    
+    try {
+      // Create a data table
+      const table = anychart.data.table();
+      
+      // Add column names first
+      table.addData([], ['x', 'open', 'high', 'low', 'close', 'volume']);
+      
+      // Create mapping for the data
+      const mapping = table.mapAs({
+        x: 0,
+        open: 1,
+        high: 2,
+        low: 3,
+        close: 4,
+        value: 4, // For tooltips
+        volume: 5
+      });
+      
+      console.log('Data table initialized successfully');
+      return { table, mapping };
+    } catch (error) {
+      console.error('Error initializing data table:', error);
+      return null;
+    }
+  }, []);
+  
+  // Add sample data for testing
+  const addSampleData = useCallback(() => {
+    if (!dataTable.current?.table) return;
+    
+    console.log('Adding sample data...');
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000; // ms in a day
+    
+    // Add 30 days of sample data
+    for (let i = 30; i >= 0; i--) {
+      const date = new Date(now - (i * day));
+      const basePrice = 100000 + (Math.random() * 20000);
+      const open = basePrice;
+      const close = basePrice * (0.99 + (Math.random() * 0.02));
+      const high = Math.max(open, close) * (1 + Math.random() * 0.01);
+      const low = Math.min(open, close) * (0.99 - Math.random() * 0.01);
+      const volume = 100 + (Math.random() * 100);
+      
+      dataTable.current.table.addData([
+        date,
+        open,
+        high,
+        low,
+        close,
+        volume
+      ]);
+    }
+    console.log('Sample data added');
+  }, []);
+  
+  // Initialize the chart
+  const initChart = useCallback(() => {
+    console.log('Initializing chart...');
+    
+    if (!chartContainer.current) {
+      console.error('Chart container not available');
+      return;
+    }
+    
+    try {
+      console.log('Creating stock chart...');
+      // Create a stock chart
+      chart.current = anychart.stock();
+      
+      // Create a plot
+      const plot = chart.current.plot(0);
+      
+      console.log('Creating OHLC series with mapping:', dataTable.current.mapping);
+      // Create an OHLC series
+      const series = plot.ohlc(dataTable.current.mapping)
+        .name('Price')
+        .risingStroke('#3ba158')
+        .fallingStroke('#fa1c26');
+      
+      // Enable grid and axis
+      plot.yGrid(true).xGrid(true);
+      plot.yAxis().title('Price');
+      
+      console.log('Setting up scroller...');
+      // Create scroller
+      chart.current.scroller().ohlc(dataTable.current.mapping);
+      
+      // Add sample data for testing
+      addSampleData();
+      
+      console.log('Setting container and drawing chart...');
+      // Set container and draw
+      chart.current.container(chartContainer.current);
+      chart.current.draw();
+      
+      console.log('Chart initialization complete');
+      
+      // Force a resize to ensure the chart renders properly
+      setTimeout(() => {
+        if (chart.current) {
+          console.log('Triggering chart resize...');
+          chart.current.fitAll();
+          
+          // Force redraw after a short delay
+          setTimeout(() => {
+            if (chart.current) {
+              console.log('Forcing chart redraw...');
+              chart.current.draw();
+            }
+          }, 500);
+        }
+      }, 100);
+      
+    } catch (error) {
+      console.error('Error initializing chart:', error);
+    }
+  }, [addSampleData]);
+  
+  // Initialize data table and chart on mount
+  useEffect(() => {
+    console.log('Component mounted, initializing data table...');
+    
+    if (!dataTable.current) {
+      console.log('No data table found, creating new one...');
+      const result = initDataTable();
+      if (result?.table && result.mapping) {
+        console.log('Data table created successfully, initializing chart...');
+        dataTable.current = result;
+        initChart();
+      } else {
+        console.error('Failed to create data table:', result);
+      }
+    } else {
+      console.log('Data table already exists, skipping initialization');
+    }
+    
+    return () => {
+      console.log('Cleaning up chart...');
+      if (chart.current) {
+        try {
+          chart.current.dispose();
+        } catch (e) {
+          console.error('Error disposing chart:', e);
+        }
+        chart.current = null;
+      }
+    };
+  }, [initDataTable, initChart]);
+  
+  // Handle live price updates from WebSocket
   useEffect(() => {
     if (!isLiveUpdating || !token) return;
 
     const handlePriceUpdate = (priceData) => {
-      if (!isMounted.current || !priceData || !priceData.price) return;
+      if (!isMounted.current || !priceData || priceData.price === undefined) return;
       
-      //console.log('Received price update:', priceData);
+      console.log('Received price update:', priceData);
+      const now = new Date(priceData.timestamp || Date.now());
       setLatestPrice(priceData.price);
       
-      // Only update the chart if we have historical data and the chart is initialized
-      if (chartData.current.length > 0 && chart.current) {
-        const now = new Date();
-        const lastPoint = chartData.current[chartData.current.length - 1];
-        
-        // If we're still in the same time window, update the last point
-        if (isAfter(now, lastPoint.x) && isAfter(now, new Date(lastPoint.x.getTime() + granularity * 1000))) {
-          // Create a new point for the current time window
-          const newPoint = {
-            x: now,
-            open: lastPoint.close,
-            high: Math.max(lastPoint.close, priceData.price),
-            low: Math.min(lastPoint.close, priceData.price),
-            close: priceData.price,
-            volume: 0 // We don't have volume for live updates
-          };
+      // If we don't have a data table yet, initialize it
+      if (!dataTable.current) {
+        console.log('Initializing data table...');
+        const result = initDataTable();
+        if (result?.table && result.mapping) {
+          dataTable.current = result;
+          console.log('Data table initialized, initializing chart...');
+          initChart();
+          console.log('Chart initialization complete');
+        } else {
+          console.error('Failed to initialize data table');
+          return; // Can't proceed without data table
+        }
+      }
+
+      try {
+        // If we have existing data, update the last point or create a new one
+        if (chartData.current.length > 0) {
+          const lastPoint = chartData.current[chartData.current.length - 1];
           
-          // Add the new point to our data
-          const newData = [...chartData.current, newPoint];
-          chartData.current = newData;
+          if (!lastPoint) {
+            console.error('Last point is null or undefined');
+            return;
+          }
           
-          // Update the chart
-          if (chart.current) {
-            chart.current.data(newData);
-            chart.current.draw();
+          // Check if we're still in the same time window
+          const lastPointTime = lastPoint.x instanceof Date ? lastPoint.x : new Date(lastPoint.x);
+          const timeDiff = now - lastPointTime;
+          const isSameWindow = timeDiff < (granularity * 1000);
+          
+          if (isSameWindow) {
+            // Update the last point
+            const updatedPoint = {
+              ...lastPoint,
+              high: Math.max(lastPoint.high, priceData.price),
+              low: Math.min(lastPoint.low, priceData.price),
+              close: priceData.price,
+              volume: priceData.volume + lastPoint.volume,
+              x: now // Update the timestamp to now
+            };
+            
+            // Validate updatedPoint before using it
+            if (!updatedPoint || typeof updatedPoint !== 'object') {
+              console.error('Invalid updatedPoint:', updatedPoint);
+              return;
+            }
+            
+            // Update in memory
+            const lastIndex = chartData.current.length - 1;
+            if (lastIndex >= 0) {
+              chartData.current[lastIndex] = updatedPoint;
+            } else {
+              console.error('No existing data point to update');
+              return;
+            }
+            
+            // Update the data table
+            if (dataTable.current?.table) {
+              try {
+                // Ensure all values are numbers with fallbacks
+                const rowData = [
+                  now,
+                  Number(updatedPoint.open || 0),
+                  Number(updatedPoint.high || 0),
+                  Number(updatedPoint.low || 0),
+                  Number(updatedPoint.close || 0),
+                  Number(updatedPoint.volume || 0)
+                ];
+                
+                console.log('Adding data to table:', rowData);
+                
+                // Add data in the format AnyChart expects
+                dataTable.current.table.addData(rowData);
+              } catch (error) {
+                console.error('Error adding data to table:', error, {
+                  updatedPoint,
+                  now: now
+                });
+              }
+            }
+          } else {
+            // Create a new candle
+            const newPoint = {
+              x: now,
+              open: lastPoint.close ?? priceData.price, // Fallback to current price if no last close
+              high: priceData.price,
+              low: priceData.price,
+              close: priceData.price,
+              volume: priceData.volume
+            };
+            
+            // Add to our data
+            chartData.current.push(newPoint);
+            
+            // Update the data table
+            if (dataTable.current?.table) {
+              try {
+                // Ensure all values are numbers
+                const rowData = [
+                  now,
+                  Number(newPoint.open),
+                  Number(newPoint.high),
+                  Number(newPoint.low),
+                  Number(newPoint.close),
+                  Number(newPoint.volume || 0)
+                ];
+                
+                console.log('Adding new candle to table:', rowData);
+                
+                // Add data in the format AnyChart expects
+                dataTable.current.table.addData(rowData);
+              } catch (error) {
+                console.error('Error adding new candle to table:', error, {
+                  newPoint,
+                  now: now.toISOString()
+                });
+              }
+            }
           }
         } else {
-          // Update the last point with the latest price
-          const updatedPoint = {
-            ...lastPoint,
-            high: Math.max(lastPoint.high, priceData.price),
-            low: Math.min(lastPoint.low, priceData.price),
-            close: priceData.price
+          // If we don't have chart data yet, initialize it with the current price
+          console.log('Initializing chart with first price point');
+          const newPoint = {
+            x: now,
+            open: priceData.price,
+            high: priceData.price,
+            low: priceData.price,
+            close: priceData.price,
+            volume: priceData.volume
           };
           
-          // Update the last point in our data
-          const newData = [...chartData.current];
-          newData[newData.length - 1] = updatedPoint;
-          chartData.current = newData;
+          chartData.current = [newPoint];
           
-          // Update the chart
-          if (chart.current) {
-            chart.current.data(newData);
-            chart.current.draw();
+          // Add initial data point
+          if (dataTable.current?.table) {
+            try {
+              // Ensure all values are numbers
+              const rowData = [
+                now,
+                Number(newPoint.open),
+                Number(newPoint.high),
+                Number(newPoint.low),
+                Number(newPoint.close),
+                Number(newPoint.volume || 0)
+              ];
+              
+              console.log('Adding initial data point:', rowData);
+              
+              // Add data in the format AnyChart expects
+              dataTable.current.table.addData(rowData);
+            } catch (error) {
+              console.error('Error adding initial data point:', error, {
+                newPoint,
+                timestamp: now
+              });
+            }
+          }
+          
+          // Initialize the chart if not already done
+          if (!chart.current) {
+            initChart();
           }
         }
+      } catch (error) {
+        console.error('Error in handlePriceUpdate:', error, { priceData });
       }
     };
 
     // Connect to WebSocket and listen for updates
-    webSocketService.connect(token);
-    const unsubscribe = webSocketService.onPriceUpdate(handlePriceUpdate);
-
-    // Clean up on unmount or when dependencies change
-    return () => {
-      unsubscribe();
-      webSocketService.disconnect();
+    const connectWebSocket = async () => {
+      try {
+        console.log('Connecting to WebSocket for token:', token);
+        await webSocketService.connect(token);
+        console.log('WebSocket connected successfully');
+      } catch (error) {
+        console.error('Failed to connect WebSocket:', error);
+      }
     };
+
+    // Only set up the WebSocket connection after the component is mounted
+    // and we have a valid token
+    if (token) {
+      connectWebSocket();
+      
+      // Set up the price update handler
+      const unsubscribe = webSocketService.onPriceUpdate(handlePriceUpdate);
+
+      // Clean up on unmount or when dependencies change
+      return () => {
+        console.log('Cleaning up WebSocket connection');
+        unsubscribe();
+        webSocketService.disconnect();
+      };
+    }
   }, [token, isLiveUpdating, granularity]);
 
   // Clean up on unmount
@@ -335,51 +628,13 @@ const CandlestickChart = ({ token }) => {
   };
 
   // Function to update the latest price data
-  const updateLatestPrice = useCallback(async () => {
+  // Initialize the chart with WebSocket data
+  const initializeChart = useCallback(() => {
     if (!isLiveUpdating || !token || !dataTable.current || !chart.current) return;
     
-    try {
-      const latestPrice = await getLatestPrice(token);
-      
-      if (!latestPrice) return;
-      
-      // Format for the data table
-      const formattedPrice = {
-        x: latestPrice.timestamp,
-        open: latestPrice.open || latestPrice.price,
-        high: latestPrice.high || latestPrice.price,
-        low: latestPrice.low || latestPrice.price,
-        close: latestPrice.close || latestPrice.price,
-        volume: latestPrice.volume || 0
-      };
-      
-      // Get the last existing candle
-      const lastCandle = chartData.current[chartData.current.length - 1];
-      
-      // Check if the new price belongs to the current candle or is a new one
-      if (lastCandle && 
-          new Date(lastCandle.x).getTime() + granularity * 1000 > new Date(formattedPrice.x).getTime()) {
-        // Update the existing candle
-        lastCandle.close = formattedPrice.close;
-        lastCandle.high = Math.max(lastCandle.high, formattedPrice.high);
-        lastCandle.low = Math.min(lastCandle.low, formattedPrice.low);
-        lastCandle.volume = (lastCandle.volume || 0) + (formattedPrice.volume || 0);
-        
-        // Replace the last candle with the updated one
-        dataTable.current.remove(lastCandle.x);
-        dataTable.current.addData([lastCandle]);
-      } else {
-        // Add as a new candle
-        dataTable.current.addData([formattedPrice]);
-        chartData.current.push(formattedPrice);
-      }
-      
-      // Update the chart title to indicate live status
-      chart.current.title(`${token} Price Chart (Live)`);
-    } catch (error) {
-      console.error('Error updating latest price:', error);
-    }
-  }, [token, granularity, isLiveUpdating]);
+    // Set the chart title to indicate live status
+    chart.current.title(`${token} Price Chart (Live)`);
+  }, [token, isLiveUpdating]);
 
   // Set up the initial data load
   useEffect(() => {
@@ -443,34 +698,22 @@ const CandlestickChart = ({ token }) => {
     };
   }, [token, startDate, endDate, granularity]);
 
-  // Set up the live update interval
+  // Handle live updates toggle
   useEffect(() => {
     if (!isMounted.current) return;
     
     if (isLiveUpdating && token) {
-      // Clear any existing interval
-      if (updateInterval.current) {
-        clearInterval(updateInterval.current);
-        updateInterval.current = null;
+      // Initialize the chart for live updates
+      initializeChart();
+      
+      // Connect to WebSocket if not already connected
+      if (!webSocketService.socket || webSocketService.socket.readyState !== WebSocket.OPEN) {
+        webSocketService.connect(token).catch(error => {
+          console.error('Error connecting to WebSocket:', error);
+          setError('Failed to connect to live price feed');
+        });
       }
-      
-      // Create a new interval
-      updateInterval.current = setInterval(() => {
-        if (isMounted.current) {
-          updateLatestPrice().catch(error => {
-            console.error('Error in live update:', error);
-          });
-        }
-      }, UPDATE_FREQUENCY);
-      
-      // Start with an immediate update
-      updateLatestPrice().catch(error => {
-        console.error('Error in initial live update:', error);
-      });
-    } else if (updateInterval.current) {
-      clearInterval(updateInterval.current);
-      updateInterval.current = null;
-      
+    } else {
       // Update the chart title to remove live indication
       if (chart.current) {
         try {
@@ -481,13 +724,12 @@ const CandlestickChart = ({ token }) => {
       }
     }
     
+    // Cleanup function
     return () => {
-      if (updateInterval.current) {
-        clearInterval(updateInterval.current);
-        updateInterval.current = null;
-      }
+      // We don't disconnect the WebSocket here as it might be used by other components
+      // The WebSocketService will handle reconnection if needed
     };
-  }, [isLiveUpdating, token, updateLatestPrice]);
+  }, [isLiveUpdating, token, initializeChart]);
 
   const handleStartDateChange = (event) => {
     setStartDate(new Date(event.target.value));
@@ -618,7 +860,24 @@ const CandlestickChart = ({ token }) => {
             <h3 className="text-lg font-semibold">{token} Price: ${latestPrice.toFixed(2)}</h3>
           </div>
         )}
-        <div ref={chartContainer} className="w-full" style={{ minHeight: '600px' }}></div>
+        <div 
+          ref={chartContainer} 
+          className="w-full bg-gray-100 border border-gray-300 rounded p-2" 
+          style={{ 
+            minHeight: '600px',
+            height: '600px',
+            position: 'relative'
+          }}
+        >
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-gray-500">Loading chart data...</div>
+              <div className="mt-2 text-sm text-gray-400">
+                {dataTable.current ? 'Rendering chart...' : 'Initializing data...'}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

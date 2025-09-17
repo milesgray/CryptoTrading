@@ -1,1 +1,0 @@
-poetry run fastapi dev cryptotrading/rollbit/prices/app.py

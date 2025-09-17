@@ -1,3 +1,6 @@
+import torch
+import torch.nn as nn
+
 
 class StateSpaceLayer(nn.Module):
     """Mamba-inspired selective state space layer"""

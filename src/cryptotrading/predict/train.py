@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
@@ -36,74 +35,6 @@ class TimeSeriesDataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
 
-
-
-
-class WAVESTATE(nn.Module):
-    """WAVElet-enhanced State Space Transformer with Adaptive Temporal Encoding
-    
-    An advanced time series prediction model that combines wavelet transforms,
-    state space models, adaptive kernels, and diffusion principles."""
-    def __init__(self, input_dim, hidden_dim=128, output_dim=1, seq_len=20, num_layers=3):
-        super(WAVESTATE, self).__init__()
-        self.input_proj = nn.Linear(input_dim, hidden_dim)
-        self.positional_encoding = nn.Parameter(torch.randn(1, seq_len, hidden_dim) * 0.02)
-        
-        # Feature extraction layers
-        self.wavelet_layer = WaveletTransformLayer(hidden_dim, hidden_dim)
-        
-        # Main processing blocks
-        self.layers = nn.ModuleList()
-        for _ in range(num_layers):
-            layer = nn.ModuleDict({
-                'attention': SelfAttention(hidden_dim, num_heads=4),
-                'adaptive_kernel': AdaptiveKernelLayer(hidden_dim, hidden_dim),
-                'state_space': StateSpaceLayer(hidden_dim),
-                'diffusion': DiffusionBlock(hidden_dim)
-            })
-            self.layers.append(layer)
-        
-        # Output projection
-        self.output_proj = nn.Linear(hidden_dim, output_dim)
-        
-        # Confidence predictor (uncertainty quantification)
-        self.confidence_proj = nn.Linear(hidden_dim, output_dim)
-        
-    def forward(self, x, noise_level=None):
-        # Default noise level
-        if noise_level is None:
-            noise_level = torch.zeros(x.shape[0], device=x.device)
-        
-        # Initial projection and add positional encoding
-        x = self.input_proj(x)
-        seq_len = min(x.shape[1], self.positional_encoding.shape[1])
-        x[:, :seq_len] = x[:, :seq_len] + self.positional_encoding[:, :seq_len]
-        
-        # Multi-scale feature extraction
-        x = self.wavelet_layer(x)
-        
-        # Process through main layers
-        for layer in self.layers:
-            # Apply attention
-            attn_out = layer['attention'](x)
-            x = x + attn_out
-            
-            # Apply adaptive kernel
-            kernel_out = layer['adaptive_kernel'](x)
-            x = x + kernel_out
-            
-            # Apply state space transformation
-            ss_out = layer['state_space'](x)
-            x = x + ss_out
-            
-            # Apply diffusion block
-            x = layer['diffusion'](x, noise_level)
-        
-        # Project to output dimension
-        prediction = self.output_proj(x)
-        confidence = torch.sigmoid(self.confidence_proj(x))
-        
-        return prediction, confidence
 
 def prepare_time_series_data(df, window_size=20, forecast_horizon=1):
     """
@@ -165,12 +96,12 @@ def prepare_time_series_data(df, window_size=20, forecast_horizon=1):
     
     return X_with_features, y, scaler
 
-def train_model(df, epochs=30, batch_size=64, learning_rate=0.001):
+def train_model(model, df, epochs=30, batch_size=64, learning_rate=0.001):
     """
     Train the time series diffusion model
     
     Args:
-        df: DataFrame with 'datetime' and 'price' columns
+        model: The model to train
         epochs: Number of training epochs
         batch_size: Training batch size
         learning_rate: Learning rate
@@ -197,11 +128,6 @@ def train_model(df, epochs=30, batch_size=64, learning_rate=0.001):
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
     test_loader = DataLoader(test_dataset, batch_size=batch_size)
-    
-    # Initialize model
-    input_dim = X.shape[2]  # Number of features
-    window_size = X.shape[1]  # Sequence length
-    model = WAVESTATE(input_dim=input_dim, hidden_dim=128, seq_len=window_size)
     
     # Initialize optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
@@ -414,6 +340,13 @@ def visualize_predictions(df, test_predictions, test_targets, window_size=20):
     plt.tight_layout()
     return fig
 
+def setup_model(config):    
+    input_dim = config['input_dim']
+    window_size = config['window_size']
+    if config["model"] == "WAVESTATE":
+        model = WAVESTATE(input_dim=input_dim, hidden_dim=128, seq_len=window_size)
+    return model
+
 # Example usage
 if __name__ == "__main__":
     # Sample data for demonstration
@@ -423,9 +356,15 @@ if __name__ == "__main__":
         'datetime': dates,
         'price': prices
     })
+
+    model = setup_model({
+        "input_dim": 1,
+        "window_size": 20,
+        "model": "WAVESTATE"
+    })
     
     # Train model
-    model, scaler, test_predictions, test_confidences, test_targets = train_model(df, epochs=20)
+    model, scaler, test_predictions, test_confidences, test_targets = train_model(model, df, epochs=20)
     
     # Predict next movement
     prediction, confidence = predict_next_movement(model, df, scaler)

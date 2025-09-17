@@ -21,124 +21,203 @@ class WebSocketService {
     };
   }
 
-  connect(token) {
+  async connect(token) {
     // If we already have a valid connection, don't reconnect
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected');
-      return;
+      console.log('[WebSocket] Already connected');
+      return true;
     }
 
     // If we're already trying to connect, don't start another connection
     if (this.isConnecting) {
-      console.log('WebSocket connection already in progress');
-      return;
+      console.log('[WebSocket] Connection already in progress');
+      return false;
     }
 
     // If we have a socket in closing state, wait for it to close
-    if (this.socket && (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.CLOSING)) {
-      console.log('WebSocket is in connecting/closing state, waiting...');
-      return;
+    if (this.socket) {
+      if (this.socket.readyState === WebSocket.CONNECTING) {
+        // If connecting, wait a bit and try again
+        if (this.socket && this.socket.readyState === WebSocket.CONNECTING) {
+          console.log('[WebSocket] Connection in progress, waiting...');
+          return new Promise((resolve) => {
+            const checkConnection = () => {
+              if (this.socket.readyState === WebSocket.OPEN) {
+                resolve();
+              } else if (this.socket.readyState === WebSocket.CONNECTING) {
+                setTimeout(checkConnection, 100);
+              } else {
+                // Connection failed or closed, try again
+                this.socket = null;
+                this.connect(token).then(resolve).catch(console.error);
+              }
+            };
+            setTimeout(checkConnection, 100);
+          });
+        }
+      }
     }
 
     this.token = token;
     this.isConnecting = true;
     
-    // Clear any existing reconnection timeout to prevent multiple reconnection attempts
+    // Clear any existing reconnection timeout
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
 
-    // Determine WebSocket protocol and host
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const backendHost = process.env.NODE_ENV === 'development' 
-      ? 'localhost:8000' 
-      : window.location.host;
-    
-    const wsUrl = `${wsProtocol}//${backendHost}/ws/price/${token}`;
-    console.log(`[WebSocket] Connecting to ${wsUrl}`);
-    
-    try {
-      this.socket = new WebSocket(wsUrl);
-      
-      // Connection opened
-      this.socket.onopen = () => {
-        console.log('[WebSocket] Connected successfully');
-        this.reconnectAttempts = 0;
-        this.reconnectDelay = 1000;
-        this.isConnecting = false;
+    // Create a promise that resolves when the connection is established
+    return new Promise((resolve, reject) => {
+      try {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/price/${encodeURIComponent(token)}`;
         
-        // Start keep-alive ping
-        this.startKeepAlive();
-      };
-
-      // Listen for messages
-      this.socket.onmessage = (event) => {
-        try {
-          if (!event.data) {
-            console.warn('[WebSocket] Received empty message');
+        console.log(`[WebSocket] Connecting to ${wsUrl}`);
+        
+        // Create a new WebSocket connection
+        this.socket = new WebSocket(wsUrl);
+        
+        // Set a connection timeout
+        const connectionTimeout = setTimeout(() => {
+          if (this.socket && this.socket.readyState === WebSocket.CONNECTING) {
+            console.error('[WebSocket] Connection timeout');
+            this.socket.close(4000, 'Connection timeout');
+            reject(new Error('Connection timeout'));
+          }
+        }, 10000); // 10 second timeout
+        
+        // Set up event handlers
+        this.socket.onopen = () => {
+          clearTimeout(connectionTimeout);
+          console.log('[WebSocket] Connected');
+          this.isConnecting = false;
+          this.reconnectAttempts = 0;
+          this.startKeepAlive();
+          resolve();
+        };
+        
+        // Handle connection errors
+        this.socket.onerror = (error) => {
+          clearTimeout(connectionTimeout);
+          const errorMsg = `[WebSocket] Error: ${error.message || 'Unknown error'}`;
+          console.error(errorMsg);
+          this.isConnecting = false;
+          this.stopKeepAlive();
+          
+          // If we have a socket, close it
+          if (this.socket) {
+            try {
+              this.socket.close(1006, 'Connection error');
+            } catch (e) {
+              console.error('[WebSocket] Error closing socket:', e);
+            }
+          }
+          
+          reject(new Error(errorMsg));
+        };
+        
+        // Handle connection close
+        this.socket.onclose = (event) => {
+          clearTimeout(connectionTimeout);
+          console.log(`[WebSocket] Disconnected: ${event.code} ${event.reason || 'No reason provided'}`);
+          this.isConnecting = false;
+          
+          // Stop keep-alive ping
+          this.stopKeepAlive();
+          
+          // Clean up the current socket
+          if (this.socket) {
+            try {
+              this.socket.onopen = null;
+              this.socket.onclose = null;
+              this.socket.onerror = null;
+              this.socket.onmessage = null;
+              if (this.socket.readyState === WebSocket.OPEN) {
+                this.socket.close();
+              }
+            } catch (e) {
+              console.error('[WebSocket] Error cleaning up socket:', e);
+            } finally {
+              this.socket = null;
+            }
+          }
+          
+          // Don't attempt to reconnect if we explicitly closed the connection
+          if (event.code === 1000 || event.code === 1005) {
+            console.log('[WebSocket] Connection closed normally');
             return;
           }
           
-          const data = JSON.parse(event.data);
-          //console.debug('[WebSocket] Message received:', data.type || 'unknown');
-          
-          if (data.type === 'price_update' && this.callbacks.price.length > 0) {
-            this.callbacks.price.forEach(callback => {
-              try {
-                callback(data.data);
-              } catch (err) {
-                console.error('[WebSocket] Error in price update callback:', err);
+          // Only attempt to reconnect if we have a valid token and we're not already reconnecting
+          if (this.token && !this.reconnectTimeout) {
+            console.log('[WebSocket] Will attempt to reconnect...');
+            // Use a small delay before reconnecting
+            this.reconnectTimeout = setTimeout(() => {
+              this.reconnectTimeout = null;
+              if (this.token && (!this.socket || this.socket.readyState === WebSocket.CLOSED)) {
+                this.connect(this.token).catch(err => {
+                  console.error('[WebSocket] Reconnection attempt failed:', err);
+                  // If reconnect fails, schedule another attempt
+                  this.attemptReconnect();
+                });
               }
-            });
-          } else if (data.type === 'order_book_update' && this.callbacks.orderBook.length > 0) {
-            this.callbacks.orderBook.forEach(callback => {
-              try {
-                callback(data.data);
-              } catch (err) {
-                console.error('[WebSocket] Error in order book update callback:', err);
-              }
-            });
-          } else if (data.type === 'pong') {
-            // Handle pong message (keep-alive response)
-            this.lastPong = Date.now();
-            return;
+            }, 1000);
           }
-        } catch (error) {
-          console.error('[WebSocket] Error processing message:', error, event.data);
-        }
-      };
-
-      // Connection closed
-      this.socket.onclose = (event) => {
-        console.log(`[WebSocket] Disconnected: ${event.code} ${event.reason || 'No reason provided'}`);
-        this.isConnecting = false;
-        this.socket = null;
+        };
         
-        // Stop keep-alive ping
-        this.stopKeepAlive();
-        
-        // Don't attempt to reconnect if we explicitly closed the connection
-        if (event.code === 1000) {
-          console.log('[WebSocket] Connection closed normally');
-          return;
-        }
-        
-        // Attempt to reconnect with exponential backoff
+        // Set up message handler
+        this.socket.onmessage = (event) => {
+          try {
+            if (!event.data) {
+              console.warn('[WebSocket] Received empty message');
+              return;
+            }
+            
+            const data = JSON.parse(event.data);
+            console.log('[WebSocket] Received message:', data);
+            
+            if (data.type === 'price_update' && this.callbacks.price.length > 0) {
+              // The backend sends price data directly in the message
+              const priceData = data.data || data;
+              console.log('[WebSocket] Processing price update:', priceData);
+              
+              this.callbacks.price.forEach(callback => {
+                try {
+                  // The callback expects a price value directly
+                  if (priceData.price !== undefined) {
+                    callback(priceData);
+                  } else if (priceData.close !== undefined) {
+                    // If we get a candlestick, use the close price
+                    callback({ price: priceData.close });
+                  }
+                } catch (err) {
+                  console.error('[WebSocket] Error in price update callback:', err);
+                }
+              });
+            } else if (data.type === 'order_book_update' && this.callbacks.orderBook.length > 0) {
+              this.callbacks.orderBook.forEach(callback => {
+                try {
+                  callback(data.data || data);
+                } catch (err) {
+                  console.error('[WebSocket] Error in order book update callback:', err);
+                }
+              });
+            } else if (data.type === 'pong') {
+              // Handle pong message (keep-alive response)
+              this.lastPong = Date.now();
+              return;
+            }
+          } catch (error) {
+            console.error('[WebSocket] Error processing message:', error, event.data);
+          }
+        };
+      } catch (error) {
+        console.error('Error creating WebSocket:', error);
+        this.disconnect();
         this.attemptReconnect();
-      };
-
-      // Handle errors
-      this.socket.onerror = (error) => {
-        console.error('[WebSocket] Error:', error);
-        this.isConnecting = false;
-        this.attemptReconnect();
-      };
-    } catch (error) {
-      console.error('Error creating WebSocket:', error);
-      this.disconnect();
-      this.attemptReconnect();
-    }
+      }
+    });
   }
 
   disconnect() {
@@ -204,28 +283,34 @@ class WebSocketService {
     }
   }
 
-  attemptReconnect() {
+  async attemptReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('[WebSocket] Max reconnection attempts reached');
+      // Reset attempts after a while to allow recovery
+      setTimeout(() => {
+        this.reconnectAttempts = 0;
+      }, 60000); // Reset after 1 minute
       return;
     }
-
-    this.reconnectAttempts++;
     
     // Exponential backoff with jitter
-    const baseDelay = Math.min(
-      this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1),
+    const delay = Math.min(
+      this.reconnectDelay * Math.pow(2, this.reconnectAttempts) + 
+      Math.random() * 1000, // Add jitter
       this.maxReconnectDelay
     );
-    const jitter = Math.random() * 1000; // Add up to 1s of jitter
-    const delay = Math.min(baseDelay + jitter, this.maxReconnectDelay);
     
-    console.log(`[WebSocket] Attempting to reconnect in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+    console.log(`[WebSocket] Reconnecting in ${Math.round(delay/1000)} seconds...`);
     
     this.reconnectTimeout = setTimeout(() => {
       if (this.token) {
-        console.log(`[WebSocket] Reconnecting (attempt ${this.reconnectAttempts})...`);
-        this.connect(this.token);
+        console.log(`[WebSocket] Reconnection attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts}`);
+        this.reconnectAttempts++;
+        this.connect(this.token).catch(error => {
+          console.error('[WebSocket] Reconnection failed:', error);
+          // Schedule next reconnection attempt
+          this.attemptReconnect();
+        });
       }
     }, delay);
   }
@@ -271,7 +356,7 @@ export const getCandlestickData = async (token, start, end, granularity) => {
     console.log('Formatted dates:', { formattedStart, formattedEnd });
     
     console.log('Making API request to:', `/candlestick/${token}`, {
-      params: { start: formattedStart, end: formattedEnd, granularity }
+      params: { start: formattedStart, end: formattedEnd, granularity, include_book: true }
     });
     
     const response = await api.get(`/candlestick/${token}`, {
@@ -279,6 +364,7 @@ export const getCandlestickData = async (token, start, end, granularity) => {
         start: formattedStart,
         end: formattedEnd,
         granularity,
+        include_book: true
       },
     });
     

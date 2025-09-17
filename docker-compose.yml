@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+    serve:
+        build:
+            context: ./package
+            dockerfile: Dockerfile.serve
+        ports:
+            - "8000:8000"
+        
+    record:
+        build:
+            context: ./package
+            dockerfile: Dockerfile.record
+        ports:
+            - "8300:8300"
+        
+    frontend:
+        build:
+            context: ./frontend
+            dockerfile: Dockerfile
+        ports:
+            - "8080:8080"

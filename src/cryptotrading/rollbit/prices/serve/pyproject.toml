@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "cryptotrading"
+name = "cryptotrading-price-serve"
 version = "0.1.0"
-description = "Rollbit price formulation implementation that persists to mongodb and is ready to be hooked up to AI."
+description = "FastAPI web server for Rollbit price formulation"
 authors = ["Miles <miles@resatiate.com>"]
 readme = "README.md"
-packages = [{include = "cryptotrading"}]
+packages = []
 
 [tool.poetry.dependencies]
 python = "^3.12"
@@ -12,7 +12,6 @@ requests = "^2.32"
 pytz = "^2024"
 pymongo = "^4.11.2"
 pandas = "^2.2.3"
-ccxt = "^4.4.64"
 matplotlib = "^3.10.1"
 motor = "^3.7.0"
 asyncio = "^3.4.3"

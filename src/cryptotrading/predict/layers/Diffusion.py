@@ -1,3 +1,4 @@
+import torch.nn as nn
 
 class DiffusionBlock(nn.Module):
     """Diffusion-inspired block with noise level conditioning"""

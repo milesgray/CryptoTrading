@@ -1,3 +1,5 @@
+import torch
+import torch.nn as nn
 
 class WaveletTransformLayer(nn.Module):
     """Wavelet transform layer for multi-scale feature extraction"""

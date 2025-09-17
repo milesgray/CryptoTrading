@@ -36,4 +36,4 @@ RUN chmod +x ./record.sh && ls -la
 EXPOSE 8300
 
 # Run application
-CMD ["./record.sh"]
+CMD ["poetry", "run", "python", "cryptotrading/rollbit/prices/record.py", ">", "record_output.log"]
