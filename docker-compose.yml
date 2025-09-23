@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # TimescaleDB with pgvector
+  db:
+    image: timescale/timescaledb:latest-pg14
+    container_name: crypto_timescaledb
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: crypto_trading
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # Enable pgvector extension
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb,vector"]
+
+  # PGAdmin for database management (optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: crypto_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+
+  # Application services
+  serve:
+    build:
+      context: ./package
+      dockerfile: Dockerfile.serve
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_URI=postgresql://postgres:postgres@db:5432/crypto_trading
+    depends_on:
+      db:
+        condition: service_healthy
+    
+  record:
+    build:
+      context: ./package
+      dockerfile: Dockerfile.record
+    ports:
+      - "8300:8300"
+    environment:
+      - POSTGRES_URI=postgresql://postgres:postgres@db:5432/crypto_trading
+    depends_on:
+      db:
+        condition: service_healthy
+    
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+
+volumes:
+  timescaledb_data:

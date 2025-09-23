@@ -1,0 +1,71 @@
+# Configuration for Crypto Sentiment Analyzer Service
+# This file can be mounted as a volume to override default settings
+
+# Tokens to analyze (can be overridden by ANALYSIS_TOKENS env var)
+tokens:
+  - BTC
+  - ETH
+  - ADA
+  - SOL
+  - DOGE
+  - MATIC
+  - DOT
+  - LINK
+
+# Analysis settings
+analysis_interval_minutes: 30    # How often to run analysis
+analysis_duration_minutes: 60    # How long each analysis run lasts
+max_following_users: 100         # Max users to analyze from following list
+
+# MongoDB configuration
+mongodb:
+  uri: mongodb://mongo:27017/
+  database: crypto_sentiment
+  collections:
+    tweets: tweet_sentiment
+    aggregated: sentiment_summary
+
+# Service configuration
+service:
+  health_port: 8080
+  log_level: INFO
+  max_retries: 3
+  retry_delay_seconds: 60
+  
+  # Advanced settings
+  batch_size: 10               # Process tweets in batches
+  rate_limit_delay: 1          # Seconds between API calls
+  cleanup_old_data_days: 30    # Auto-cleanup old data after X days
+
+# Analysis parameters
+sentiment_analysis:
+  confidence_threshold: 0.5     # Minimum confidence for sentiment
+  min_tweet_length: 10          # Minimum tweet length to analyze
+  exclude_retweets: true        # Skip retweets in analysis
+  exclude_replies: true         # Skip replies in analysis
+  
+  # Keyword weights for price signals
+  keyword_weights:
+    high_impact: 1.5            # moon, crash, breakout, etc.
+    medium_impact: 1.0          # up, down, buy, sell, etc.
+    low_impact: 0.5             # good, bad, etc.
+
+# User influence scoring
+user_scoring:
+  follower_weight: 0.3          # Weight for follower count
+  verification_boost: 1.2       # Multiplier for verified users
+  engagement_weight: 0.4        # Weight for likes/retweets
+  recency_decay: 0.9            # Decay factor for older tweets
+
+# Logging configuration
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  max_file_size_mb: 100
+  backup_count: 5
+  
+  # Log different components at different levels
+  loggers:
+    tweepy: WARNING
+    urllib3: WARNING
+    pymongo: WARNING

@@ -1,0 +1,4 @@
+#docker ignore file
+node_modules
+dist
+yarn.lock
