@@ -18,6 +18,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger('price_system')
 
+LOG_LEVELS = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+    "critical": logging.CRITICAL
+}
+
 REFRESH_INTERVAL_MS = int(os.getenv("REFRESH_INTERVAL_MS", 500))
 
 class ServiceStatus:
@@ -29,14 +37,23 @@ class ServiceStatus:
         self.logs: List[Dict[str, Any]] = []
         self.max_logs = 1000  # Keep last 1000 log entries
 
+    def _parse_level(self, level: str) -> int:
+        level = level.lower() if isinstance(level, str) else level
+        level = LOG_LEVELS[level] if level in LOG_LEVELS else level
+        level = level if isinstance(level, int) else logging.INFO
+        return level
+
     def add_log(self, level: str, message: str):
         """Add a log entry to the service status"""
+        level = self._parse_level(level)
         logger.log(level, message)
         self.logs.append({
             'timestamp': datetime.now(dt.timezone.utc).isoformat(),
             'level': level,
             'message': message
         })
+        if level >= logging.WARNING:
+            self.last_error = message
         # Keep only the last max_logs entries
         if len(self.logs) > self.max_logs:
             self.logs = self.logs[-self.max_logs:]
@@ -71,9 +88,7 @@ class PriceSystemService:
                     try:
                         await self.price_system.run()
                     except Exception as e:
-                        error_msg = f"Unexpected error: {str(e)}"
-                        self.status.last_error = error_msg
-                        self.status.add_log('ERROR', error_msg)
+                        self.status.add_log('ERROR', str(e))
                     finally:
                         elapsed = (time.time() - start_time) * 1000
                         sleep_time = max(0, REFRESH_INTERVAL_MS - elapsed) / 1000
@@ -82,11 +97,11 @@ class PriceSystemService:
                 else:
                     await asyncio.sleep(1)  # Sleep when paused
         except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
+            self.status.add_log('ERROR', str(e))
             return 1
         finally:
             await self.price_system.shutdown()
-            logger.info("Price system shutdown complete")
+            self.status.add_log('INFO', 'Price system shutdown complete')
             
         return 0
 
@@ -127,8 +142,19 @@ class PriceSystemService:
             "uptime_seconds": time.time() - (self.status.start_time or 0),
             "last_error": self.status.last_error,
             "logs_count": len(self.status.logs),
-            "last_index_price": self.status.last_index_price,
-            "last_price_time": self.status.last_price_time
+        }
+
+    def get_price_system_status(self):
+        """Get current price system status"""
+        if not self.price_system.running:
+            return {
+                "running": False,
+                "index_prices": {},
+            }
+        return {
+            "running": self.price_system.running,
+            "index_prices": {symbol:{"price": price, "time": time} for ((symbol, price), (symbol, time)) in 
+            zip(self.price_system.last_index_prices.items(), self.price_system.last_price_times.items())},
         }
 
     def get_logs(self, limit: int = 100, level: Optional[str] = None):

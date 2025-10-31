@@ -9,18 +9,16 @@ import datetime
 import ccxt.async_support as ccxt
 import pandas as pd
 import numpy as np
-from dotenv import load_dotenv
-load_dotenv()
 
 import cryptotrading.rollbit.prices.formula as formula
 from cryptotrading.rollbit.prices.book import OrderBookManager
 from cryptotrading.data.price import PriceMongoAdapter
 from cryptotrading.config import (
-    SPOT_EXCHANGES,
-    DERIVATIVE_EXCHANGES,
     MIN_VALID_FEEDS,
-    SYMBOLS,
 )
+
+from dotenv import load_dotenv
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -28,8 +26,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('price_system')
-
-
 
 class PriceSystem:
     def __init__(self, symbols: list[str]):
@@ -107,9 +103,7 @@ class PriceSystem:
         except Exception as e:
             logger.error(f"Error processing symbol {symbol}: {str(e)}")
 
-    async def run(
-        self
-    ):
+    async def run(self) -> None:
         """Main logic for the price system, gets a single price point"""
         if self.running:               
             try:                                
