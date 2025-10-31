@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from cryptotrading.rollbit.prices.price import PriceSystem
+from cryptotrading.config import SYMBOLS
 
 # Configure logging
 logging.basicConfig(
@@ -68,7 +69,7 @@ class PriceSystemService:
         return cls._instance
 
     def _initialize(self):
-        self.price_system = PriceSystem()
+        self.price_system = PriceSystem(SYMBOLS)
         self.status = ServiceStatus()
         self.status.running = True
         self.status.start_time = time.time()
@@ -144,17 +145,23 @@ class PriceSystemService:
             "logs_count": len(self.status.logs),
         }
 
-    def get_price_system_status(self):
+    def get_price_system_status(self, symbol: Optional[str] = None):
         """Get current price system status"""
         if not self.price_system.running:
             return {
                 "running": False,
                 "index_prices": {},
             }
+        index_prices = {symbol: {"price": price, "time": time} for ((symbol, price), (symbol, time)) in 
+                zip(self.price_system.last_index_prices.items(), self.price_system.last_price_times.items())}
+        if symbol:
+            return {
+                "running": self.price_system.running,
+                "index_prices": index_prices.get(symbol, {}),
+            }
         return {
             "running": self.price_system.running,
-            "index_prices": {symbol:{"price": price, "time": time} for ((symbol, price), (symbol, time)) in 
-            zip(self.price_system.last_index_prices.items(), self.price_system.last_price_times.items())},
+            "index_prices": index_prices,
         }
 
     def get_logs(self, limit: int = 100, level: Optional[str] = None):
@@ -191,6 +198,10 @@ class StatusResponse(BaseModel):
     last_error: Optional[str]
     logs_count: int
 
+class PriceSystemStatusResponse(BaseModel):
+    running: bool
+    index_prices: Dict[str, Dict[str, Any]]
+
 class LogEntry(BaseModel):
     timestamp: str
     level: str
@@ -201,6 +212,11 @@ class LogEntry(BaseModel):
 async def get_status():
     """Get current service status"""
     return service.get_status()
+
+@app.get("/price_system_status", response_model=PriceSystemStatusResponse)
+async def get_price_system_status(symbol: Optional[str] = None):
+    """Get current price system status"""
+    return service.get_price_system_status(symbol)
 
 @app.get("/logs", response_model=List[LogEntry])
 async def get_logs(limit: int = 100, level: Optional[str] = None):

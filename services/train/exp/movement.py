@@ -2,6 +2,7 @@ from data_provider.data_factory import data_provider
 from .base import BaseExp
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
 from utils.metrics import metric
+from cryptotrading.predict.models import get_model
 import torch
 import torch.nn as nn
 from torch import optim
@@ -18,12 +19,7 @@ class MovementExp(BaseExp):
     def __init__(self, args):
         super().__init__(args)
 
-    def _build_model(self):
-        model = self.model_dict[self.args.model].Model(self.args).float()
 
-        if self.args.use_multi_gpu and self.args.use_gpu:
-            model = nn.DataParallel(model, device_ids=self.args.device_ids)
-        return model
 
     def _get_data(self, flag):
         data_set, data_loader = data_provider(self.args, flag)
@@ -34,7 +30,7 @@ class MovementExp(BaseExp):
         return model_optim
 
     def _select_criterion(self):
-        criterion = nn.MSELoss()
+        criterion = nn.BCEWithLogitsLoss()
         return criterion
 
     def vali(self, vali_data, vali_loader, criterion):
@@ -60,7 +56,7 @@ class MovementExp(BaseExp):
 
                 loss = criterion(pred, true)
 
-                total_loss.append(loss)
+                total_loss = loss
         total_loss = np.average(total_loss)
         self.model.train()
         return total_loss
@@ -90,8 +86,7 @@ class MovementExp(BaseExp):
         for epoch in ebar:
             iter_count = 0
             train_loss = []
-            IB_loss = []
-            PS_loss = []
+            
 
             self.model.train()
             epoch_time = time.time()
@@ -103,36 +98,49 @@ class MovementExp(BaseExp):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
                 batch_x_mark = batch_x_mark.float().to(self.device)
-
+                total_loss = None
+                train_correct = 0
+                train_total = 0
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
                         outputs, confidence = self.model(batch_x, batch_x_mark)
                         outputs = outputs[:, -1]
+
                         loss = criterion(outputs, batch_y)
-                        total_loss.append(loss.item())
+                        predicted_classes = (torch.sigmoid(outputs) > 0.5).float()
+                        correct = torch.eq(predicted_classes, batch_y)
+                        correct_confidence = confidence[correct]
+                        incorrect_confidence = confidence[~correct].
+                        train_correct += correct.float().sum().item()
+                        train_total += batch_y.size(0)
+                        total_loss = loss
                         train_loss.append(loss.item())
                         metrics["loss"] = loss.item()
                         metrics["loss_avg"] = sum(train_loss) / len(train_loss)
+                        metrics["acc"] = train_correct / train_total
+                        metrics["confidence"] = confidence.mean().item()
+                        metrics["correct_confidence"] = correct_confidence.mean().item()
+                        metrics["incorrect_confidence"] = incorrect_confidence.mean().item()
                 else:
                     outputs, confidence = self.model(batch_x, batch_x_mark)
                     outputs = outputs[:, -1]
+
                     loss = criterion(outputs, batch_y)
-                    total_loss.append(loss.item())
+                    predicted_classes = (torch.sigmoid(outputs) > 0.5).float()
+                    correct = torch.eq(predicted_classes, batch_y)
+                    correct_confidence = confidence[correct]
+                    incorrect_confidence = confidence[~correct].
+                    train_correct += correct.float().sum().item()
+                    train_total += batch_y.size(0)
+                    total_loss = loss
                     train_loss.append(loss.item())
                     metrics["loss"] = loss.item()
                     metrics["loss_avg"] = sum(train_loss) / len(train_loss)
-                        
-                    if self.args.ps_loss_mode in ['mean', 'sum', 'last']:
-                        PS_loss.append(loss_ps.item())
-                        metrics["loss_PS"] = loss_ps.item()
-                        metrics["loss_PS_avg"] = sum(PS_loss) / len(PS_loss)
-                    if self.args.ib_loss_enabled:
-                        IB_loss.append(loss_IB.item()) 
-                        metrics["loss_IB"] = loss_IB.item()
-                        metrics["loss_IB_avg"] = sum(IB_loss) / len(IB_loss)
-                    
-                    metrics["total_loss"] = total_loss.item()
+                    metrics["acc"] = train_correct / train_total
+                    metrics["confidence"] = confidence.mean().item()
+                    metrics["correct_confidence"] = correct_confidence.mean().item()
+                    metrics["incorrect_confidence"] = incorrect_confidence.mean().item()
 
                 if use_print and (i + 1) % 100 == 0:
                     speed = (time.time() - time_now) / iter_count
@@ -140,11 +148,7 @@ class MovementExp(BaseExp):
                     iter_count = 0
                     time_now = time.time()
                     
-                    msg = f"\titers: {i + 1}, epoch: {epoch + 1} | total loss: {total_loss.item()} | t loss: {metrics['loss_avg']}"
-                    if self.args.ib_loss_enabled:
-                        msg = f"{msg} | ib loss: {metrics['loss_IB_avg']}"
-                    if self.args.ps_loss_mode in ['mean', 'sum', 'last']:
-                        msg = f"{msg} | ps loss: {metrics['loss_PS_avg']}"
+                    msg = f"\titers: {i + 1}, epoch: {epoch + 1} | loss: {metrics['loss_avg']}"
                     msg = f'{msg}\n\t\tspeed: {speed:.4f}s/iter; left time: {left_time:.4f}s'
                     print(msg)
 
