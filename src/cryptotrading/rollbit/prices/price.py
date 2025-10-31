@@ -32,9 +32,9 @@ logger = logging.getLogger('price_system')
 
 
 class PriceSystem:
-    def __init__(self):
+    def __init__(self, symbols: list[str]):
         self.data = PriceMongoAdapter()
-        self.book = OrderBookManager(SPOT_EXCHANGES + DERIVATIVE_EXCHANGES)
+        self.books = {symbol: OrderBookManager(symbol) for symbol in symbols}
         self.running = False
         self.last_index_prices = {}
         self.last_price_times = {}
@@ -46,7 +46,7 @@ class PriceSystem:
         # Initialize MongoDB connection
         await self.data.initialize()
         # Initialize exchange connections
-        await self.book.initialize()
+        await asyncio.gather(*[book.initialize() for book in self.books.values()])
         logger.info("Price system initialization complete")
         self.running = True
 
@@ -54,8 +54,7 @@ class PriceSystem:
         """Close connections and perform cleanup"""
         logger.info("Shutting down price system...")
         self.running = False
-        
-        await self.book.shutdown()
+        await asyncio.gather(*[book.shutdown() for book in self.books.values()])
 
         # Close MongoDB connection
         await self.data.shutdown()
@@ -70,7 +69,7 @@ class PriceSystem:
         """Process a single trading symbol"""
         try:
             # Fetch order books from all exchanges
-            valid_books = await self.book.fetch(symbol)
+            valid_books = await self.books[symbol].fetch()
             # Check if we have enough valid feeds
             if len(valid_books) < MIN_VALID_FEEDS:
                 logger.warning(f"Not enough valid price feeds for {symbol}: {len(valid_books)}/{MIN_VALID_FEEDS}")
@@ -86,7 +85,7 @@ class PriceSystem:
             index_price = calc_results["price"]
             if verbose: logger.info(f"Got index price for {symbol}: {index_price}")
 
-            condensed_book = await self.book.update(symbol, calc_results["book"])
+            condensed_book = await self.books[symbol].update(calc_results["book"])
 
             if index_price is not None:
                 # Store the calculated price
@@ -109,14 +108,13 @@ class PriceSystem:
             logger.error(f"Error processing symbol {symbol}: {str(e)}")
 
     async def run(
-        self, 
-        symbols: list[str] = SYMBOLS
+        self
     ):
         """Main logic for the price system, gets a single price point"""
-        if self.running:                               
+        if self.running:               
             try:                                
                 # Process each symbol in parallel
-                tasks = [self.process_symbol(symbol) for symbol in symbols]
+                tasks = [self.process_symbol(symbol) for symbol in self.books.keys()]
                 await asyncio.gather(*tasks, return_exceptions=True)            
             except asyncio.exceptions.CancelledError:
                 logger.info("Cancelled by user")

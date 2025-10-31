@@ -3,10 +3,10 @@ import asyncio
 import logging
 import signal
 import time
+import datetime as dt
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from cryptotrading.rollbit.prices.price import PriceSystem
@@ -33,7 +33,7 @@ class ServiceStatus:
         """Add a log entry to the service status"""
         logger.log(level, message)
         self.logs.append({
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(dt.timezone.utc).isoformat(),
             'level': level,
             'message': message
         })

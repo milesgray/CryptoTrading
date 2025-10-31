@@ -23,16 +23,13 @@ COPY README.md ./
 # Install dependencies after copying all necessary files
 ARG INSTALL_DEV=false
 RUN if [ "$INSTALL_DEV" = "true" ] ; then \
-        poetry install ; \
+        poetry install --no-root ; \
     else \
-        poetry install --only main ; \
+        poetry install --no-root --only main ; \
     fi
 
-# Make script executable and list files for debugging
-RUN chmod +x ./record.sh && ls -la
-
 # Expose port
-EXPOSE 8000
+EXPOSE 8033
 
 # Run application
 CMD ["poetry", "run", "fastapi", "dev", "app.py"]

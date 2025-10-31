@@ -466,37 +466,35 @@ class ETSformer(nn.Module):
     ETSformer
     """
 
-    def __init__(self, enc_in, c_out, seq_len, label_len, out_len,
-                 d_model=512, n_heads=8, e_layers=3, d_layers=2, d_ff=512,
-                 dropout=0.0, embed='fixed', freq='Sec', activation='gelu', top_k=5):
+    def __init__(self, configs):
         super(ETSformer, self).__init__()
-        self.seq_len = seq_len
-        self.label_len = label_len
-        self.pred_len = out_len
+        self.seq_len = configs.seq_len
+        self.label_len = configs.label_len
+        self.pred_len = configs.pred_len
 
-        assert e_layers == d_layers, "Encoder and decoder layers must be equal"
+        assert configs.e_layers == configs.d_layers, "Encoder and decoder layers must be equal"
 
         # Embedding
-        self.enc_embedding = DataEmbedding(enc_in, d_model, embed, freq, dropout)
+        self.enc_embedding = DataEmbedding(configs.enc_in, configs.d_model, configs.embed, configs.freq, configs.dropout)
 
         # Encoder
         self.encoder = ETSEncoder(
             [
                 ETSEncoderLayer(
-                    d_model, n_heads, enc_in, seq_len, self.pred_len, top_k,
-                    dim_feedforward=d_ff,
-                    dropout=dropout,
-                    activation=activation,
-                ) for _ in range(e_layers)
+                    configs.d_model, configs.n_heads, configs.enc_in, configs.seq_len, self.pred_len, configs.top_k,
+                    dim_feedforward=configs.d_ff,
+                    dropout=configs.dropout,
+                    activation=configs.activation,
+                ) for _ in range(configs.e_layers)
             ]
         )
         # Decoder
         self.decoder = ETSDecoder(
             [
                 ETSDecoderLayer(
-                    d_model, n_heads, c_out, self.pred_len,
-                    dropout=dropout,
-                ) for _ in range(d_layers)
+                    configs.d_model, configs.n_heads, configs.c_out, configs.pred_len,
+                    dropout=configs.dropout,
+                ) for _ in range(configs.d_layers)
             ],
         )
 

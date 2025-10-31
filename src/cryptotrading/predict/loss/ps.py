@@ -2,16 +2,17 @@ import torch
 from torch import nn
 
 class PSLoss(nn.Module):
-    def __init__(self, model, patch_len_threshold: int = 128):
+    def __init__(self, predict_layer, patch_len_threshold: int = 128):
         """
         Initialize the PSLoss class.
 
         Args:
-            model (nn.Module): The model to be used for gradient-based dynamic weighting.
+            predict_layer (nn.Module): The predict layer to be used for gradient-based dynamic weighting.
             patch_len_threshold (int, optional): The maximum patch length. Defaults to 128.
         """
-        super(PSLoss, self).__init__()
-        self.model = model
+        super().__init__()
+        # model.predict_layers[-1] - last prediction layer
+        self.predict_layer = predict_layer
         self.patch_len_threshold = patch_len_threshold
         self.kl_loss = nn.KLDivLoss(reduction='none')
 
@@ -149,9 +150,9 @@ class PSLoss(nn.Module):
         var_sim = (2 * true_std * pred_std + 1e-5) / (true_var + pred_var + 1e-5)
    
         # Gradiant based dynamic weighting
-        corr_gradient = torch.autograd.grad(corr_loss, self.model.predict_layers[-1].parameters(), create_graph=True)[0]
-        var_gradient = torch.autograd.grad(var_loss, self.model.predict_layers[-1].parameters(), create_graph=True)[0]
-        mean_gradient = torch.autograd.grad(mean_loss, self.model.predict_layers[-1].parameters(), create_graph=True)[0]
+        corr_gradient = torch.autograd.grad(corr_loss, self.predict_layer.parameters(), create_graph=True)[0]
+        var_gradient = torch.autograd.grad(var_loss, self.predict_layer.parameters(), create_graph=True)[0]
+        mean_gradient = torch.autograd.grad(mean_loss, self.predict_layer.parameters(), create_graph=True)[0]
         gradiant_avg = (corr_gradient + var_gradient + mean_gradient) / 3.0
 
         aplha = gradiant_avg.norm().detach() / corr_gradient.norm().detach()

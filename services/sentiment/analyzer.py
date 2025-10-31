@@ -23,6 +23,7 @@ import re
 import time
 import json
 import logging
+import datetime as dt
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -36,6 +37,8 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
+
+
 
 # Load environment variables
 load_dotenv()
@@ -53,6 +56,22 @@ class SentimentScore:
 
 def to_date(date_str):
     return dt.datetime.strptime(date_str, '%a %b %d %H:%M:%S %z %Y')
+
+class TweetData:
+    tweet_id: str
+    user_id: int
+    username: str
+    text: str
+    timestamp: dt.datetime
+    token_symbol: str
+    sentiment: str
+    price_direction_signals: list
+    follower_count: int
+    verified: bool
+    retweet_count: int
+    like_count: int
+    reply_count: int
+    raw_data: dict
 
 class TwitterClient:
     def __init__(self):

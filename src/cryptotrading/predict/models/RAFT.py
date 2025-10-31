@@ -4,16 +4,16 @@ import torch.nn.functional as F
 
 from layers.Retrieval import RetrievalTool
 
-class Model(nn.Module):
+class RAFT(nn.Module):
     """
-    Paper link: https://arxiv.org/pdf/2205.13504.pdf
+    RAFT Paper link: https://arxiv.org/pdf/2205.13504.pdf
     """
 
     def __init__(self, configs, individual=False):
         """
         individual: Bool, whether shared model among different variates.
         """
-        super(Model, self).__init__()
+        super(RAFT, self).__init__()
         self.device = torch.device(f'cuda:{configs.gpu}')
         self.task_name = configs.task_name
         self.seq_len = configs.seq_len
@@ -77,7 +77,8 @@ class Model(nn.Module):
         index = index.to(self.device)
         
         bsz, seq_len, channels = x.shape
-        assert(seq_len == self.seq_len, channels == self.channels)
+        assert seq_len == self.seq_len
+        assert channels == self.channels
         
         x_offset = x[:, -1:, :].detach()
         x_norm = x - x_offset

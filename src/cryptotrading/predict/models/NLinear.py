@@ -3,12 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-class Model(nn.Module):
+class NLinear(nn.Module):
     """
     Normalization-Linear
     """
     def __init__(self, configs):
-        super(Model, self).__init__()
+        super(NLinear, self).__init__()
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
         

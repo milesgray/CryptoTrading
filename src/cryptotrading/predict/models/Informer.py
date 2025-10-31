@@ -8,12 +8,12 @@ from layers.Embed import DataEmbedding,DataEmbedding_wo_pos,DataEmbedding_wo_tem
 import numpy as np
 
 
-class Model(nn.Module):
+class Informer(nn.Module):
     """
     Informer with Propspare attention in O(LlogL) complexity
     """
     def __init__(self, configs):
-        super(Model, self).__init__()
+        super(Informer, self).__init__()
         self.pred_len = configs.pred_len
         self.output_attention = configs.output_attention
 

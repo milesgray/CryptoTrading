@@ -11,16 +11,14 @@ python = "^3.12"
 requests = "^2.32"
 pytz = "^2024"
 pymongo = "^4.11.2"
-pandas = "^2.2.3"
-matplotlib = "^3.10.1"
 motor = "^3.7.0"
 asyncio = "^3.4.3"
 six = "^1.17.0"
 numpy = "^2.2.3"
 fastapi = {extras = ["standard"], version = "^0.115.11"}
-python-dotenv = "^1.1.0"
 
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+package-mode = false

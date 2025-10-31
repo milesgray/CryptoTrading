@@ -1,7 +1,10 @@
+import logging
 import datetime as dt
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
-from fastapi import FastAPI
+
+from pymongo import DESCENDING
+from fastapi import FastAPI, HTTPException
 from cryptotrading.rollbit.prices.serve.models import (
     OrderBookSummaryData, PriceBucket, 
     PriceOutlier, 
@@ -11,6 +14,9 @@ from cryptotrading.rollbit.prices.serve.models import (
     TransformedOrderBookData
 )
 
+# Configure logging (optional, but good practice)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("fastapi_server")
 
 def process_order_book_data(book_data: Dict[str, Any]) -> OrderBookSummaryData:
     """Convert raw order book data into structured OrderBookSummaryData."""

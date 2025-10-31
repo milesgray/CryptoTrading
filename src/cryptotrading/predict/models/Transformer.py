@@ -7,12 +7,12 @@ from layers.Embed import DataEmbedding,DataEmbedding_wo_pos,DataEmbedding_wo_tem
 import numpy as np
 
 
-class Model(nn.Module):
+class Transformer(nn.Module):
     """
     Vanilla Transformer with O(L^2) complexity
     """
     def __init__(self, configs):
-        super(Model, self).__init__()
+        super(Transformer, self).__init__()
         self.pred_len = configs.pred_len
         self.output_attention = configs.output_attention
 

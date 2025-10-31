@@ -1,15 +1,16 @@
 
 import json
+import logging
+import datetime as dt
+from typing import List
+from datetime import datetime
+
+import pytz
 import asyncio
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pymongo import DESCENDING
-from typing import List
-from datetime import datetime
-import datetime as dt
-import logging
-import pytz
-from cryptotrading.data.mongo import get_db
+
+import cryptotrading.data.mongo as mongo
 from cryptotrading.config import PRICE_COLLECTION_NAME, TRANSFORMED_ORDER_BOOK_COLLECTION_NAME
 from .models import (
     PriceDataPoint,
@@ -22,6 +23,7 @@ from .models import (
 from .data import (
     process_order_book_data,
     get_latest_transformed_order_book_point,
+    get_transformed_order_book,
     get_latest_price,
     get_historic_price,
     get_candlestick_data    
@@ -71,7 +73,7 @@ async def add_cors_headers(request, call_next):
         response.headers["Access-Control-Allow-Headers"] = "*"
     return response
 
-app.db = get_db()
+app.db = mongo.get_db()
 app.price_collection = app.db[PRICE_COLLECTION_NAME]
 app.transformed_order_book_collection = app.db[TRANSFORMED_ORDER_BOOK_COLLECTION_NAME]
 app.use_stream_watch = False
