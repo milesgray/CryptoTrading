@@ -14,6 +14,8 @@ import cryptotrading.rollbit.prices.formula as formula
 from cryptotrading.rollbit.prices.book import OrderBookManager
 from cryptotrading.data.price import PriceMongoAdapter
 from cryptotrading.config import (
+    SPOT_EXCHANGES, 
+    FUTURES_EXCHANGES,
     MIN_VALID_FEEDS,
 )
 
@@ -30,7 +32,7 @@ logger = logging.getLogger('price_system')
 class PriceSystem:
     def __init__(self, symbols: list[str]):
         self.data = PriceMongoAdapter()
-        self.books = {symbol: OrderBookManager(symbol) for symbol in symbols}
+        self.books = {symbol: OrderBookManager(symbol, SPOT_EXCHANGES + FUTURES_EXCHANGES) for symbol in symbols}
         self.running = False
         self.last_index_prices = {}
         self.last_price_times = {}
