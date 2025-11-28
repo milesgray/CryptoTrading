@@ -1,1 +1,1 @@
-nohup poetry run python cryptotrading/rollbit/prices/record.py > record_output.log 2>&1 &
+nohup poetry run python ../services/serve/app.py > record_output.log 2>&1 &
