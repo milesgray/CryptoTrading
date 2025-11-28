@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "cryptotrading"
-version = "0.1.0"
+version = "0.1.1"
 description = "Crypto trading services"
 authors = ["Miles <miles@resatiate.com>"]
 readme = "README.md"
@@ -16,12 +16,13 @@ pymongo = "^4.11.2"
 pandas = "^2.2.3"
 matplotlib = "^3.10.1"
 motor = "^3.7.0"
-asyncio = "^3.4.3"
 six = "^1.17.0"
 numpy = "^2.2.3"
 fastapi = {extras = ["standard"], version = "^0.115.11"}
 python-dotenv = "^1.1.0"
 ccxt = "^4.5.5"
+exceptiongroup = "^1.2.2"
+typing-extensions = "^4.12.2"
 
 
 [build-system]

@@ -9,7 +9,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # MongoDB Configuration (to be deprecated)
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://192.168.0.15:27017")
 DB_NAME = os.getenv("MONGO_DB_NAME", "crypto_prices")
 PRICE_COLLECTION_NAME = os.getenv("MONGO_PRICE_COLLECTION_NAME", "price_data")
 COMPOSITE_ORDER_BOOK_COLLECTION_NAME = os.getenv("MONGO_COMPOSITE_ORDER_BOOK_COLLECTION_NAME", "composite_order_book_data")

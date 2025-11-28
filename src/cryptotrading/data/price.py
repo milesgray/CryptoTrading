@@ -64,7 +64,7 @@ class PriceMongoAdapter:
         verbose: bool = False
     ) -> None:
         """Store calculated index price and raw data in MongoDB time series collection"""
-        timestamp = datetime.datetime.now(datetime.UTC)
+        timestamp = datetime.datetime.now(datetime.timezone.utc)
         if verbose: logger.info(f"Storing price data! {symbol}: {index_price}")
         token = symbol.split("/")[0] if "/" in symbol else symbol
         # Store calculated index price

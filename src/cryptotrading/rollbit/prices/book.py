@@ -84,15 +84,14 @@ class OrderBookManager:
         """Fetch order book data from an exchange"""
         try:
             if verbose: logger.info(f"[{self.symbol}] Fetching order book for {exchange_id}")
-            exchange = self.exchanges[exchange_id]
-            order_book = await exchange.fetch_order_book(self.symbol, limit=20)  # Fetch reasonable depth
+            order_book = await self.exchanges[exchange_id].fetch_order_book(self.symbol, limit=20)  # Fetch reasonable depth
             order_book['timestamp'] = time.time() * 1000  # Add timestamp in milliseconds
             order_book['exchange'] = exchange_id
             if verbose: logger.info(f"[{self.symbol}] Got order book for {exchange_id}")
-            yield order_book
+            return order_book
         except Exception as e:
             logger.warning(f"[{self.symbol}] Failed to fetch order book from {exchange_id}: {str(e)}")
-            yield None
+            return None
 
     async def fetch(self, verbose: bool = False):
         order_books = []

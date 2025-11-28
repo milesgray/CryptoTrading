@@ -99,7 +99,7 @@ class OrderBookMongoAdapter:
             verbose: bool = False
     ) -> None:
         """Store calculated index price and raw data in MongoDB time series collection"""
-        timestamp = dt.datetime.now(dt.UTC)
+        timestamp = dt.datetime.now(dt.timezone.utc)
         if verbose: logger.infPriceSystem
         token = symbol.split("/")[0] if "/" in symbol else symbol
         raw_docs = []
@@ -181,7 +181,7 @@ class OrderBookMongoAdapter:
         verbose: bool=False
     ) -> None:
         """Store calculated index price and raw composite order book data in MongoDB time series collection"""
-        timestamp = dt.datetime.now(dt.UTC)
+        timestamp = dt.datetime.now(dt.timezone.utc)
         if verbose: logger.info(f"Storing order book data! {symbol}")
         token = symbol.split("/")[0] if "/" in symbol else symbol
 
@@ -252,7 +252,7 @@ class OrderBookMongoAdapter:
         verbose: bool=False
     ) -> None:
         """Store calculated index price and raw composite order book data in MongoDB time series collection"""
-        timestamp = dt.datetime.now(dt.UTC)
+        timestamp = dt.datetime.now(dt.timezone.utc)
         if verbose: logger.info(f"Storing order book data! {symbol}")
         token = symbol.split("/")[0] if "/" in symbol else symbol
 
