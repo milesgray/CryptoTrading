@@ -1,9 +1,11 @@
 import logging
 import datetime as dt
+from typing import Optional, Any
 
 from pymongo import ASCENDING
 
 from cryptotrading.data.mongo import get_db
+from cryptotrading.data.models import OrderBookSummaryData, PriceBucket, PriceOutlier
 from cryptotrading.config import (
     COMPOSITE_ORDER_BOOK_COLLECTION_NAME,
     EXCHANGE_ORDER_BOOK_COLLECTION_NAME,
@@ -287,3 +289,64 @@ class OrderBookMongoAdapter:
             logger.debug(f"Stored transformed order book data for {symbol}")
         except Exception as e:
             logger.error(f"Failed to store transformed order book data: {str(e)}")
+
+    @staticmethod
+    def process_order_book_data(book_data: dict[str, Any]) -> OrderBookSummaryData:
+        """Convert raw order book data into structured OrderBookSummaryData."""
+        result = {
+            "bid_buckets": [],
+            "ask_buckets": [],
+            "bid_outliers": [],
+            "ask_outliers": [],
+            "volume": 0
+        }
+        
+        if not book_data:
+            return result
+            
+        # Process bid buckets
+        if "bid_buckets" in book_data and book_data["bid_buckets"]:
+            result["bid_buckets"] = [
+                PriceBucket(
+                    range=bucket[0],
+                    avg_price=bucket[1],
+                    volume=bucket[2]
+                )
+                for bucket in book_data["bid_buckets"]
+            ]
+        
+        # Process ask buckets
+        if "ask_buckets" in book_data and book_data["ask_buckets"]:
+            result["ask_buckets"] = [
+                PriceBucket(
+                    range=bucket[0],
+                    avg_price=bucket[1], 
+                    volume=bucket[2]
+                )
+                for bucket in book_data["ask_buckets"]
+            ]
+        
+        # Process bid outliers
+        if "bid_outliers" in book_data and book_data["bid_outliers"]:
+            result["bid_outliers"] = [
+                PriceOutlier(
+                    price=outlier[0],
+                    volume=outlier[1]
+                )
+                for outlier in book_data["bid_outliers"]
+            ]
+        
+        # Process ask outliers
+        if "ask_outliers" in book_data and book_data["ask_outliers"]:
+            result["ask_outliers"] = [
+                PriceOutlier(
+                    price=outlier[0],
+                    volume=outlier[1]
+                )
+                for outlier in book_data["ask_outliers"]
+            ]
+
+        result["volume"] = sum([bucket.volume for bucket in result["bid_buckets"]]) \
+                        + sum([bucket.volume for bucket in result["ask_buckets"]])
+        
+        return OrderBookSummaryData(**result)

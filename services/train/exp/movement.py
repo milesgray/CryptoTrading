@@ -111,7 +111,7 @@ class MovementExp(BaseExp):
                         predicted_classes = (torch.sigmoid(outputs) > 0.5).float()
                         correct = torch.eq(predicted_classes, batch_y)
                         correct_confidence = confidence[correct]
-                        incorrect_confidence = confidence[~correct].
+                        incorrect_confidence = confidence[~correct]
                         train_correct += correct.float().sum().item()
                         train_total += batch_y.size(0)
                         total_loss = loss
@@ -130,7 +130,7 @@ class MovementExp(BaseExp):
                     predicted_classes = (torch.sigmoid(outputs) > 0.5).float()
                     correct = torch.eq(predicted_classes, batch_y)
                     correct_confidence = confidence[correct]
-                    incorrect_confidence = confidence[~correct].
+                    incorrect_confidence = confidence[~correct]
                     train_correct += correct.float().sum().item()
                     train_total += batch_y.size(0)
                     total_loss = loss

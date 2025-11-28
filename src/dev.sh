@@ -1,1 +1,1 @@
-poetry run fastapi dev cryptotrading/rollbit/prices/serve/app.py
+poetry run fastapi dev ../services/serve/app.py

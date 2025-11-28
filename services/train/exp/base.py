@@ -1,22 +1,20 @@
 import os
 import torch
-from models import TimeSieve
-
+from cryptotrading.predict.models import get_model
+import torch.nn as nn
 
 class BaseExp(object):
     def __init__(self, args):
         self.args = args
-        self.model_dict = {
-
-            'TimeSieve': TimeSieve,
-
-        }
         self.device = self._acquire_device()
         self.model = self._build_model().to(self.device)
 
     def _build_model(self):
-        raise NotImplementedError
-        return None
+        model = get_model(self.args).float()
+
+        if self.args.use_multi_gpu and self.args.use_gpu:
+            model = nn.DataParallel(model, device_ids=self.args.device_ids)
+        return model
 
     def _acquire_device(self):
         if self.args.use_gpu:
