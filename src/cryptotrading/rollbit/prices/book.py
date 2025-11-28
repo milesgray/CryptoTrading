@@ -59,9 +59,9 @@ class OrderBookManager:
                         exchange_options['options'] = {'defaultType': 'future'}
                 
                 self.exchanges[exchange_id] = exchange_class(exchange_options)
-                logger.info(f"Initialized exchange: {exchange_id}")
+                logger.info(f"[{self.symbol}] Initialized exchange: {exchange_id}")
             except Exception as e:
-                logger.error(f"Failed to initialize exchange {exchange_id}: {str(e)}")
+                logger.error(f"[{self.symbol}] Failed to initialize exchange {exchange_id}: {str(e)}")
         
     async def shutdown(self):
         self.running = False
@@ -70,11 +70,11 @@ class OrderBookManager:
         for exchange_id, exchange in self.exchanges.items():
             try:
                 await exchange.close()
-                logger.info(f"Closed connection to {exchange_id}")
+                logger.info(f"[{self.symbol}] Closed connection to {exchange_id}")
             except Exception as e:
-                logger.error(f"Error closing connection to {exchange_id}: {str(e)}")        
+                logger.error(f"[{self.symbol}] Error closing connection to {exchange_id}: {str(e)}")        
         
-        logger.info("Price system shutdown complete")
+        logger.info(f"[{self.symbol}] Price system shutdown complete")
     
     async def fetch_order_book(
         self, 
@@ -83,15 +83,15 @@ class OrderBookManager:
     ) -> Optional[dict]:
         """Fetch order book data from an exchange"""
         try:
-            if verbose: logger.info(f"Fetching order book for {exchange_id}")
+            if verbose: logger.info(f"[{self.symbol}] Fetching order book for {exchange_id}")
             exchange = self.exchanges[exchange_id]
             order_book = await exchange.fetch_order_book(self.symbol, limit=20)  # Fetch reasonable depth
             order_book['timestamp'] = time.time() * 1000  # Add timestamp in milliseconds
             order_book['exchange'] = exchange_id
-            if verbose: logger.info(f"Got order book for {exchange_id}")
+            if verbose: logger.info(f"[{self.symbol}] Got order book for {exchange_id}")
             yield order_book
         except Exception as e:
-            logger.warning(f"Failed to fetch order book from {exchange_id} for {self.symbol}: {str(e)}")
+            logger.warning(f"[{self.symbol}] Failed to fetch order book from {exchange_id}: {str(e)}")
             yield None
 
     async def fetch(self, verbose: bool = False):
@@ -107,7 +107,7 @@ class OrderBookManager:
                     
         # Validate feeds
         self.valid_books = validate_feeds(order_books)
-        if verbose: logger.info(f"Got valid books for {self.symbol}")
+        if verbose: logger.info(f"[{self.symbol}] Got valid books for {self.symbol}")
         return self.valid_books
 
     async def update(self, composite_order_book, verbose: bool = False):

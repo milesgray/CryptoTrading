@@ -5,6 +5,7 @@ import logging
 import numpy as np
 from typing import Optional, Any
 import datetime
+import traceback
 
 import ccxt.async_support as ccxt
 import pandas as pd
@@ -104,6 +105,8 @@ class PriceSystem:
             else:
                 logger.warning(f"Failed to calculate index price for {symbol}")
         except Exception as e:
+            # include stack trace
+            logger.error(traceback.format_exc())
             logger.error(f"Error processing symbol {symbol}: {str(e)}")
 
     async def run(self) -> None:
