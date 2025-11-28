@@ -9,13 +9,13 @@ from layers.Autoformer_EncDec import (
 )
 
 
-class Model(nn.Module):
+class Autoformer(nn.Module):
     """
     Autoformer is the first method to achieve the series-wise connection,
     with inherent O(LlogL) complexity
     """
     def __init__(self, configs):
-        super(Model, self).__init__()
+        super(Autoformer, self).__init__()
         self.seq_len = configs.seq_len
         self.label_len = configs.label_len
         self.pred_len = configs.pred_len

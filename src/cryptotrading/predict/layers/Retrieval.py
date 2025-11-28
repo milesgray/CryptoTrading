@@ -110,7 +110,8 @@ class RetrievalTool():
         index = index.to(x.device)
         
         bsz, seq_len, channels = x.shape
-        assert(seq_len == self.seq_len, channels == self.channels)
+        assert seq_len == self.seq_len
+        assert channels == self.channels
         
         x_mg, mg_offset = self.decompose_mg(x) # G, B, S, C
 

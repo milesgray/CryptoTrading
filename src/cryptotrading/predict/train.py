@@ -18,6 +18,8 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
+from models import get_model
+from dotdict import dotdict
 
 # Set random seeds for reproducibility
 torch.manual_seed(42)
@@ -340,13 +342,6 @@ def visualize_predictions(df, test_predictions, test_targets, window_size=20):
     plt.tight_layout()
     return fig
 
-def setup_model(config):    
-    input_dim = config['input_dim']
-    window_size = config['window_size']
-    if config["model"] == "WAVESTATE":
-        model = WAVESTATE(input_dim=input_dim, hidden_dim=128, seq_len=window_size)
-    return model
-
 # Example usage
 if __name__ == "__main__":
     # Sample data for demonstration
@@ -357,11 +352,18 @@ if __name__ == "__main__":
         'price': prices
     })
 
-    model = setup_model({
+    model = get_model(dotdict({
         "input_dim": 1,
         "window_size": 20,
+        "seq_len": 20,
+        "d_model": 128,
+        "num_layers": 4,
+        "enc_in": 1,
+        "dec_in": 1,
+        "enc_out": 1,
+        "dec_out": 1,
         "model": "WAVESTATE"
-    })
+    }))
     
     # Train model
     model, scaler, test_predictions, test_confidences, test_targets = train_model(model, df, epochs=20)

@@ -24,9 +24,10 @@ logger = logging.getLogger('order_book_manager')
 
 
 class OrderBookManager:
-    def __init__(self, exchange_ids: list[str]):
+    def __init__(self, symbol: str, exchange_ids: list[str]):
         self.data = OrderBookMongoAdapter()
         self.running = False
+        self.symbol = symbol
         self.exchange_ids = exchange_ids
         self.exchanges = {}
         self.last_index_prices = {}
@@ -78,43 +79,38 @@ class OrderBookManager:
     async def fetch_order_book(
         self, 
         exchange_id: str, 
-        symbol: str, 
         verbose: bool = False
     ) -> Optional[dict]:
         """Fetch order book data from an exchange"""
         try:
             if verbose: logger.info(f"Fetching order book for {exchange_id}")
             exchange = self.exchanges[exchange_id]
-            order_book = await exchange.fetch_order_book(symbol, limit=20)  # Fetch reasonable depth
+            order_book = await exchange.fetch_order_book(self.symbol, limit=20)  # Fetch reasonable depth
             order_book['timestamp'] = time.time() * 1000  # Add timestamp in milliseconds
             order_book['exchange'] = exchange_id
             if verbose: logger.info(f"Got order book for {exchange_id}")
-            return order_book
+            yield order_book
         except Exception as e:
-            logger.warning(f"Failed to fetch order book from {exchange_id} for {symbol}: {str(e)}")
-            return None
+            logger.warning(f"Failed to fetch order book from {exchange_id} for {self.symbol}: {str(e)}")
+            yield None
 
-    async def fetch(self, symbol: str, verbose: bool = False):
+    async def fetch(self, verbose: bool = False):
         order_books = []
-        fetch_tasks = []
-        
-        for exchange_id in self.exchanges.keys():
-            task = self.fetch_order_book(exchange_id, symbol)
-            fetch_tasks.append(task)
-        
-        # Gather results
-        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+        tasks = [self.fetch_order_book(exchange_id) for exchange_id in self.exchanges.keys()]
+        results = await asyncio.gather(*tasks, return_exceptions=True) 
+
         for result in results:
             if isinstance(result, dict) and not isinstance(result, Exception):
                 order_books.append(result)
-        await self.data.store_exchange_order_book(symbol, order_books)
+        await self.data.store_exchange_order_book(self.symbol, order_books)
                     
         # Validate feeds
         self.valid_books = validate_feeds(order_books)
-        if verbose: logger.info(f"Got valid books for {symbol}")
+        if verbose: logger.info(f"Got valid books for {self.symbol}")
         return self.valid_books
 
-    async def update(self, symbol, composite_order_book, verbose: bool = False):
+    async def update(self, composite_order_book, verbose: bool = False):
         self.composite_order_book = composite_order_book
         composite_order_book_df = order_book_to_df(
             composite_order_book['bids'], 
@@ -123,13 +119,13 @@ class OrderBookManager:
             composite_order_book_df)   
 
         await self.data.store_composite_order_book_data(
-            symbol, 
+            self.symbol, 
             composite_order_book, 
             self.valid_books, 
             verbose=verbose
         )             
         await self.data.store_transformed_order_book_data(
-            symbol,
+            self.symbol,
             composite_order_book,
             verbose=verbose
         ) 
@@ -171,7 +167,6 @@ def validate_feeds(
         return []
     
     median_mid_price = np.median(mid_prices)
-    median_spread = np.median(spreads)
     
     # Filter order books
     for book in order_books:
@@ -279,9 +274,9 @@ def condense_order_book(
         'bid_outliers': List of (price, size) for outlier bids
         'ask_outliers': List of (price, size) for outlier asks
     """
-    ask_filter = df['side'] == 'a'
-    bid_filter = df['side'] == 'b'
-    size_filter = df['size'] > 0
+    ask_filter = df[side_column] == 'a'
+    bid_filter = df[side_column] == 'b'
+    size_filter = df[size_column] > 0
 
     asks = df[ask_filter & size_filter]
     bids = df[bid_filter & size_filter]

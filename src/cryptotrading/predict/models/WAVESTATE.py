@@ -13,30 +13,30 @@ class WAVESTATE(nn.Module):
     
     An advanced time series prediction model that combines wavelet transforms,
     state space models, adaptive kernels, and diffusion principles."""
-    def __init__(self, input_dim, hidden_dim=128, output_dim=1, seq_len=20, num_layers=3):
+    def __init__(self, configs):
         super(WAVESTATE, self).__init__()
-        self.input_proj = nn.Linear(input_dim, hidden_dim)
-        self.positional_encoding = nn.Parameter(torch.randn(1, seq_len, hidden_dim) * 0.02)
+        self.input_proj = nn.Linear(configs.enc_in, configs.d_model)
+        self.positional_encoding = nn.Parameter(torch.randn(1, configs.seq_len, configs.d_model) * 0.02)
         
         # Feature extraction layers
-        self.wavelet_layer = WaveletTransformLayer(hidden_dim, hidden_dim)
+        self.wavelet_layer = WaveletTransformLayer(configs.d_model, configs.d_model)
         
         # Main processing blocks
         self.layers = nn.ModuleList()
-        for _ in range(num_layers):
+        for _ in range(configs.num_layers):
             layer = nn.ModuleDict({
-                'attention': SelfAttention(hidden_dim, num_heads=4),
-                'adaptive_kernel': AdaptiveKernelLayer(hidden_dim, hidden_dim),
-                'state_space': StateSpaceLayer(hidden_dim),
-                'diffusion': DiffusionBlock(hidden_dim)
+                'attention': SelfAttention(configs.d_model, num_heads=4),
+                'adaptive_kernel': AdaptiveKernelLayer(configs.d_model, configs.d_model),
+                'state_space': StateSpaceLayer(configs.d_model),
+                'diffusion': DiffusionBlock(configs.d_model)
             })
             self.layers.append(layer)
         
         # Output projection
-        self.output_proj = nn.Linear(hidden_dim, output_dim)
+        self.output_proj = nn.Linear(configs.d_model, configs.c_out)
         
         # Confidence predictor (uncertainty quantification)
-        self.confidence_proj = nn.Linear(hidden_dim, output_dim)
+        self.confidence_proj = nn.Linear(configs.d_model, configs.c_out)
         
     def forward(self, x, noise_level=None):
         # Default noise level
