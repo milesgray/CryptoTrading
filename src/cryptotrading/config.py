@@ -61,7 +61,7 @@ POSTGRES_PARAMS = parse_postgres_uri(POSTGRES_URI)
 # Configuration for exchanges and symbols
 SPOT_EXCHANGES = ["binanceus", "coinbase", "kraken", "huobi", "okx"]
 
-DERIVATIVE_EXCHANGES = [
+FUTURE_EXCHANGES = [
     "binanceus-coin-m", "binanceus-usdt-m", 
     "huobi-coin-m", "huobi-usdt-m", 
     "okx-coin-m", "okx-usdt-m"
