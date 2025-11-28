@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  crypto-sentiment-analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crypto-sentiment-analyzer
+    restart: unless-stopped
+    environment:
+      # Twitter API Configuration
+      TWITTER_BEARER_TOKEN: ${TWITTER_BEARER_TOKEN}
+      TWITTER_API_KEY: ${TWITTER_API_KEY}
+      TWITTER_API_SECRET: ${TWITTER_API_SECRET}
+      TWITTER_ACCESS_TOKEN: ${TWITTER_ACCESS_TOKEN}
+      TWITTER_ACCESS_TOKEN_SECRET: ${TWITTER_ACCESS_TOKEN_SECRET}
+      
+      # MongoDB Configuration
+      MONGODB_URI: mongodb://mongo:27017/
+      MONGODB_DATABASE: crypto_sentiment
+      
+      # Service Configuration
+      ANALYSIS_TOKENS: BTC,ETH,ADA,SOL,DOGE  # Comma-separated list
+      ANALYSIS_INTERVAL: 30  # Minutes between analysis runs
+      ANALYSIS_DURATION: 60  # Duration of each analysis run
+      MAX_FOLLOWING: 100     # Max users to analyze from following list
+      HEALTH_PORT: 8080
+      LOG_LEVEL: INFO
+      MAX_RETRIES: 3
+      RETRY_DELAY: 60
+    ports:
+      - "8080:8080"  # Health monitoring port
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+    depends_on:
+      - mongo
+    networks:
+      - crypto-sentiment-network
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  mongo:
+    image: mongo:7.0
+    container_name: crypto-sentiment-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: crypto_sentiment
+    ports:
+      - "27017:27017"  # Expose for external access if needed
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d
+    networks:
+      - crypto-sentiment-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: MongoDB Express for database management
+  mongo-express:
+    image: mongo-express:1.0.0
+    container_name: crypto-sentiment-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ""
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ""
+      ME_CONFIG_BASICAUTH: false
+    depends_on:
+      - mongo
+    networks:
+      - crypto-sentiment-network
+    profiles:
+      - debug  # Only start with --profile debug
+
+volumes:
+  mongo_data:
+    driver: local
+
+networks:
+  crypto-sentiment-network:
+    driver: bridge

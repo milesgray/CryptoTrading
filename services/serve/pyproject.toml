@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "cryptotrading-price-serve"
+version = "0.1.0"
+description = "FastAPI web server for Rollbit price formulation"
+authors = ["Miles <miles@resatiate.com>"]
+readme = "README.md"
+packages = []
+
+[tool.poetry.dependencies]
+python = "^3.12"
+requests = "^2.32"
+pytz = "^2024"
+pymongo = "^4.11.2"
+motor = "^3.7.0"
+asyncio = "^3.4.3"
+six = "^1.17.0"
+numpy = "^2.2.3"
+fastapi = {extras = ["standard"], version = "^0.115.11"}
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+package-mode = false
