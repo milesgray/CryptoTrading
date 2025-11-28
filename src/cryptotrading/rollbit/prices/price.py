@@ -44,7 +44,8 @@ class PriceSystem:
         # Initialize MongoDB connection
         await self.data.initialize()
         # Initialize exchange connections
-        await asyncio.gather(*[book.initialize() for book in self.books.values()])
+        for book in self.books.values():
+            await book.initialize()
         logger.info("Price system initialization complete")
         self.running = True
 
