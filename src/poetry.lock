@@ -216,18 +216,18 @@ tests-mypy = ["mypy (>=1.11.1)", "pytest-mypy-plugins"]
 
 [[package]]
 name = "ccxt"
-version = "4.4.65"
-description = "A JavaScript / TypeScript / Python / C# / PHP cryptocurrency trading library with support for 100+ exchanges"
+version = "4.5.5"
+description = "A cryptocurrency trading API with more than 100 exchanges in JavaScript / TypeScript / Python / C# / PHP / Go"
 optional = false
 python-versions = "*"
 files = [
-    {file = "ccxt-4.4.65-py2.py3-none-any.whl", hash = "sha256:086007e0dcbc9addbeb507fcecaaf0b2bb5e7919574c0fb1549167255892b57e"},
-    {file = "ccxt-4.4.65.tar.gz", hash = "sha256:64bb4977dabaa3e090e31b0fce8c64f46fa5b1e9e9162a8162e2f13932891f6e"},
+    {file = "ccxt-4.5.5-py2.py3-none-any.whl", hash = "sha256:ab1a86e5bc6a021782a54f362794f9cad800f69cc2f6595fbbf36491aa70a8b4"},
+    {file = "ccxt-4.5.5.tar.gz", hash = "sha256:796db21e784734aaffa56c5e2de696015bdf0c126de0ea501bb434975db858ea"},
 ]
 
 [package.dependencies]
 aiodns = {version = ">=1.1.1", markers = "python_version >= \"3.5.2\""}
-aiohttp = {version = "<=3.10.11", markers = "python_version >= \"3.5.2\""}
+aiohttp = {version = ">=3.10.11", markers = "python_version >= \"3.5.2\""}
 certifi = ">=2018.1.18"
 cryptography = ">=2.6.1"
 requests = ">=2.18.4"
@@ -2689,4 +2689,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "5189ac24a1a4751b855fa1c26b8d302e30b6bca1c9ed0c10ed41cb72c1529ab7"
+content-hash = "f3b25413559ae83e5099305575d8beb2114b5b8e95bff0bb619492047287edec"
