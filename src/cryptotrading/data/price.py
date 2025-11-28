@@ -25,8 +25,11 @@ class PriceMongoAdapter:
     def __init__(self):
         self.db = get_db()
 
+    @property
+    async def collections(self):
+        return await self.db.list_collection_names() 
+
     async def initialize(self):
-        self.collections = await self.db.list_collection_names()
         await self.init_price_collection()
      
     async def shutdown(self):
@@ -36,7 +39,7 @@ class PriceMongoAdapter:
         self.price_collection = self.db[PRICE_COLLECTION_NAME]
         
         # Create time series collection if it doesn't exist
-        if PRICE_COLLECTION_NAME not in self.collections:
+        if PRICE_COLLECTION_NAME not in await self.collections:
             try:
                 await self.db.create_collection(
                     PRICE_COLLECTION_NAME,

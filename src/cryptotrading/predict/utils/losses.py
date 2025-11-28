@@ -90,16 +90,16 @@ class mase_loss(nn.Module):
 
 
 class PSLoss(nn.Module):
-    def __init__(self, model, patch_len_threshold: int = 128):
+    def __init__(self, pred_layer, patch_len_threshold: int = 128):
         """
         Initialize the PSLoss class.
 
         Args:
-            model (nn.Module): The model to be used for gradient-based dynamic weighting.
+            pred_layer (nn.Module): The model to be used for gradient-based dynamic weighting.
             patch_len_threshold (int, optional): The maximum patch length. Defaults to 128.
         """
         super(PSLoss, self).__init__()
-        self.model = model
+        self.pred_layer = pred_layer
         self.patch_len_threshold = patch_len_threshold
         self.kl_loss = nn.KLDivLoss(reduction='none')
 
@@ -237,9 +237,9 @@ class PSLoss(nn.Module):
         var_sim = (2 * true_std * pred_std + 1e-5) / (true_var + pred_var + 1e-5)
    
         # Gradiant based dynamic weighting
-        corr_gradient = t.autograd.grad(corr_loss, self.model.predict_layers[-1].parameters(), create_graph=True)[0]
-        var_gradient = t.autograd.grad(var_loss, self.model.predict_layers[-1].parameters(), create_graph=True)[0]
-        mean_gradient = t.autograd.grad(mean_loss, self.model.predict_layers[-1].parameters(), create_graph=True)[0]
+        corr_gradient = t.autograd.grad(corr_loss, self.pred_layer.parameters(), create_graph=True)[0]
+        var_gradient = t.autograd.grad(var_loss, self.pred_layer.parameters(), create_graph=True)[0]
+        mean_gradient = t.autograd.grad(mean_loss, self.pred_layer.parameters(), create_graph=True)[0]
         gradiant_avg = (corr_gradient + var_gradient + mean_gradient) / 3.0
 
         aplha = gradiant_avg.norm().detach() / corr_gradient.norm().detach()

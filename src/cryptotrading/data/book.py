@@ -19,8 +19,11 @@ class OrderBookMongoAdapter:
     def __init__(self):
         self.db = get_db()
 
-    async def initialize(self):
-        self.collections = await self.db.list_collection_names()        
+    @property
+    async def collections(self):
+        return await self.db.list_collection_names() 
+
+    async def initialize(self):        
         await self.init_composite_order_book_collection()
         await self.init_exchange_order_book_collection()
         await self.init_transformed_order_book_collection()
@@ -32,7 +35,7 @@ class OrderBookMongoAdapter:
         self.composite_order_book_collection = self.db[COMPOSITE_ORDER_BOOK_COLLECTION_NAME]
         
         # Create time series collection if it doesn't exist
-        if COMPOSITE_ORDER_BOOK_COLLECTION_NAME not in self.collections:
+        if COMPOSITE_ORDER_BOOK_COLLECTION_NAME not in await self.collections:
             try:
                 await self.db.create_collection(
                     COMPOSITE_ORDER_BOOK_COLLECTION_NAME,
@@ -52,7 +55,7 @@ class OrderBookMongoAdapter:
         self.exchange_order_book_collection = self.db[EXCHANGE_ORDER_BOOK_COLLECTION_NAME]
         
         # Create time series collection if it doesn't exist
-        if EXCHANGE_ORDER_BOOK_COLLECTION_NAME not in self.collections:
+        if EXCHANGE_ORDER_BOOK_COLLECTION_NAME not in await self.collections:
             try:
                 await self.db.create_collection(
                     EXCHANGE_ORDER_BOOK_COLLECTION_NAME,
@@ -73,7 +76,7 @@ class OrderBookMongoAdapter:
         self.transformed_order_book_collection = self.db[TRANSFORMED_ORDER_BOOK_COLLECTION_NAME]
         
         # Create time series collection if it doesn't exist
-        if TRANSFORMED_ORDER_BOOK_COLLECTION_NAME not in self.collections:
+        if TRANSFORMED_ORDER_BOOK_COLLECTION_NAME not in await self.collections:
             try:
                 await self.db.create_collection(
                     TRANSFORMED_ORDER_BOOK_COLLECTION_NAME,
