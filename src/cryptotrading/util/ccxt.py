@@ -8,6 +8,55 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import tqdm
+import ccxt
+from functools import partial
+
+CCXT_DEFAULT_EXCHANGE = "binanceus"
+PROXIES = None
+
+def get_connection(exchange, proxy=None):
+    if hasattr(ccxt, exchange):
+        exchange_fn = partial(getattr(ccxt, exchange))
+        return exchange_fn({"proxies": PROXIES}) if PROXIES else \
+            exchange_fn({"proxies": proxy}) if proxy else exchange_fn()
+    else:
+        return None
+
+def pull_ohlcv_data(target_market,
+                    n=1,
+                    name="",
+                    span="1s",
+                    min_uts=-np.inf,
+                    proxy=None,
+                    exchange=CCXT_DEFAULT_EXCHANGE,
+                    verbose=False):
+    if verbose: print(f"Pulling {n} {span} data for {target_market} from {exchange}")
+    connection = get_connection(exchange, proxy=proxy)
+    if len(name) > 0:
+        name = f"_{name}"
+    since = None
+    results = []
+    if verbose:
+        bar = tqdm.tqdm(total=n)
+    i = 0
+    while i < n:
+        try:
+            cex_x = connection.fetch_ohlcv(target_market, span, since=since)
+            
+            results.append([(xi[4], dt.datetime.fromtimestamp(xi[0] / 1000, tz=dt.timezone.utc)) for xi in cex_x if xi[0]/1000 > min_uts])
+
+            dt = cex_x[-1][0] - cex_x[0][0]
+            since = cex_x[0][0] - dt
+            i = i + 1
+            if verbose:
+                bar.set_postfix({"since": since})
+                bar.update(1)
+        except Exception as e:
+            if verbose: print(e)
+            # only increment i on data success
+
+    return results
 
 def now():
     return dt.datetime.now()
@@ -140,3 +189,6 @@ def extend_dates(df, n_hours=12):
     }
     new_df = pd.DataFrame(data)
     return pd.concat([df, new_df])
+
+
+    
