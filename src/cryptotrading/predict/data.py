@@ -100,6 +100,9 @@ class DataFramePriceDataset(Dataset):
         elif self.timeenc == 1:
             data_stamp = time_features(pd.to_datetime(df_stamp[date_col].values), freq=self.freq)
             data_stamp = data_stamp.transpose(1, 0)
+        elif self.timeenc == 2:
+            df_stamp['timestamp'] = df_stamp.date.apply(lambda row: row.timestamp())  # convert to unix timestamp (s)
+            data_stamp = df_stamp.drop(['date'], axis=1).values
 
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]

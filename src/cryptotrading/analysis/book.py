@@ -129,12 +129,12 @@ def condense_order_book(bids, asks, num_buckets=10, size_column='size', price_co
     
     
     # Function to bucket non-outlier data
-    def create_buckets(df, column, num_buckets):
+    def create_buckets(df, column, num_buckets, direction='upper'):
         if df.empty:
             return []
         
         # Remove outliers
-        outliers = self.find_outliers(df, column, limit=5, direction=direction)
+        outliers = find_outliers(df, column, limit=5, direction=direction)
         non_outliers = df[~df.index.isin(outliers.index)].copy()
         
         if non_outliers.empty:

@@ -1,1 +1,1 @@
-poetry run fastapi dev ../services/serve/app.py
+poetry run fastapi dev ../services/serve/app.py --host 0.0.0.0 --port 8362
