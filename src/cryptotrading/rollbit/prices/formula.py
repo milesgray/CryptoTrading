@@ -162,6 +162,8 @@ def calculate_index_price(
             cumulative_ask_size += size
             cumulative_ask_sizes.append(cumulative_ask_size)
 
+        total_size = cumulative_bid_size + cumulative_ask_size
+
         # Combine and de-duplicate the cumulative sizes, then sort them.
         v_i = sorted(list(set(cumulative_bid_sizes + cumulative_ask_sizes)))
 
@@ -197,9 +199,10 @@ def calculate_index_price(
         if return_book:
             return {
                 "price": index_price, 
+                "size": total_size,
                 "book": composite_order_book
             }
-        return index_price
+        return index_price, total_size
     except Exception as e:
         logger.error(f"Error calculating index price: {str(e)}")
         return None
