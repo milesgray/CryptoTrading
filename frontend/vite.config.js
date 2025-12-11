@@ -7,13 +7,13 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {  // Proxy API requests to the FastAPI backend
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8362',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''), // Remove /api prefix
       },
       '/ws': {  // Proxy WebSocket connections
-        target: 'ws://localhost:8000',
+        target: 'ws://localhost:8362',
         ws: true,
         changeOrigin: true,
         secure: false,
