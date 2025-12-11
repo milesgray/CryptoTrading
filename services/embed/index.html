@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trade Setup Pattern Matcher</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            min-height: 100vh;
+        }
+        .app {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            grid-template-rows: auto 1fr auto;
+            gap: 16px;
+            padding: 16px;
+            height: 100vh;
+        }
+        .header {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            background: #161b22;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+        }
+        .header h1 { font-size: 1.5rem; font-weight: 600; color: #f0f6fc; }
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #21262d;
+            border-radius: 20px;
+            font-size: 0.875rem;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #f85149;
+        }
+        .status-dot.connected {
+            background: #3fb950;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .chart-container {
+            background: #161b22;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px;
+            border-bottom: 1px solid #30363d;
+        }
+        .chart-title { font-weight: 600; color: #f0f6fc; }
+        .chart-controls { display: flex; gap: 8px; }
+        .chart-btn {
+            padding: 6px 12px;
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: all 0.15s;
+        }
+        .chart-btn:hover { background: #30363d; }
+        .chart-btn.active { background: #238636; border-color: #238636; color: white; }
+        .chart-area { flex: 1; min-height: 400px; }
+        .sidebar { display: flex; flex-direction: column; gap: 16px; }
+        .panel {
+            background: #161b22;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+            overflow: hidden;
+        }
+        .panel-header {
+            padding: 16px;
+            border-bottom: 1px solid #30363d;
+            font-weight: 600;
+            color: #f0f6fc;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .panel-content { padding: 16px; max-height: 300px; overflow-y: auto; }
+        .signal-card {
+            padding: 16px;
+            background: #21262d;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            border-left: 4px solid #30363d;
+        }
+        .signal-card.long { border-left-color: #3fb950; }
+        .signal-card.short { border-left-color: #f85149; }
+        .signal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .signal-direction {
+            font-weight: 600;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+        }
+        .signal-direction.long { color: #3fb950; }
+        .signal-direction.short { color: #f85149; }
+        .signal-similarity { font-size: 0.75rem; color: #8b949e; }
+        .signal-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 0.75rem;
+        }
+        .stat-item { display: flex; flex-direction: column; }
+        .stat-label { color: #8b949e; }
+        .stat-value { font-weight: 500; color: #f0f6fc; }
+        .stat-value.positive { color: #3fb950; }
+        .stat-value.negative { color: #f85149; }
+        .match-list { display: flex; flex-direction: column; gap: 8px; }
+        .match-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: #21262d;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .match-item:hover { background: #30363d; }
+        .match-item.selected { border: 1px solid #58a6ff; }
+        .match-info { display: flex; flex-direction: column; gap: 4px; }
+        .match-direction { font-weight: 600; font-size: 0.875rem; }
+        .match-profit { font-size: 0.75rem; }
+        .match-similarity-bar {
+            width: 60px;
+            height: 6px;
+            background: #30363d;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .match-similarity-fill {
+            height: 100%;
+            background: #58a6ff;
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+        .confidence-meter { margin-top: 12px; }
+        .meter-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            margin-bottom: 4px;
+        }
+        .meter-bar {
+            height: 8px;
+            background: #21262d;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .meter-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+        .meter-fill.high { background: linear-gradient(90deg, #238636, #3fb950); }
+        .meter-fill.medium { background: linear-gradient(90deg, #9e6a03, #d29922); }
+        .meter-fill.low { background: linear-gradient(90deg, #da3633, #f85149); }
+        .footer {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 24px;
+            background: #161b22;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+            font-size: 0.75rem;
+            color: #8b949e;
+        }
+        .metrics { display: flex; gap: 24px; }
+        .metric { display: flex; gap: 8px; }
+        .metric-value { color: #f0f6fc; font-weight: 500; }
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 32px;
+            color: #8b949e;
+            text-align: center;
+        }
+        .empty-icon { font-size: 2rem; margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+        
+        const API_BASE = 'http://localhost:8000';
+        
+        const api = {
+            async search(prices, k = 10) {
+                const res = await fetch(`${API_BASE}/search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prices, k })
+                });
+                return res.json();
+            },
+            async getStats() {
+                const res = await fetch(`${API_BASE}/stats`);
+                return res.json();
+            },
+            async health() {
+                const res = await fetch(`${API_BASE}/health`);
+                return res.json();
+            }
+        };
+        
+        function TradingChart({ data, markers, overlayData }) {
+            const containerRef = useRef(null);
+            const chartRef = useRef(null);
+            const seriesRef = useRef(null);
+            const overlaySeriesRef = useRef(null);
+            
+            useEffect(() => {
+                if (!containerRef.current) return;
+                
+                const chart = LightweightCharts.createChart(containerRef.current, {
+                    layout: {
+                        background: { type: 'solid', color: '#161b22' },
+                        textColor: '#8b949e',
+                    },
+                    grid: {
+                        vertLines: { color: '#21262d' },
+                        horzLines: { color: '#21262d' },
+                    },
+                    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                    rightPriceScale: { borderColor: '#30363d' },
+                    timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: false },
+                });
+                
+                const candleSeries = chart.addCandlestickSeries({
+                    upColor: '#3fb950',
+                    downColor: '#f85149',
+                    borderDownColor: '#f85149',
+                    borderUpColor: '#3fb950',
+                    wickDownColor: '#f85149',
+                    wickUpColor: '#3fb950',
+                });
+                
+                const overlaySeries = chart.addLineSeries({
+                    color: '#58a6ff',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                });
+                
+                chartRef.current = chart;
+                seriesRef.current = candleSeries;
+                overlaySeriesRef.current = overlaySeries;
+                
+                const handleResize = () => {
+                    if (containerRef.current) {
+                        chart.applyOptions({
+                            width: containerRef.current.clientWidth,
+                            height: containerRef.current.clientHeight,
+                        });
+                    }
+                };
+                
+                window.addEventListener('resize', handleResize);
+                handleResize();
+                
+                return () => {
+                    window.removeEventListener('resize', handleResize);
+                    chart.remove();
+                };
+            }, []);
+            
+            useEffect(() => {
+                if (seriesRef.current && data) seriesRef.current.setData(data);
+            }, [data]);
+            
+            useEffect(() => {
+                if (seriesRef.current && markers) seriesRef.current.setMarkers(markers);
+            }, [markers]);
+            
+            useEffect(() => {
+                if (overlaySeriesRef.current) {
+                    overlaySeriesRef.current.setData(overlayData || []);
+                }
+            }, [overlayData]);
+            
+            return <div ref={containerRef} className="chart-area" />;
+        }
+        
+        function SignalCard({ signal }) {
+            const directionClass = signal.direction_signal;
+            const confidenceLevel = signal.confidence > 0.7 ? 'high' : signal.confidence > 0.4 ? 'medium' : 'low';
+            
+            return (
+                <div className={`signal-card ${directionClass}`}>
+                    <div className="signal-header">
+                        <span className={`signal-direction ${directionClass}`}>
+                            {signal.direction_signal}
+                        </span>
+                        <span className="signal-similarity">
+                            {(signal.similarity * 100).toFixed(1)}% match
+                        </span>
+                    </div>
+                    <div className="signal-stats">
+                        <div className="stat-item">
+                            <span className="stat-label">Avg Profit</span>
+                            <span className={`stat-value ${signal.avg_profit >= 0 ? 'positive' : 'negative'}`}>
+                                {(signal.avg_profit * 100).toFixed(2)}%
+                            </span>
+                        </div>
+                        <div className="stat-item">
+                            <span className="stat-label">Matches</span>
+                            <span className="stat-value">{signal.similar_setups?.length || 0}</span>
+                        </div>
+                    </div>
+                    <div className="confidence-meter">
+                        <div className="meter-label">
+                            <span>Confidence</span>
+                            <span>{(signal.confidence * 100).toFixed(0)}%</span>
+                        </div>
+                        <div className="meter-bar">
+                            <div className={`meter-fill ${confidenceLevel}`} style={{ width: `${signal.confidence * 100}%` }} />
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        
+        function MatchList({ matches, selectedId, onSelect }) {
+            if (!matches || matches.length === 0) {
+                return (
+                    <div className="empty-state">
+                        <div className="empty-icon">📊</div>
+                        <div>No similar setups found</div>
+                        <div style={{ fontSize: '0.75rem', marginTop: 4 }}>Click "Find Similar" to search</div>
+                    </div>
+                );
+            }
+            
+            return (
+                <div className="match-list">
+                    {matches.map((match) => (
+                        <div 
+                            key={match.setup.id}
+                            className={`match-item ${selectedId === match.setup.id ? 'selected' : ''}`}
+                            onClick={() => onSelect(match)}
+                        >
+                            <div className="match-info">
+                                <span className="match-direction" style={{ color: match.setup.direction === 1 ? '#3fb950' : '#f85149' }}>
+                                    {match.setup.direction === 1 ? 'LONG' : 'SHORT'}
+                                </span>
+                                <span className="match-profit" style={{ color: match.setup.profit_pct >= 0 ? '#3fb950' : '#f85149' }}>
+                                    {match.setup.profit_pct >= 0 ? '+' : ''}{(match.setup.profit_pct * 100).toFixed(2)}%
+                                </span>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: '0.75rem', color: '#8b949e', marginBottom: 4 }}>
+                                    {(match.similarity * 100).toFixed(1)}%
+                                </div>
+                                <div className="match-similarity-bar">
+                                    <div className="match-similarity-fill" style={{ width: `${match.similarity * 100}%` }} />
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+        
+        function App() {
+            const [connected, setConnected] = useState(false);
+            const [chartData, setChartData] = useState([]);
+            const [markers, setMarkers] = useState([]);
+            const [overlayData, setOverlayData] = useState(null);
+            const [currentSignal, setCurrentSignal] = useState(null);
+            const [matches, setMatches] = useState([]);
+            const [selectedMatch, setSelectedMatch] = useState(null);
+            const [stats, setStats] = useState(null);
+            const [symbol] = useState('BTCUSDT');
+            const [wsConnection, setWsConnection] = useState(null);
+            
+            const generateDemoData = useCallback(() => {
+                const now = Math.floor(Date.now() / 1000);
+                const data = [];
+                let price = 50000;
+                
+                for (let i = 0; i < 200; i++) {
+                    const time = now - (200 - i) * 60;
+                    const change = (Math.random() - 0.5) * 200;
+                    const open = price;
+                    price += change;
+                    const high = Math.max(open, price) + Math.random() * 50;
+                    const low = Math.min(open, price) - Math.random() * 50;
+                    data.push({ time, open, high, low, close: price });
+                }
+                return data;
+            }, []);
+            
+            useEffect(() => {
+                api.health()
+                    .then(res => setConnected(res.status === 'healthy'))
+                    .catch(() => setConnected(false));
+                
+                api.getStats().then(setStats).catch(console.error);
+                setChartData(generateDemoData());
+            }, [generateDemoData]);
+            
+            const handleMatchSelect = useCallback((match) => {
+                setSelectedMatch(match);
+                
+                if (match.setup.price_window && chartData.length > 0) {
+                    const lastCandle = chartData[chartData.length - 1];
+                    const overlay = match.setup.price_window.map((price, i) => ({
+                        time: lastCandle.time - (match.setup.price_window.length - i) * 60,
+                        value: price
+                    }));
+                    setOverlayData(overlay);
+                    
+                    const entryMarker = {
+                        time: overlay[overlay.length - 1].time,
+                        position: match.setup.direction === 1 ? 'belowBar' : 'aboveBar',
+                        color: match.setup.direction === 1 ? '#3fb950' : '#f85149',
+                        shape: match.setup.direction === 1 ? 'arrowUp' : 'arrowDown',
+                        text: `Entry: $${match.setup.entry_price.toFixed(0)}`
+                    };
+                    setMarkers([entryMarker]);
+                }
+            }, [chartData]);
+            
+            const handleSearch = useCallback(async () => {
+                if (chartData.length < 100) return;
+                
+                const prices = chartData.slice(-100).map(c => c.close);
+                
+                try {
+                    const result = await api.search(prices, 10);
+                    setMatches(result.results);
+                    
+                    if (result.results.length > 0) {
+                        setCurrentSignal({
+                            direction_signal: result.direction_consensus.long > result.direction_consensus.short ? 'long' : 'short',
+                            similarity: result.avg_similarity,
+                            confidence: Math.max(result.direction_consensus.long, result.direction_consensus.short),
+                            avg_profit: result.avg_profit,
+                            similar_setups: result.results
+                        });
+                    }
+                } catch (error) {
+                    console.error('Search failed:', error);
+                }
+            }, [chartData]);
+            
+            const connectWebSocket = useCallback(() => {
+                const ws = new WebSocket(`ws://localhost:8000/ws/live/${symbol}`);
+                ws.onopen = () => setWsConnection(ws);
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'match') {
+                        setCurrentSignal({
+                            direction_signal: data.direction_signal,
+                            similarity: data.similarity,
+                            confidence: data.confidence,
+                            avg_profit: data.avg_profit,
+                            similar_setups: data.similar_setups
+                        });
+                    }
+                };
+                ws.onclose = () => setWsConnection(null);
+                return ws;
+            }, [symbol]);
+            
+            return (
+                <div className="app">
+                    <header className="header">
+                        <h1>🔍 Trade Setup Pattern Matcher</h1>
+                        <div className="status-badge">
+                            <div className={`status-dot ${connected ? 'connected' : ''}`} />
+                            <span>{connected ? 'Connected' : 'Demo Mode'}</span>
+                        </div>
+                    </header>
+                    
+                    <div className="chart-container">
+                        <div className="chart-header">
+                            <span className="chart-title">{symbol}</span>
+                            <div className="chart-controls">
+                                <button className="chart-btn" onClick={handleSearch}>🔍 Find Similar</button>
+                                <button 
+                                    className={`chart-btn ${wsConnection ? 'active' : ''}`}
+                                    onClick={() => wsConnection ? wsConnection.close() : connectWebSocket()}
+                                >
+                                    {wsConnection ? '⏹ Stop Live' : '▶ Start Live'}
+                                </button>
+                                <button className="chart-btn" onClick={() => { setOverlayData(null); setMarkers([]); setSelectedMatch(null); }}>
+                                    Clear Overlay
+                                </button>
+                            </div>
+                        </div>
+                        <TradingChart data={chartData} markers={markers} overlayData={overlayData} />
+                    </div>
+                    
+                    <div className="sidebar">
+                        {currentSignal && (
+                            <div className="panel">
+                                <div className="panel-header"><span>Current Signal</span></div>
+                                <div className="panel-content">
+                                    <SignalCard signal={currentSignal} />
+                                </div>
+                            </div>
+                        )}
+                        
+                        <div className="panel" style={{ flex: 1 }}>
+                            <div className="panel-header">
+                                <span>Similar Setups</span>
+                                <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>{matches.length} found</span>
+                            </div>
+                            <div className="panel-content">
+                                <MatchList matches={matches} selectedId={selectedMatch?.setup?.id} onSelect={handleMatchSelect} />
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <footer className="footer">
+                        <div className="metrics">
+                            <div className="metric">
+                                <span>Total Setups:</span>
+                                <span className="metric-value">{stats?.total_setups || 0}</span>
+                            </div>
+                            <div className="metric">
+                                <span>Long/Short:</span>
+                                <span className="metric-value">{stats?.by_direction?.long || 0}/{stats?.by_direction?.short || 0}</span>
+                            </div>
+                            <div className="metric">
+                                <span>Avg Profit:</span>
+                                <span className="metric-value">
+                                    {stats?.profit_stats?.avg ? `${(stats.profit_stats.avg * 100).toFixed(2)}%` : 'N/A'}
+                                </span>
+                            </div>
+                        </div>
+                        <div>Trade Setup Embedding System v1.0</div>
+                    </footer>
+                </div>
+            );
+        }
+        
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
