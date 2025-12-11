@@ -29,6 +29,15 @@ from .database.pgvector_store import TradeEmbeddingDB, StoredTradeSetup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
 
 class TradePipeline:
     """
@@ -115,7 +124,7 @@ class TradePipeline:
         
         # Log statistics
         stats = self.oracle.get_statistics(prices)
-        logger.info(f"Oracle statistics: {json.dumps(stats, indent=2)}")
+        logger.info(f"Oracle statistics: {json.dumps(stats, indent=2, cls=NpEncoder)}")
         
         return actions, leverages
     
