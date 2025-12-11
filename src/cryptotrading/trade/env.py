@@ -7,7 +7,7 @@ import numpy as np
 import gym
 from gym import spaces
 from cryptotrading.trade.price import PriceServerClient, ExchangePriceClient
-from cryptotrading.utils import to_float, get_first_float
+from cryptotrading.util import to_float, get_first_float
 
 logger = logging.getLogger(__name__)
 class PerpetualFuturesEnv(gym.Env):
