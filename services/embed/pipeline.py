@@ -17,14 +17,14 @@ from typing import Optional, List, Tuple
 import logging
 import json
 
-from models.dp_oracle import DPOracle
-from models.encoder import (
+from .models.dp_oracle import DPOracle
+from .models.encoder import (
     PriceWindowEncoder, 
     TradeSetup, 
     extract_trade_setups
 )
-from models.trainer import EncoderTrainer
-from database.pgvector_store import TradeEmbeddingDB, StoredTradeSetup
+from .models.trainer import EncoderTrainer
+from .database.pgvector_store import TradeEmbeddingDB, StoredTradeSetup
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -9,7 +9,6 @@ Endpoints:
 - WS /ws/live: WebSocket for live price streaming and real-time matching
 """
 
-import asyncio
 import json
 import numpy as np
 from pathlib import Path
@@ -17,15 +16,15 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from collections import deque
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import torch
 import logging
 
 from models.encoder import PriceWindowEncoder, normalize_price_window
-from models.dp_oracle import DPOracle, OracleAction
-from database.pgvector_store import TradeEmbeddingDB, StoredTradeSetup, SimilarSetup
+from models.dp_oracle import DPOracle
+from database.pgvector_store import TradeEmbeddingDB
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
