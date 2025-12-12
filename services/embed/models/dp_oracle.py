@@ -339,9 +339,12 @@ class DPOracle:
             }
         
         profits = [s.profit_pct for s in segments]
+        leverages =[s.leverage for s in segments]
         
         longs = [s for s in segments if s.direction == 1]
         shorts = [s for s in segments if s.direction == -1]
+
+        durations = [s.end_idx - s.start_idx for s in segments]
         
         return {
             'num_trades': len(segments),
@@ -351,8 +354,12 @@ class DPOracle:
             'mean_return': np.mean(profits),
             'std_return': np.std(profits),
             'win_rate': sum(1 for p in profits if p > 0) / len(profits),
-            'avg_leverage': np.mean([s.leverage for s in segments]),
-            'avg_hold_duration': np.mean([s.end_idx - s.start_idx for s in segments]),
+            'avg_leverage': np.mean(leverages),
+            'max_leverage': max(leverages),
+            'min_leverage': min(leverages),
+            'avg_hold_duration': np.mean(durations),
+            'max_hold_duration': max(durations),
+            'min_hold_duration': min(durations),
             'max_profit': max(profits),
             'max_loss': min(profits),
             'sharpe_ratio': np.mean(profits) / (np.std(profits) + 1e-8)
