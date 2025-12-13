@@ -17,7 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class LeveragedDPOracle:
+class LeveragedDPOracleStrategy:
     def __init__(
         self,
         max_holding_period: int = 1000,
@@ -242,23 +242,3 @@ class LeveragedDPOracle:
             'worst_trade_roe': min(roes)
         }
 
-def generate_oracle_labels(
-    prices: np.ndarray,
-    timestamps: Optional[np.ndarray] = None,
-    max_leverage: float = 20.0,
-    transaction_cost: float = 0.0005
-) -> Tuple[np.ndarray, np.ndarray, List[OracleTradeSegment]]:
-    
-    oracle = LeveragedDPOracle(
-        max_leverage=max_leverage,
-        transaction_cost=transaction_cost
-    )
-    
-    actions, leverages = oracle.compute_oracle_actions(prices)
-    segments = oracle.extract_trade_segments(prices, timestamps)
-    
-    logger.info(f"Leveraged DP found {len(segments)} optimal trades")
-    stats = oracle.get_statistics(prices)
-    logger.info(f"Oracle Stats: {stats}")
-    
-    return actions, leverages, segments

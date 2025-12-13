@@ -4,7 +4,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class OracleStrategy:
+class GreedyOracleStrategy:
     """
     Near-perfect trading strategy using future price information.
     
