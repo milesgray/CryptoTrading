@@ -4,7 +4,7 @@ A contrastive learning system for finding similar historical trade setups in rea
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                     OFFLINE PIPELINE                         │
 ├─────────────────────────────────────────────────────────────┤
@@ -28,31 +28,39 @@ A contrastive learning system for finding similar historical trade setups in rea
 ## Components
 
 ### 1. DP Oracle (`models/dp_oracle.py`)
+
 Dynamic Programming solver for globally optimal trading path. Uses Viterbi algorithm to find the best sequence of Long/Short/Flat states.
 
 ### 2. Contrastive Encoder (`models/encoder.py`)
+
 CNN-based encoder trained with Supervised Contrastive Loss. Learns embeddings where:
+
 - Profitable longs cluster together
 - Profitable shorts cluster together
 - Different outcome magnitudes are distinguished
 
 ### 3. PostgreSQL + pgvector (`database/pgvector_store.py`)
+
 Efficient vector similarity search using HNSW index.
 
 ### 4. FastAPI Backend (`api/server.py`)
+
 REST API + WebSocket for real-time matching.
 
 ### 5. React Frontend (`frontend/index.html`)
+
 TradingView Lightweight Charts visualization with overlay of matched patterns.
 
 ## Setup
 
 ### 1. Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 2. Setup PostgreSQL with pgvector
+
 ```bash
 # Install pgvector extension
 # Ubuntu/Debian:
@@ -69,18 +77,21 @@ psql -U postgres -c "CREATE DATABASE trade_embeddings;"
 ```
 
 ### 3. Run Pipeline with Demo Data
+
 ```bash
 cd trade_embeddings
 python pipeline.py --demo --demo-length 50000 --epochs 50
 ```
 
 ### 4. Start API Server
+
 ```bash
 cd trade_embeddings
 uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 5. Open Frontend
+
 Open `frontend/index.html` in a browser.
 
 ## Usage
@@ -190,7 +201,9 @@ Create `config.json` in the api directory:
 ## Embedding Details
 
 ### Input Normalization
+
 Raw prices are converted to log returns and standardized:
+
 ```python
 log_prices = np.log(prices)
 returns = np.diff(log_prices)
@@ -198,13 +211,16 @@ normalized = (returns - mean) / std
 ```
 
 ### Encoder Architecture
+
 - 1D CNN with residual connections
 - Multi-scale pooling (global + adaptive)
 - MLP projection head
 - L2 normalized output (128-dim by default)
 
 ### Contrastive Learning
+
 Supervised Contrastive (SupCon) loss groups embeddings by outcome label:
+
 - 10 classes: 5 outcomes × 2 directions
 - Outcomes: LOSS_LARGE, LOSS_SMALL, FLAT, PROFIT_SMALL, PROFIT_LARGE
 
