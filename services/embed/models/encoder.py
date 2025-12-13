@@ -439,59 +439,65 @@ def extract_trade_setups(
     setups = []
     n = len(prices)
     
-    i = 0
-    while i < n:
-        action = oracle_actions[i]
+    # Find all entry points
+    entry_indices = np.where((oracle_actions == 1) | (oracle_actions == 2))[0]
+    
+    for entry_idx in entry_indices:
+        action = oracle_actions[entry_idx]
+        direction = TradeDirection.LONG if action == 1 else TradeDirection.SHORT
+        entry_price = prices[entry_idx]
+        leverage = oracle_leverages[entry_idx]
         
-        # Look for entry signals (LONG or SHORT)
-        if action in [1, 2]:  # LONG or SHORT
-            direction = TradeDirection.LONG if action == 1 else TradeDirection.SHORT
-            entry_price = prices[i]
-            entry_idx = i
-            leverage = oracle_leverages[i]
-            
-            # Find exit
-            exit_idx = i + 1
-            while exit_idx < n and oracle_actions[exit_idx] not in [3, 1, 2]:  # CLOSE or new position
-                exit_idx += 1
-            
-            if exit_idx >= n:
-                exit_idx = n - 1
-            
-            exit_price = prices[exit_idx]
-            
-            # Calculate profit
-            if direction == TradeDirection.LONG:
-                profit_pct = (exit_price - entry_price) / entry_price
-            else:
-                profit_pct = (entry_price - exit_price) / entry_price
-            
-            # Extract price window before entry
-            if entry_idx >= window_size:
-                window_start = entry_idx - window_size
-                price_window = prices[window_start:entry_idx]
-                normalized_window = normalize_price_window(price_window)
-                
-                # Pad if needed (shouldn't happen with above check)
-                if len(normalized_window) < window_size - 1:
-                    pad_size = (window_size - 1) - len(normalized_window)
-                    normalized_window = np.pad(normalized_window, (pad_size, 0), mode='edge')
-                
-                setup = TradeSetup(
-                    price_window=normalized_window,
-                    direction=direction,
-                    profit_pct=profit_pct,
-                    leverage=leverage,
-                    hold_duration=exit_idx - entry_idx,
-                    entry_idx=entry_idx,
-                    timestamp=timestamps[entry_idx] if timestamps is not None else None
-                )
-                
-                if abs(profit_pct) >= min_profit_threshold:
-                    setups.append(setup)
-            
-            i = exit_idx + 1
+        # Find exit: look for CLOSE (3) or next entry (1, 2)
+        exit_idx = entry_idx + 1
+        while exit_idx < n:
+            if oracle_actions[exit_idx] in [1, 2, 3]:  # New entry or close
+                break
+            exit_idx += 1
+        
+        # If we hit a new entry, the exit is the bar before
+        if exit_idx < n and oracle_actions[exit_idx] in [1, 2]:
+            exit_idx = exit_idx  # Exit at the new entry point (position flips)
+        
+        if exit_idx >= n:
+            exit_idx = n - 1
+        
+        exit_price = prices[exit_idx]
+        
+        # Calculate profit
+        if direction == TradeDirection.LONG:
+            profit_pct = (exit_price - entry_price) / entry_price
         else:
-            i += 1
+            profit_pct = (entry_price - exit_price) / entry_price
+        
+        # Extract price window before entry
+        # Allow partial windows for early trades (pad with edge values)
+        window_start = max(0, entry_idx - window_size)
+        price_window = prices[window_start:entry_idx]
+        
+        if len(price_window) < 2:
+            # Need at least 2 prices to compute returns
+            continue
+        
+        normalized_window = normalize_price_window(price_window)
+        
+        # Pad to target size if needed
+        target_len = window_size - 1  # -1 because returns are diff
+        if len(normalized_window) < target_len:
+            pad_size = target_len - len(normalized_window)
+            normalized_window = np.pad(normalized_window, (pad_size, 0), mode='edge')
+        
+        setup = TradeSetup(
+            price_window=normalized_window,
+            direction=direction,
+            profit_pct=profit_pct,
+            leverage=leverage,
+            hold_duration=exit_idx - entry_idx,
+            entry_idx=entry_idx,
+            timestamp=timestamps[entry_idx] if timestamps is not None else None
+        )
+        
+        if abs(profit_pct) >= min_profit_threshold:
+            setups.append(setup)
     
     return setups

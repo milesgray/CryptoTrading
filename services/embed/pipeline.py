@@ -10,34 +10,24 @@ This module orchestrates:
 6. Storing everything in PostgreSQL with pgvector
 """
 
-import asyncio
 import numpy as np
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple    
 import logging
 import json
 
-from .models.dp_oracle import DPOracle
-from .models.encoder import (
+from cryptotrading.trade.strategy import DPOracle, LeveragedDPOracle
+from models.encoder import (
     PriceWindowEncoder, 
     TradeSetup, 
     extract_trade_setups
 )
-from .models.trainer import EncoderTrainer
-from .database.pgvector_store import TradeEmbeddingDB, StoredTradeSetup
+from models.trainer import EncoderTrainer
+from database.numpy_store import NumpyVectorStore, StoredTradeSetup
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class NpEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        if isinstance(obj, np.floating):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return super().default(obj)
 
 class TradePipeline:
     """
@@ -50,34 +40,33 @@ class TradePipeline:
         embedding_dim: int = 128,
         max_leverage: float = 20.0,
         transaction_cost: float = 0.001,
-        db_config: Optional[dict] = None
+        store_path: str = "vector_store",
+        oracle_type: str = "leveraged"
     ):
         self.window_size = window_size
         self.embedding_dim = embedding_dim
         self.max_leverage = max_leverage
         self.transaction_cost = transaction_cost
-        
-        # Database config
-        self.db_config = db_config or {
-            'host': 'localhost',
-            'port': 5432,
-            'database': 'trade_embeddings',
-            'user': 'postgres',
-            'password': 'postgres'
-        }
+        self.store_path = store_path
         
         # Components (initialized lazily)
-        self.oracle: Optional[DPOracle] = None
+        self.oracle: Optional[DPOracle | LeveragedDPOracle] = None
         self.encoder: Optional[PriceWindowEncoder] = None
         self.trainer: Optional[EncoderTrainer] = None
-        self.db: Optional[TradeEmbeddingDB] = None
+        self.store: Optional[NumpyVectorStore] = None
         
     def initialize_oracle(self):
         """Initialize the DP oracle"""
-        self.oracle = DPOracle(
-            max_leverage=self.max_leverage,
-            transaction_cost=self.transaction_cost
-        )
+        if self.oracle_type == "leveraged":
+            self.oracle = LeveragedDPOracle(
+                max_leverage=self.max_leverage,
+                transaction_cost=self.transaction_cost
+            )
+        else:
+            self.oracle = DPOracle(
+                max_leverage=self.max_leverage,
+                transaction_cost=self.transaction_cost
+            )
         logger.info("Oracle initialized")
         
     def initialize_encoder(self, model_path: Optional[Path] = None):
@@ -101,15 +90,13 @@ class TradePipeline:
         
         self.encoder.eval()
         
-    async def initialize_database(self):
-        """Initialize database connection"""
-        self.db = TradeEmbeddingDB(
-            embedding_dim=self.embedding_dim,
-            **self.db_config
+    def initialize_store(self):
+        """Initialize vector store"""
+        self.store = NumpyVectorStore(
+            store_path=self.store_path,
+            embedding_dim=self.embedding_dim
         )
-        await self.db.connect()
-        await self.db.initialize_schema()
-        logger.info("Database initialized")
+        logger.info(f"Vector store initialized at {self.store_path}")
         
     def generate_oracle_labels(
         self,
@@ -124,7 +111,7 @@ class TradePipeline:
         
         # Log statistics
         stats = self.oracle.get_statistics(prices)
-        logger.info(f"Oracle statistics: {json.dumps(stats, indent=2, cls=NpEncoder)}")
+        logger.info(f"Oracle statistics: {json.dumps(stats, indent=2)}")
         
         return actions, leverages
     
@@ -213,7 +200,7 @@ class TradePipeline:
         
         return embeddings
     
-    async def store_setups(
+    def store_setups(
         self,
         setups: List[TradeSetup],
         embeddings: np.ndarray,
@@ -222,13 +209,14 @@ class TradePipeline:
         symbol: str = 'BTCUSDT',
         timeframe: str = '1s'
     ) -> List[int]:
-        """Store setups and embeddings in database"""
-        if self.db is None:
-            await self.initialize_database()
+        """Store setups and embeddings in vector store"""
+        if self.store is None:
+            self.initialize_store()
         
         stored_setups = []
+        price_windows = []
         
-        for setup, embedding in zip(setups, embeddings):
+        for setup in setups:
             # Get raw price window for visualization
             start_idx = max(0, setup.entry_idx - self.window_size)
             end_idx = setup.entry_idx
@@ -240,28 +228,40 @@ class TradePipeline:
             exit_price = float(prices[exit_idx])
             
             stored = StoredTradeSetup(
-                id=None,
-                embedding=embedding,
+                id=0,  # Will be assigned by store
                 direction=setup.direction,
                 profit_pct=setup.profit_pct,
                 leverage=setup.leverage,
                 hold_duration=setup.hold_duration,
-                entry_timestamp=float(timestamps[setup.entry_idx]) if timestamps is not None else setup.entry_idx,
+                entry_timestamp=float(timestamps[setup.entry_idx]) if timestamps is not None else float(setup.entry_idx),
                 entry_price=entry_price,
                 exit_price=exit_price,
                 symbol=symbol,
                 timeframe=timeframe,
-                window_size=self.window_size,
-                price_window=raw_prices.astype(np.float32)
+                window_size=self.window_size
             )
             stored_setups.append(stored)
+            price_windows.append(raw_prices)
         
-        ids = await self.db.insert_batch(stored_setups)
-        logger.info(f"Stored {len(ids)} setups in database")
+        # Pad price windows to same length
+        max_len = max(len(pw) for pw in price_windows) if price_windows else 0
+        if max_len > 0:
+            price_windows_padded = np.array([
+                np.pad(pw, (max_len - len(pw), 0), mode='edge') 
+                for pw in price_windows
+            ])
+        else:
+            price_windows_padded = None
         
+        ids = self.store.add_batch(embeddings, stored_setups, price_windows_padded)
+        
+        # Save to disk
+        self.store.save()
+        
+        logger.info(f"Stored {len(ids)} setups in vector store")
         return ids
     
-    async def run_full_pipeline(
+    def run_full_pipeline(
         self,
         prices: np.ndarray,
         timestamps: np.ndarray,
@@ -276,7 +276,7 @@ class TradePipeline:
         2. Extract trade setups
         3. Train encoder
         4. Generate embeddings
-        5. Store in database
+        5. Store in vector store
         """
         logger.info("Starting full pipeline...")
         logger.info(f"Input: {len(prices)} prices, symbol={symbol}, timeframe={timeframe}")
@@ -309,10 +309,10 @@ class TradePipeline:
         logger.info("Step 4: Generating embeddings...")
         embeddings = self.generate_embeddings(setups)
         
-        # Step 5: Store in database
-        logger.info("Step 5: Storing in database...")
-        await self.initialize_database()
-        ids = await self.store_setups(
+        # Step 5: Store in vector store
+        logger.info("Step 5: Storing in vector store...")
+        self.initialize_store()
+        ids = self.store_setups(
             setups=setups,
             embeddings=embeddings,
             prices=prices,
@@ -322,7 +322,7 @@ class TradePipeline:
         )
         
         # Get final stats
-        stats = await self.db.get_stats()
+        stats = self.store.get_stats()
         
         logger.info("Pipeline complete!")
         
@@ -330,16 +330,16 @@ class TradePipeline:
             'num_setups': len(setups),
             'num_stored': len(ids),
             'training_history': history,
-            'db_stats': stats
+            'store_stats': stats
         }
     
-    async def close(self):
+    def close(self):
         """Cleanup resources"""
-        if self.db:
-            await self.db.disconnect()
+        if self.store:
+            self.store.save()
 
 
-async def run_pipeline_from_csv(
+def run_pipeline_from_csv(
     csv_path: str,
     price_column: str = 'close',
     timestamp_column: str = 'timestamp',
@@ -377,7 +377,7 @@ async def run_pipeline_from_csv(
     pipeline = TradePipeline(**kwargs)
     
     try:
-        result = await pipeline.run_full_pipeline(
+        result = pipeline.run_full_pipeline(
             prices=prices,
             timestamps=timestamps,
             symbol=symbol,
@@ -385,10 +385,10 @@ async def run_pipeline_from_csv(
         )
         return result
     finally:
-        await pipeline.close()
+        pipeline.close()
 
 
-async def run_pipeline_from_price_client(
+def run_pipeline_from_price_client(
     price_client,
     token: str,
     days: int = 5,
@@ -416,7 +416,7 @@ async def run_pipeline_from_price_client(
     pipeline = TradePipeline(**kwargs)
     
     try:
-        result = await pipeline.run_full_pipeline(
+        result = pipeline.run_full_pipeline(
             prices=prices,
             timestamps=timestamps,
             symbol=token,
@@ -424,7 +424,7 @@ async def run_pipeline_from_price_client(
         )
         return result
     finally:
-        await pipeline.close()
+        pipeline.close()
 
 
 # CLI interface
@@ -439,11 +439,7 @@ if __name__ == "__main__":
     parser.add_argument('--embedding-dim', type=int, default=128, help='Embedding dimension')
     parser.add_argument('--epochs', type=int, default=100, help='Training epochs')
     parser.add_argument('--model-path', type=str, default='models/trained', help='Model save path')
-    parser.add_argument('--db-host', type=str, default='localhost', help='Database host')
-    parser.add_argument('--db-port', type=int, default=5432, help='Database port')
-    parser.add_argument('--db-name', type=str, default='trade_embeddings', help='Database name')
-    parser.add_argument('--db-user', type=str, default='postgres', help='Database user')
-    parser.add_argument('--db-password', type=str, default='postgres', help='Database password')
+    parser.add_argument('--store-path', type=str, default='vector_store', help='Vector store path')
     
     # Demo mode with synthetic data
     parser.add_argument('--demo', action='store_true', help='Run with synthetic demo data')
@@ -451,7 +447,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    async def main():
+    def main():
         if args.demo:
             # Generate synthetic data
             logger.info(f"Generating {args.demo_length} synthetic price points")
@@ -477,17 +473,11 @@ if __name__ == "__main__":
             pipeline = TradePipeline(
                 window_size=args.window_size,
                 embedding_dim=args.embedding_dim,
-                db_config={
-                    'host': args.db_host,
-                    'port': args.db_port,
-                    'database': args.db_name,
-                    'user': args.db_user,
-                    'password': args.db_password
-                }
+                store_path=args.store_path
             )
             
             try:
-                result = await pipeline.run_full_pipeline(
+                result = pipeline.run_full_pipeline(
                     prices=prices,
                     timestamps=timestamps,
                     symbol=args.symbol,
@@ -498,25 +488,19 @@ if __name__ == "__main__":
                 
                 logger.info(f"Pipeline result: {json.dumps(result, indent=2, default=str)}")
             finally:
-                await pipeline.close()
+                pipeline.close()
                 
         elif args.csv:
-            result = await run_pipeline_from_csv(
+            result = run_pipeline_from_csv(
                 csv_path=args.csv,
                 symbol=args.symbol,
                 timeframe=args.timeframe,
                 window_size=args.window_size,
                 embedding_dim=args.embedding_dim,
-                db_config={
-                    'host': args.db_host,
-                    'port': args.db_port,
-                    'database': args.db_name,
-                    'user': args.db_user,
-                    'password': args.db_password
-                }
+                store_path=args.store_path
             )
             logger.info(f"Pipeline result: {json.dumps(result, indent=2, default=str)}")
         else:
             parser.print_help()
     
-    asyncio.run(main())
+    main()
