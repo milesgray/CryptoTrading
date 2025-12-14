@@ -1,11 +1,11 @@
-from .dp_oracle import DPOracle
-from .leveraged_dp_oracle import LeveragedDPOracle
+from .dp_oracle import DPOracleStrategy
+from .leveraged_dp_oracle import LeveragedDPOracleStrategy
 from .oracle import OracleStrategy
 from .util import OracleAction, OracleTradeSegment, generate_oracle_labels
 
 __all__ = [
-    'DPOracle', 
-    'LeveragedDPOracle', 
+    'DPOracleStrategy', 
+    'LeveragedDPOracleStrategy', 
     'OracleStrategy', 
     'OracleAction', 
     'OracleTradeSegment',
