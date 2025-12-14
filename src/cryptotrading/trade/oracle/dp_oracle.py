@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 
-class DPOracleStrategy:
+class DPOracle:
     """
     Solves for the GLOBALLY optimal trading path using Dynamic Programming.
     This replaces the greedy heuristic with a mathematically perfect teacher.

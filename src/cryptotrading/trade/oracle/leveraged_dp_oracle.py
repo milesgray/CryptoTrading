@@ -17,7 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class LeveragedDPOracleStrategy:
+class LeveragedDPOracle:
     def __init__(
         self,
         max_holding_period: int = 1000,

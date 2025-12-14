@@ -16,7 +16,7 @@ from typing import Optional, List, Tuple
 import logging
 import json
 
-from cryptotrading.trade.strategy import DPOracle, LeveragedDPOracle
+from cryptotrading.trade.oracle import DPOracle, LeveragedDPOracle
 from models.encoder import (
     PriceWindowEncoder, 
     TradeSetup, 
