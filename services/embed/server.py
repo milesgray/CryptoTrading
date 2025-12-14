@@ -24,8 +24,8 @@ from pydantic import BaseModel, Field
 import torch
 import logging
 
-from models.encoder import PriceWindowEncoder, normalize_price_window
-from database.numpy_store import NumpyVectorStore
+from .models.encoder import PriceWindowEncoder, normalize_price_window
+from .database.numpy_store import NumpyVectorStore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

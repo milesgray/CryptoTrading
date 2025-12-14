@@ -17,12 +17,12 @@ import logging
 import json
 
 from cryptotrading.trade.oracle import DPOracle, LeveragedDPOracle
-from models.encoder import (
+from .models.encoder import (
     PriceWindowEncoder, 
     TradeSetup, 
     extract_trade_setups
 )
-from models.trainer import EncoderTrainer
+from .models.trainer import EncoderTrainer
 from database.numpy_store import NumpyVectorStore, StoredTradeSetup
 
 logging.basicConfig(level=logging.INFO)
