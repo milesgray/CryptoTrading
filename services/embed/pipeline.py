@@ -23,7 +23,7 @@ from .models.encoder import (
     extract_trade_setups
 )
 from .models.trainer import EncoderTrainer
-from database.numpy_store import NumpyVectorStore, StoredTradeSetup
+from .database.numpy_store import NumpyVectorStore, StoredTradeSetup
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
