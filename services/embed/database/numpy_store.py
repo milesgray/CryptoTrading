@@ -22,6 +22,16 @@ except ImportError:
     FAISS_AVAILABLE = False
     logger.warning("FAISS not installed - using brute force search (slower)")
 
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
+
 
 @dataclass
 class StoredTradeSetup:
@@ -315,7 +325,7 @@ class NumpyVectorStore:
         
         # Save metadata
         with open(self.store_path / "metadata.json", 'w') as f:
-            json.dump(self.metadata, f)
+            json.dump(self.metadata, f, cls=NpEncoder)
         
         # Save price windows
         if self.price_windows is not None:
