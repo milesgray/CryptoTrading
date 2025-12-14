@@ -33,7 +33,8 @@ class DPOracle:
     
     def compute_oracle_actions(
         self, 
-        prices: np.ndarray
+        prices: np.ndarray=None,
+        segments: np.ndarray=None
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute optimal actions and leverage.
@@ -48,14 +49,14 @@ class DPOracle:
             actions: Array of OracleAction values
             leverages: Array of leverage values
         """
-        # 1. Compute Optimal States (Flat, Long, Short)
-        states = self._solve_dp(prices)
+        if not segments:
+            segments = self._solve_dp(prices)
         
         # 2. Convert States to Actions
-        actions = self._states_to_actions(states)
+        actions = self._states_to_actions(segments)
         
         # 3. Compute Safe Leverage for the chosen path
-        leverages = self._compute_safe_leverage(prices, states, actions)
+        leverages = self._compute_safe_leverage(prices, segments, actions)
         
         return actions, leverages
 

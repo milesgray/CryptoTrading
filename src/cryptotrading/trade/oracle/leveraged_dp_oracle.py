@@ -30,13 +30,26 @@ class LeveragedDPOracle:
         self.fee = transaction_cost
         self.risk_buffer = risk_buffer
 
-    def compute_oracle_actions(self, prices: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def compute_oracle_actions(
+        self, 
+        prices: np.ndarray=None,
+        segments: np.ndarray=None
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute optimal actions and leverage.
-        """
-        # 1. Solve the Segment-Based DP
-        segments = self._solve_segment_dp(prices)
         
+        1. Solve Viterbi path for State (Long/Short/Flat).
+        2. Calculate max safe leverage for the identified intervals.
+        
+        Args:
+            prices: Array of prices
+            
+        Returns:
+            actions: Array of OracleAction values
+            leverages: Array of leverage values
+        """
+        if not segments:
+            segments = self._solve_segment_dp(prices)
         # 2. Convert Segments to dense arrays (Actions, Leverage)
         actions = np.zeros(len(prices), dtype=np.int64)
         leverages = np.ones(len(prices), dtype=np.float32)
