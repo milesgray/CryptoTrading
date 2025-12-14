@@ -1,51 +1,105 @@
 import numpy as np
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 import logging
+from .util import OracleAction, OracleTradeSegment
 
 logger = logging.getLogger(__name__)
 
 class GreedyOracle:
     """
-    Near-perfect trading strategy using future price information.
+    Greedy trading strategy using future price information.
     
     This generates expert demonstrations by looking ahead at future prices
-    and making optimal trading decisions. Perfect for behavior cloning
-    and providing a strong baseline for offline RL algorithms like ReBRAC.
+    and making optimal trading decisions using a greedy approach. Perfect for 
+    behavior cloning and providing a strong baseline for offline RL algorithms.
     """
     
     def __init__(self, 
-                 lookahead_steps: int = 50,
+                 max_holding_period: int = 50,
                  min_profit_threshold: float = 0.02,  # 2% minimum profit
-                 max_leverage: float = 100,
+                 max_leverage: float = 20.0,
                  risk_per_trade: float = 0.1,  # Risk 10% of equity per trade
                  hold_time_min: int = 5,  # Minimum holding period
                  transaction_cost: float = 0.001):
         """
         Args:
-            lookahead_steps: How many steps ahead to look for trading opportunities
+            max_holding_period: How many steps ahead to look for trading opportunities
             min_profit_threshold: Minimum expected profit to open position
             max_leverage: Maximum leverage to use
             risk_per_trade: Fraction of equity to risk per trade
             hold_time_min: Minimum steps to hold a position
             transaction_cost: Trading cost as fraction
         """
-        self.lookahead_steps = lookahead_steps
+        self.max_holding_period = max_holding_period
         self.min_profit_threshold = min_profit_threshold
         self.max_leverage = max_leverage
         self.risk_per_trade = risk_per_trade
         self.hold_time_min = hold_time_min
         self.transaction_cost = transaction_cost
-        self.position_opened_at = {}  # Track when positions were opened
         
-    def find_best_opportunity(self, 
-                             current_price: float,
-                             future_prices: List[float]) -> Tuple[str, float, int]:
+    def compute_oracle_actions(self, prices: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Compute optimal actions and leverage using greedy approach.
+        
+        Args:
+            prices: Array of prices
+            
+        Returns:
+            actions: Array of OracleAction values
+            leverages: Array of leverage values
+        """
+        n = len(prices)
+        actions = np.zeros(n, dtype=np.int64)
+        leverages = np.ones(n, dtype=np.float32)
+        
+        current_position = None  # (direction, entry_idx, leverage, target_exit_idx)
+        
+        for i in range(n):
+            # If we have a position, check if we should close it
+            if current_position is not None:
+                direction, entry_idx, leverage, target_exit_idx = current_position
+                
+                # Check if we've reached target exit or need emergency exit
+                if i >= target_exit_idx or self._should_close_position(prices, i, entry_idx, direction):
+                    actions[i] = OracleAction.CLOSE
+                    current_position = None
+                else:
+                    actions[i] = OracleAction.HOLD
+                    continue
+            
+            # Look for new trading opportunity
+            future_prices = prices[i+1 : min(i+1+self.max_holding_period, n)]
+            
+            if len(future_prices) > 0:
+                direction, expected_return, exit_step = self._find_best_opportunity(
+                    prices[i], future_prices
+                )
+                
+                if direction != 'hold':
+                    # Calculate optimal leverage
+                    leverage = self._calculate_optimal_leverage(
+                        expected_return, direction, future_prices, prices[i]
+                    )
+                    
+                    # Open position
+                    action_type = OracleAction.LONG if direction == 'long' else OracleAction.SHORT
+                    actions[i] = action_type
+                    leverages[i] = leverage
+                    current_position = (direction, i, leverage, i + exit_step)
+                else:
+                    actions[i] = OracleAction.HOLD
+        
+        return actions, leverages
+    
+    def _find_best_opportunity(self, 
+                              current_price: float,
+                              future_prices: np.ndarray) -> Tuple[str, float, int]:
         """
         Find the best trading opportunity by looking at future prices.
         
         Args:
             current_price: Current price
-            future_prices: List of future prices (lookahead_steps long)
+            future_prices: Array of future prices
             
         Returns:
             (direction, expected_return, optimal_exit_step)
@@ -99,11 +153,10 @@ class GreedyOracle:
             return 'short', best_short_return, best_short_exit
         else:
             return 'hold', 0.0, 0
-    
-    def calculate_optimal_leverage(self, 
+    def _calculate_optimal_leverage(self, 
                                    expected_return: float,
                                    direction: str,
-                                   future_prices: List[float],
+                                   future_prices: np.ndarray,
                                    current_price: float) -> float:
         """
         Calculate optimal leverage based on expected return and risk.
@@ -150,31 +203,28 @@ class GreedyOracle:
         
         return optimal_leverage
     
-    def should_close_position(self,
-                             token: str,
-                             current_step: int,
-                             position_info: Tuple,
-                             current_price: float,
-                             future_prices: List[float]) -> bool:
+    def _should_close_position(self, 
+                              prices: np.ndarray,
+                              current_step: int,
+                              entry_idx: int,
+                              direction: str) -> bool:
         """
         Decide whether to close an existing position.
         
         Args:
-            token: Token symbol
+            prices: Array of prices
             current_step: Current timestep
-            position_info: (direction, size, entry_price, leverage, target_exit_step)
-            current_price: Current price
-            future_prices: Future prices
+            entry_idx: Entry index
+            direction: 'long' or 'short'
             
         Returns:
             True if position should be closed
         """
-        direction, size, entry_price, leverage, target_exit_step = position_info
-        
-        # Check if we've reached target exit
-        steps_held = current_step - self.position_opened_at.get(token, current_step)
-        if steps_held >= target_exit_step:
-            return True
+        if current_step <= entry_idx:
+            return False
+            
+        current_price = prices[current_step]
+        entry_price = prices[entry_idx]
         
         # Calculate current P&L
         if direction == 'long':
@@ -187,8 +237,8 @@ class GreedyOracle:
             return True
         
         # Take profit early if target almost reached and trend reversing
-        if current_pnl_pct > self.min_profit_threshold * 0.8 and len(future_prices) > 5:
-            next_few_prices = future_prices[:5]
+        if current_pnl_pct > self.min_profit_threshold * 0.8 and current_step < len(prices) - 5:
+            next_few_prices = prices[current_step + 1 : current_step + 6]
             if direction == 'long' and current_price > max(next_few_prices):
                 return True  # Price peaked, sell now
             elif direction == 'short' and current_price < min(next_few_prices):
@@ -196,89 +246,130 @@ class GreedyOracle:
         
         return False
     
-    def get_action(self,
-                   token: str,
-                   current_step: int,
-                   current_price: float,
-                   future_prices: List[float],
-                   current_position: Tuple = None) -> Tuple[int, float]:
+    def extract_trade_segments(
+        self, 
+        prices: np.ndarray,
+        timestamps: Optional[np.ndarray] = None
+    ) -> List[OracleTradeSegment]:
         """
-        Get optimal action for a token.
+        Extract complete trade segments from greedy oracle solution.
         
         Args:
-            token: Token symbol
-            current_step: Current timestep
-            current_price: Current price
-            future_prices: List of future prices (lookahead_steps)
-            current_position: Current position info or None
+            prices: Price array
+            timestamps: Optional timestamp array
             
         Returns:
-            (action_type, leverage)
-            action_type: 0=nothing, 1=long, 2=short, 3=close
+            List of OracleTradeSegment objects
         """
-        # If we have a position, check if we should close it
-        if current_position is not None:
-            if self.should_close_position(token, current_step, current_position, 
-                                         current_price, future_prices):
-                if token in self.position_opened_at:
-                    del self.position_opened_at[token]
-                return (3, 1.0)  # Close position
+        actions, leverages = self.compute_oracle_actions(prices)
+        
+        segments = []
+        n = len(prices)
+        i = 0
+        
+        while i < n:
+            if actions[i] in [OracleAction.LONG, OracleAction.SHORT]:
+                # Found position start
+                start_idx = i
+                direction = 1 if actions[i] == OracleAction.LONG else -1
+                entry_price = prices[start_idx]
+                leverage = leverages[start_idx]
+                
+                # Find end (CLOSE action or end of array)
+                end_idx = start_idx + 1
+                while end_idx < n and actions[end_idx] != OracleAction.CLOSE:
+                    end_idx += 1
+                
+                if end_idx >= n:
+                    # No close found, use last price as exit
+                    end_idx = n - 1
+                    
+                exit_price = prices[end_idx]
+                
+                # Calculate metrics
+                segment_prices = prices[start_idx:end_idx + 1]
+                
+                if direction == 1:  # Long
+                    profit_pct = (exit_price - entry_price) / entry_price
+                    max_adverse = (entry_price - np.min(segment_prices)) / entry_price
+                else:  # Short
+                    profit_pct = (entry_price - exit_price) / entry_price
+                    max_adverse = (np.max(segment_prices) - entry_price) / entry_price
+                
+                roe = (profit_pct * leverage) - (self.transaction_cost * leverage * 2)
+                
+                segment = OracleTradeSegment(
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    direction=direction,
+                    entry_price=entry_price,
+                    exit_price=exit_price,
+                    profit_pct=profit_pct,
+                    roe_pct=roe,
+                    leverage=leverage,
+                    max_adverse_excursion=max_adverse
+                )
+                segments.append(segment)
+                
+                i = end_idx + 1
             else:
-                return (0, 1.0)  # Hold position
+                i += 1
         
-        # Find best trading opportunity
-        direction, expected_return, exit_step = self.find_best_opportunity(
-            current_price, future_prices
-        )
-        
-        if direction == 'hold':
-            return (0, 1.0)  # Do nothing
-        
-        # Calculate optimal leverage
-        leverage = self.calculate_optimal_leverage(
-            expected_return, direction, future_prices, current_price
-        )
-        
-        # Open position
-        action_type = 1 if direction == 'long' else 2
-        self.position_opened_at[token] = current_step
-        
-        return (action_type, leverage)
+        return segments
     
-    def get_continuous_action(self,
-                            token: str,
-                            current_step: int,
-                            current_price: float,
-                            future_prices: List[float],
-                            current_position: Tuple = None) -> float:
+    def get_statistics(self, prices: np.ndarray) -> dict:
         """
-        Get continuous action in [-1, 1] range for use with continuous control algorithms.
+        Get statistics about the greedy oracle's performance on price data.
         
         Args:
-            Same as get_action
+            prices: Price array
             
         Returns:
-            action: float in [-1, 1]
-                0 = close/no position
-                positive = long (magnitude = leverage strength)
-                negative = short (magnitude = leverage strength)
+            Dict with various statistics
         """
-        action_type, leverage = self.get_action(
-            token, current_step, current_price, future_prices, current_position
-        )
+        segments = self.extract_trade_segments(prices)
         
-        if action_type == 0 or action_type == 3:  # Do nothing or close
-            return 0.0
-        elif action_type == 1:  # Long
-            # Map leverage [1, max_leverage] to [0.2, 1.0]
-            strength = 0.2 + 0.8 * (leverage - 1) / (self.max_leverage - 1)
-            return strength
-        else:  # Short (action_type == 2)
-            # Map leverage [1, max_leverage] to [-0.2, -1.0]
-            strength = 0.2 + 0.8 * (leverage - 1) / (self.max_leverage - 1)
-            return -strength
+        if not segments:
+            return {
+                'num_trades': 0,
+                'total_return': 0.0,
+                'win_rate': 0.0
+            }
+        
+        profits = [s.profit_pct for s in segments]
+        leverages = [s.leverage for s in segments]
+        durations = [s.end_idx - s.start_idx for s in segments]
+        
+        longs = [s for s in segments if s.direction == 1]
+        shorts = [s for s in segments if s.direction == -1]
+        
+        return {
+            'num_trades': len(segments),
+            'num_longs': len(longs),
+            'num_shorts': len(shorts),
+            'total_return': sum(profits),
+            'mean_return': np.mean(profits),
+            'std_return': np.std(profits),
+            'win_rate': sum(1 for p in profits if p > 0) / len(profits),
+            'avg_leverage': np.mean(leverages),
+            'max_leverage': max(leverages),
+            'min_leverage': min(leverages),
+            'avg_hold_duration': np.mean(durations),
+            'max_hold_duration': max(durations),
+            'min_hold_duration': min(durations),
+            'max_profit': max(profits),
+            'min_profit': min(profits),
+            'max_loss': min([p for p in profits if p < 0]),
+            'sharpe_ratio': np.mean(profits) / (np.std(profits) + 1e-8),
+            'profit_factor': sum(p for p in profits if p > 0) / abs(sum(p for p in profits if p < 0) or 1e-8),
+            'gain_to_pain_ratio': sum(p for p in profits if p > 0) / (sum(abs(p) for p in profits if p < 0) or 1e-8),
+            'total_wins': sum(1 for p in profits if p > 0),
+            'total_losses': sum(1 for p in profits if p < 0),
+        }
 
 
+# Legacy function kept for backward compatibility
+# Use util.generate_oracle_labels for new code
 def generate_oracle_dataset(env, oracle_strategy, num_steps: int = 10000) -> Dict:
     """
     Generate expert demonstrations using oracle strategy.
@@ -312,18 +403,28 @@ def generate_oracle_dataset(env, oracle_strategy, num_steps: int = 10000) -> Dic
             current_price = env.get_current_price(token)
             future_prices = env.get_predicted_prices(token)
             
-            # Get current position
-            position_info = env.positions.get(token)
-            if position_info is not None:
-                direction, size, entry_price, leverage = position_info
-                current_position = (direction, size, entry_price, leverage, oracle_strategy.lookahead_steps)
-            else:
-                current_position = None
+            # Get current position (unused in new interface but kept for compatibility)
+            # position_info = env.positions.get(token)
             
-            # Get oracle action (continuous)
-            action = oracle_strategy.get_continuous_action(
-                token, env.current_step, current_price, future_prices, current_position
-            )
+            # Get oracle action using new interface
+            # Convert to continuous action for backward compatibility
+            prices = np.array([current_price] + future_prices)
+            oracle_actions, oracle_leverages = oracle_strategy.compute_oracle_actions(prices)
+            
+            # Convert first action to continuous format
+            action_type = oracle_actions[0]
+            leverage = oracle_leverages[0]
+            
+            if action_type == 0 or action_type == 3:  # Do nothing or close
+                action = 0.0
+            elif action_type == 1:  # Long
+                # Map leverage [1, max_leverage] to [0.2, 1.0]
+                strength = 0.2 + 0.8 * (leverage - 1) / (oracle_strategy.max_leverage - 1)
+                action = strength
+            else:  # Short (action_type == 2)
+                # Map leverage [1, max_leverage] to [-0.2, -1.0]
+                strength = 0.2 + 0.8 * (leverage - 1) / (oracle_strategy.max_leverage - 1)
+                action = -strength
             step_actions.append(action)
         
         step_actions = np.array(step_actions)

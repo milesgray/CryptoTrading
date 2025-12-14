@@ -290,6 +290,8 @@ class DPOracle:
                 profit_pct = (entry_price - exit_price) / entry_price
                 max_adverse = (np.max(segment_prices) - entry_price) / entry_price
             
+            roe = (profit_pct * leverages[start_t]) - (self.fee * leverages[start_t] * 2)
+            
             segment = OracleTradeSegment(
                 start_idx=start_t,
                 end_idx=end_t,
@@ -297,6 +299,7 @@ class DPOracle:
                 entry_price=entry_price,
                 exit_price=exit_price,
                 profit_pct=profit_pct,
+                roe_pct=roe,
                 leverage=leverages[start_t],
                 max_adverse_excursion=max_adverse
             )
@@ -348,11 +351,6 @@ class DPOracle:
             'min_hold_duration': min(durations),
             'max_profit': max(profits),
             'min_profit': min(profits),
-            'max_loss': min([p for p in profits if p < 0]),
             'sharpe_ratio': np.mean(profits) / (np.std(profits) + 1e-8),
-            'profit_factor': sum(p for p in profits if p > 0) / abs(sum(p for p in profits if p < 0) or 1e-8),
-            'gain_to_pain_ratio': sum(p for p in profits if p > 0) / (sum(abs(p) for p in profits if p < 0) or 1e-8),
-            'total_wins': sum(1 for p in profits if p > 0),
-            'total_losses': sum(1 for p in profits if p < 0),
         }
 

@@ -24,6 +24,7 @@ class OracleTradeSegment:
     entry_price: float
     exit_price: float
     profit_pct: float
+    roe_pct: float
     leverage: float
     max_adverse_excursion: float  # Max drawdown during trade
 
