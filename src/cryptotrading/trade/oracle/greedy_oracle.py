@@ -317,9 +317,9 @@ class GreedyOracle:
         
         return segments
     
-    def get_statistics(self, prices: np.ndarray) -> dict:
+    def get_statistics(self, prices: np.ndarray=None, segments: List[OracleTradeSegment]=None) -> dict:
         """
-        Get statistics about the greedy oracle's performance on price data.
+        Get statistics about the oracle's performance on price data.
         
         Args:
             prices: Price array
@@ -327,7 +327,8 @@ class GreedyOracle:
         Returns:
             Dict with various statistics
         """
-        segments = self.extract_trade_segments(prices)
+        if not segments:
+            segments = self.extract_trade_segments(prices)
         
         if not segments:
             return {

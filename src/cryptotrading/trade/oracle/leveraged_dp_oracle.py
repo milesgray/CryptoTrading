@@ -216,8 +216,18 @@ class LeveragedDPOracle:
         segments.reverse() # Backtrack gives reverse order
         return segments
 
-    def get_statistics(self, prices: np.ndarray) -> dict:
-        segments = self.extract_trade_segments(prices)
+    def get_statistics(self, prices: np.ndarray=None, segments: List[OracleTradeSegment]=None) -> dict:
+        """
+        Get statistics about the oracle's performance on price data.
+        
+        Args:
+            prices: Price array
+            
+        Returns:
+            Dict with various statistics
+        """
+        if not segments:
+            segments = self.extract_trade_segments(prices)
         
         if not segments:
             return {'num_trades': 0, 'total_return': 0.0}
