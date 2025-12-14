@@ -16,7 +16,7 @@ from typing import Tuple, Optional, List
 from dataclasses import dataclass
 from enum import IntEnum
 
-from cryptotrading.predict.layers.S3 import S3Layer
+from cryptotrading.predict.layers.S3 import S3
 
 class TradeOutcome(IntEnum):
     """Trade outcome categories for contrastive learning"""
@@ -96,7 +96,7 @@ class PriceWindowEncoder(nn.Module):
 
         self.use_s3 = use_s3
         if use_s3:
-            self.s3_layers = S3Layer(num_layers=3, initial_num_segments=4, shuffle_vector_dim=1, segment_multiplier=2)
+            self.s3_layers = S3(num_layers=3, initial_num_segments=4, shuffle_vector_dim=1, segment_multiplier=2)
         
         # Initial projection from 1D to hidden channels
         self.input_proj = nn.Conv1d(1, hidden_dim // 4, kernel_size=7, padding=3)
