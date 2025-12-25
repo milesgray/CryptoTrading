@@ -14,28 +14,18 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 from models import get_model
 from dotdict import dotdict
+from data import TimeSeriesDataset
 
 # Set random seeds for reproducibility
 torch.manual_seed(42)
 np.random.seed(42)
 
-class TimeSeriesDataset(Dataset):
-    """Dataset for time series with sliding window approach"""
-    def __init__(self, X, y):
-        self.X = X
-        self.y = y
-        
-    def __len__(self):
-        return len(self.X)
-    
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
 
 
 def prepare_time_series_data(df, window_size=20, forecast_horizon=1):

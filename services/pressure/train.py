@@ -19,7 +19,7 @@ from typing import Dict, List, Tuple
 import logging
 from pathlib import Path
 from tqdm import tqdm
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +28,15 @@ logger = logging.getLogger(__name__)
 class TrainingConfig:
     """Configuration for training"""
     model_type: str = "robust"
+    input_dim: int = 50
+    hidden_dims: list = field(default_factory=lambda: [256, 256, 256, 256])
+    head_dim: int = 64
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     batch_size: int = 128  # FIX #8: Reduced for better uncertainty
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4  # Slightly higher for regularization
     num_epochs: int = 100
-    patience: int = 15
+    patience: int = 25
 
     # FIX #6: No random split - must use temporal
     use_temporal_split: bool = True
@@ -341,7 +344,7 @@ class UncertaintyCalibrator:
 
             if mask.sum() > 0:
                 avg_confidence = 1 - uncertainties[mask].mean()
-                avg_accuracy = 1 - errors[mask].mean()
+                avg_accuracy = 1 - errors.mean()
                 bin_weight = mask.sum() / len(uncertainties)
 
                 ece += bin_weight * abs(avg_confidence - avg_accuracy)
@@ -397,7 +400,6 @@ class PressureTrainer:
                 factor=config.scheduler_factor,
                 patience=config.scheduler_patience,
                 min_lr=config.min_lr,
-                verbose=True,
             )
         else:
             self.scheduler = None
@@ -434,7 +436,7 @@ class PressureTrainer:
         }
 
         pbar = tqdm(train_loader, desc="Training")
-        for batch in pbar:
+        for i, batch in enumerate(pbar):
             features = batch["features"].to(self.device)
             labels = batch["labels"].to(self.device)
 
@@ -455,7 +457,7 @@ class PressureTrainer:
             for key, value in metrics.items():
                 total_metrics[key] += value
 
-            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+            pbar.set_postfix({k: v / (i + 1) for k, v in total_metrics.items()})
 
         avg_loss = total_loss / len(train_loader)
         avg_metrics = {k: v / len(train_loader) for k, v in total_metrics.items()}

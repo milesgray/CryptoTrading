@@ -3,6 +3,7 @@ import asyncio
 import logging
 import signal
 import time
+import datetime as dt
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -33,7 +34,7 @@ class ServiceStatus:
         """Add a log entry to the service status"""
         logger.log(level, message)
         self.logs.append({
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': dt.datetime.now(dt.timezone.utc).isoformat(),
             'level': level,
             'message': message
         })

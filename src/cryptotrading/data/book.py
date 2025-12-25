@@ -1,17 +1,17 @@
 import logging
 import datetime as dt
-from typing import Optional, Any
+from typing import Any
 
 from pymongo import ASCENDING
 
 from cryptotrading.data.mongo import get_db
-from cryptotrading.data.models import OrderBookSummaryData, PriceBucket, PriceOutlier
+from cryptotrading.data.models import OrderBookSnapshot, OrderBookSummaryData, PriceBucket, PriceOutlier
 from cryptotrading.config import (
     COMPOSITE_ORDER_BOOK_COLLECTION_NAME,
     EXCHANGE_ORDER_BOOK_COLLECTION_NAME,
     TRANSFORMED_ORDER_BOOK_COLLECTION_NAME,
 )
-from cryptotrading.rollbit.prices.book import order_book_to_df
+from cryptotrading.util.book import order_book_to_df
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,8 @@ class OrderBookMongoAdapter:
     ) -> None:
         """Store calculated index price and raw data in MongoDB time series collection"""
         timestamp = dt.datetime.now(dt.timezone.utc)
-        if verbose: logger.infPriceSystem
+        if verbose: 
+            logger.info(f"Storing exchange order book data for {symbol}")
         token = symbol.split("/")[0] if "/" in symbol else symbol
         raw_docs = []
         for book in raw_data:
@@ -292,6 +293,41 @@ class OrderBookMongoAdapter:
             logger.debug(f"Stored transformed order book data for {symbol}")
         except Exception as e:
             logger.error(f"Failed to store transformed order book data: {str(e)}")
+
+    async def get_orderbook_data(
+        self,
+        token: str,
+        start_time: dt.datetime,
+        end_time: dt.datetime,
+    ) -> list[OrderBookSnapshot]:
+        """Retrieve and aggregate price data into candlestick format.
+
+        Args:
+            token:       The trading symbol (e.g., "BTC/USDT").
+            start_time:  The start of the time range (inclusive).
+            end_time:    The end of the time range (inclusive).
+            granularity: The candlestick interval in seconds.
+            include_book: Whether to include order book data
+
+        Returns:
+            A list of CandlestickData objects.  Returns an empty list if no data is found.
+            Raises an exception if there's a database error.
+        """
+
+        # Base aggregation pipeline for candlestick data
+        pipeline = [
+            {
+                "$match": {
+                    "metadata.token": token,
+                    "timestamp": {"$gte": start_time, "$lte": end_time},
+                }
+            },
+            {
+                "$sort": {"timestamp": 1}  # Ensure data is sorted by timestamp
+            }
+        ]
+        cursor = self.composite_order_book_collection.aggregate(pipeline)
+        return [OrderBookSnapshot.from_mongodb_doc(doc) async for doc in cursor]
 
     @staticmethod
     def process_order_book_data(book_data: dict[str, Any]) -> OrderBookSummaryData:

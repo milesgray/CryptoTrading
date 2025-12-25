@@ -175,6 +175,6 @@ class PressurePredictor(nn.Module):
 
 def get_model(config):
     if config.model_type == "robust":
-        return RobustPressurePredictor(config.input_dim, hidden_dim=config.hidden_dim, head_dim=config.head_dim)
+        return RobustPressurePredictor(config.input_dim, hidden_dims=config.hidden_dims, head_dim=config.head_dim)
     elif config.model_type == "pressure":
         return PressurePredictor(config.input_dim, hidden_dims=config.hidden_dims, head_dim=config.head_dim)

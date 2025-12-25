@@ -83,11 +83,13 @@ class OrderBookManager:
     ) -> Optional[dict]:
         """Fetch order book data from an exchange"""
         try:
-            if verbose: logger.info(f"[{self.symbol}] Fetching order book for {exchange_id}")
+            if verbose: 
+                logger.info(f"[{self.symbol}] Fetching order book for {exchange_id}")
             order_book = await self.exchanges[exchange_id].fetch_order_book(self.symbol, limit=20)  # Fetch reasonable depth
             order_book['timestamp'] = time.time() * 1000  # Add timestamp in milliseconds
             order_book['exchange'] = exchange_id
-            if verbose: logger.info(f"[{self.symbol}] Got order book for {exchange_id}")
+            if verbose: 
+                logger.info(f"[{self.symbol}] Got order book for {exchange_id}")
             return order_book
         except Exception as e:
             logger.warning(f"[{self.symbol}] Failed to fetch order book from {exchange_id}: {str(e)}")
@@ -106,7 +108,8 @@ class OrderBookManager:
                     
         # Validate feeds
         self.valid_books = validate_feeds(order_books)
-        if verbose: logger.info(f"[{self.symbol}] Got valid books for {self.symbol}")
+        if verbose:
+            logger.info(f"[{self.symbol}] Got valid books for {self.symbol}")
         return self.valid_books
 
     async def update(self, composite_order_book, verbose: bool = False):

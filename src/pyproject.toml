@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "cryptotrading"
-version = "0.1.1"
+version = "0.1.2"
 description = "Crypto trading services"
 authors = ["Miles <miles@resatiate.com>"]
 readme = "README.md"

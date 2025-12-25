@@ -1,12 +1,11 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import copy
 import math
 from tqdm import tqdm
 
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 
 class RetrievalTool():
     def __init__(

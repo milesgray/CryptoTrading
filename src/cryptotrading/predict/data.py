@@ -11,6 +11,18 @@ from cryptotrading.predict.utils.timefeatures import time_features
 from cryptotrading.data.price import PriceMongoAdapter
 
 
+class TimeSeriesDataset(Dataset):
+    """Dataset for time series with sliding window approach"""
+    def __init__(self, X, y):
+        self.X = X
+        self.y = y
+        
+    def __len__(self):
+        return len(self.X)
+    
+    def __getitem__(self, idx):
+        return self.X[idx], self.y[idx]
+
 class DataFramePriceDataset(Dataset):
     DATE_COLS = ['date', 'datetime', 'timestamp', 'ts', 'time']
     def __init__(self, df, flag='train', size=None,

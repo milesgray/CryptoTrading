@@ -1,7 +1,72 @@
 from datetime import datetime    
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
+from typing import Tuple
+import warnings
 
+class OrderBookSnapshot(BaseModel):
+    """Single order book snapshot with validation"""
+    timestamp: float
+    bids: List[Tuple[float, float]]  # [(price, volume), ...]
+    asks: List[Tuple[float, float]]
+    mid_price: float
+
+    @classmethod
+    def from_mongodb_doc(cls, doc: Dict[str, Any]) -> 'OrderBookSnapshot':
+        """Create a OrderBookSnapshot from a MongoDB document."""
+        return cls(
+            timestamp=doc['timestamp'].timestamp(),
+            bids=sorted(doc['book']['bids'], key=lambda x: x[0], reverse=True),
+            asks=sorted(doc['book']['asks'], key=lambda x: x[0]),
+            mid_price=doc['metadata']['midpoint']
+        )
+    
+    def __post_init__(self):
+        """Validate order book data"""
+        self.validate()
+    
+    def validate(self) -> bool:
+        """
+        Validate order book for data quality issues.
+        
+        Checks:
+        - Non-empty sides
+        - No crossed book (best bid < best ask)
+        - No negative prices/volumes
+        - Monotonic price levels
+        """
+        if not self.bids or not self.asks:
+            raise ValueError("Order book has empty side")
+        
+        # Check for crossed book
+        best_bid = self.bids[0][0]
+        best_ask = self.asks[0][0]
+        
+        if best_bid >= best_ask:
+            raise ValueError(f"Crossed book: bid={best_bid} >= ask={best_ask}")
+        
+        # Check for negative values
+        for price, vol in self.bids + self.asks:
+            if price <= 0 or vol <= 0:
+                raise ValueError(f"Invalid price/volume: {price}/{vol}")
+        
+        # Check bid prices are descending
+        bid_prices = [p for p, _ in self.bids]
+        if bid_prices != sorted(bid_prices, reverse=True):
+            warnings.warn("Bid prices not monotonically descending")
+        
+        # Check ask prices are ascending
+        ask_prices = [p for p, _ in self.asks]
+        if ask_prices != sorted(ask_prices):
+            warnings.warn("Ask prices not monotonically ascending")
+        
+        # Verify mid price
+        expected_mid = (best_bid + best_ask) / 2
+        if abs(self.mid_price - expected_mid) > 0.01 * expected_mid:
+            warnings.warn(f"Mid price mismatch: {self.mid_price} vs {expected_mid}")
+            self.mid_price = expected_mid
+        
+        return True
 
 class TransformedOrderBookDataPoint(BaseModel):
     timestamp: datetime

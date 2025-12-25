@@ -7,12 +7,6 @@ from pymongo import ASCENDING, DESCENDING
 from cryptotrading.data.mongo import get_db
 from cryptotrading.data.models import (
     CandlestickData,
-    OrderBookSummaryData,
-    PriceBucket,
-    PriceDataPoint,
-    PriceOutlier,
-    TransformedOrderBookData,
-    TransformedOrderBookDataPoint,
 )
 from cryptotrading.data.book import OrderBookMongoAdapter
 from cryptotrading.config import (
