@@ -1,4 +1,6 @@
+from typing import Optional
 import numpy as np
+import datetime as dt
 from datetime import datetime, timedelta
 
 class PriceLevels:
@@ -53,7 +55,7 @@ class PriceLevels:
         self.level_proximity = level_proximity
         self.max_levels = max_levels
         
-    def add_price_point(self, timestamp, price, volume=None):
+    def add_price_point(self, timestamp: datetime, price: float, volume: Optional[float] = None):
         """
         Add a new price point to the dataset and update candles and levels.
         
@@ -62,6 +64,12 @@ class PriceLevels:
             price (float): The price value
             volume (float, optional): The volume at this price point
         """
+        if isinstance(timestamp, str):
+            try:
+                timestamp = dt.datetime.fromisoformat(timestamp)
+            except ValueError:
+                raise ValueError("Timestamp must be a datetime object")
+        
         # Add raw data point
         data_point = {
             'timestamp': timestamp,

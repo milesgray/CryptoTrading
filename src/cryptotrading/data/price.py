@@ -126,6 +126,30 @@ class PriceMongoAdapter:
             logger.error(f"Failed to get price data count: {str(e)}")
             return 0
 
+    async def get_prices(
+        self, 
+        symbol: str, 
+        start_time: datetime, 
+        end_time: datetime, 
+        count: int = None,
+        chunk_size: int = 1000):
+        """ gets prices for a specific symbol
+        """
+        try:
+            results = []
+            total = await self.get_price_data_count(symbol, start_time, end_time)
+            if count is None:
+                count = total
+            pages = count / chunk_size
+            for page in range(1, int(pages) + 1):
+                data = await self.get_price_data(symbol, start_time, end_time, chunk_size, page)
+                results.extend(data)
+            return results 
+        except Exception as e:
+            logger.error(f"Failed to get price data: {str(e)}")
+            return []
+        
+
     async def get_latest_price(self, token: str) -> Optional[dict[str, Any]]:
         """Retrieves the latest index price for a given token."""
         try:

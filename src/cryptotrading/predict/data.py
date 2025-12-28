@@ -1,10 +1,7 @@
-import os
-import numpy as np
 import pandas as pd
-import glob
-import re
-import torch
-from torch.utils.data import Dataset, DataLoader
+from datetime import datetime
+from typing import Literal, Optional
+from torch.utils.data import Dataset
 from sklearn.preprocessing import StandardScaler
 
 from cryptotrading.predict.utils.timefeatures import time_features
@@ -23,7 +20,7 @@ class TimeSeriesDataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
 
-class DataFramePriceDataset(Dataset):
+class DataFramePriceForecastDataset(Dataset):
     DATE_COLS = ['date', 'datetime', 'timestamp', 'ts', 'time']
     def __init__(self, df, flag='train', size=None,
                  features='S', target='OT', scale=True, 
@@ -140,19 +137,31 @@ class DataFramePriceDataset(Dataset):
         return self.scaler.inverse_transform(data)
 
 
-class CSVPriceDataset(DataFramePriceDataset):
+class CSVPriceForecastDataset(DataFramePriceForecastDataset):
     def __init__(self, csv_path, flag='train', size=None,
                  features='S', target='OT', scale=True, 
                  timeenc=0, freq='h'):
         df = pd.read_csv(csv_path)
         super().__init__(df, flag, size, features, target, scale, timeenc, freq) 
 
-class MongoDBPriceDataset(DataFramePriceDataset):
-    def __init__(self, flag='train', size=None,
-                 features='S', target='OT', scale=True, 
-                 timeenc=0, freq='h'):
+class MongoDBPriceForecastDataset(DataFramePriceForecastDataset):
+    def __init__(self, flag: Literal['train', 'test', 'val'] = 'train', 
+                 symbol: str = "BTC", 
+                 start_time: Optional[datetime] = None, 
+                 end_time: Optional[datetime] = None, 
+                 limit: Optional[int] = None,
+                 size=None, features='S', target='OT', 
+                 scale=True, timeenc=0, freq='h'):
         self.db_adapter = PriceMongoAdapter()
 
-        df = self.db_adapter.get_data()
+        df = self.db_adapter.get_prices(symbol, start_time, end_time, limit)
 
         super().__init__(df, flag, size, features, target, scale, timeenc, freq) 
+
+def data_provider(args, flag):
+    if args.data_path.endswith('.csv'):
+        dataset = CSVPriceForecastDataset(args.data_path, flag, args.seq_len, args.label_len, args.pred_len)
+    elif args.data_path.endswith('.json'):
+        dataset = MongoDBPriceForecastDataset(flag, args.symbol, args.start_time, args.end_time, args.seq_len, args.label_len, args.pred_len)
+
+    return dataset

@@ -1,4 +1,5 @@
 import os
+from contextlib import nullcontext
 
 import numpy as np
 import torch
@@ -8,6 +9,12 @@ import math
 
 plt.switch_backend('agg')
 
+
+def use_amp(enabled):
+    if enabled:
+        return torch.cuda.amp.autocast()
+    else:
+        return nullcontext()
 
 def adjust_learning_rate(optimizer, epoch, args):
     # lr = args.learning_rate * (0.2 ** (epoch // 2))

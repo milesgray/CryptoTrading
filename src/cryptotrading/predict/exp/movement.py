@@ -11,15 +11,14 @@ import time
 import warnings
 import numpy as np
 from tqdm import tqdm
+from utils.tools import use_amp
 
-warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore")
 
 
 class MovementExp(BaseExp):
     def __init__(self, args):
         super().__init__(args)
-
-
 
     def _get_data(self, flag):
         data_set, data_loader = data_provider(self.args, flag)
@@ -43,30 +42,26 @@ class MovementExp(BaseExp):
 
                 batch_x_mark = batch_x_mark.float().to(self.device)
 
-                # encoder - decoder
-                if self.args.use_amp:
-                    with torch.cuda.amp.autocast():
-                        outputs, confidence = self.model(batch_x, batch_x_mark)
-                else:
-                    outputs, confidence = self.model(batch_x, batch_x_mark)
-                outputs = outputs[:, -1]
+                # encoder - decoder                
+                with torch.amp.autocast(device_type=self.device, enabled=self.args.use_amp):
+                    outputs, _ = self.model(batch_x, batch_x_mark)                
+                    outputs = outputs[:, -1]
 
-                pred = outputs.detach().cpu()
-                true = batch_y.detach().cpu()
+                    pred = outputs.detach().cpu()
+                    true = batch_y.detach().cpu()
 
-                loss = criterion(pred, true)
+                    loss = criterion(pred, true)
 
-                total_loss = loss
+                    total_loss.append(loss.item())
         total_loss = np.average(total_loss)
         self.model.train()
         return total_loss
 
     def train(self, setting):
         use_print = not self.args.use_tqdm
-        use_tqdm = self.args.use_tqdm
-        train_data, train_loader = self._get_data(flag='train')
-        vali_data, vali_loader = self._get_data(flag='val')
-        test_data, test_loader = self._get_data(flag='test')
+        train_data, train_loader = self._get_data(flag="train")
+        vali_data, vali_loader = self._get_data(flag="val")
+        test_data, test_loader = self._get_data(flag="test")
 
         path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(path):
@@ -86,7 +81,6 @@ class MovementExp(BaseExp):
         for epoch in ebar:
             iter_count = 0
             train_loss = []
-            
 
             self.model.train()
             epoch_time = time.time()
@@ -102,27 +96,7 @@ class MovementExp(BaseExp):
                 train_correct = 0
                 train_total = 0
                 # encoder - decoder
-                if self.args.use_amp:
-                    with torch.cuda.amp.autocast():
-                        outputs, confidence = self.model(batch_x, batch_x_mark)
-                        outputs = outputs[:, -1]
-
-                        loss = criterion(outputs, batch_y)
-                        predicted_classes = (torch.sigmoid(outputs) > 0.5).float()
-                        correct = torch.eq(predicted_classes, batch_y)
-                        correct_confidence = confidence[correct]
-                        incorrect_confidence = confidence[~correct]
-                        train_correct += correct.float().sum().item()
-                        train_total += batch_y.size(0)
-                        total_loss = loss
-                        train_loss.append(loss.item())
-                        metrics["loss"] = loss.item()
-                        metrics["loss_avg"] = sum(train_loss) / len(train_loss)
-                        metrics["acc"] = train_correct / train_total
-                        metrics["confidence"] = confidence.mean().item()
-                        metrics["correct_confidence"] = correct_confidence.mean().item()
-                        metrics["incorrect_confidence"] = incorrect_confidence.mean().item()
-                else:
+                with torch.amp.autocast(device_type=self.device, enabled=self.args.use_amp):
                     outputs, confidence = self.model(batch_x, batch_x_mark)
                     outputs = outputs[:, -1]
 
@@ -140,35 +114,48 @@ class MovementExp(BaseExp):
                     metrics["acc"] = train_correct / train_total
                     metrics["confidence"] = confidence.mean().item()
                     metrics["correct_confidence"] = correct_confidence.mean().item()
-                    metrics["incorrect_confidence"] = incorrect_confidence.mean().item()
-
+                    metrics["incorrect_confidence"] = (
+                        incorrect_confidence.mean().item()
+                    )
+                
                 if use_print and (i + 1) % 100 == 0:
                     speed = (time.time() - time_now) / iter_count
-                    left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
+                    left_time = speed * (
+                        (self.args.train_epochs - epoch) * train_steps - i
+                    )
                     iter_count = 0
                     time_now = time.time()
-                    
-                    msg = f"\titers: {i + 1}, epoch: {epoch + 1} | loss: {metrics['loss_avg']}"
-                    msg = f'{msg}\n\t\tspeed: {speed:.4f}s/iter; left time: {left_time:.4f}s'
-                    print(msg)
 
+                    msg = f"\titers: {i + 1}, epoch: {epoch + 1} | loss: {metrics['loss_avg']}"
+                    msg = f"{msg}\n\t\tspeed: {speed:.4f}s/iter; left time: {left_time:.4f}s"
+                    print(msg)
+                
                 if self.args.use_amp:
                     scaler.scale(total_loss).backward()
                     scaler.step(model_optim)
                     scaler.update()
                 else:
                     total_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                     model_optim.step()
                 bar.set_postfix(metrics)
 
-            if use_print: print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+            if use_print:
+                print(
+                    "Epoch: {} cost time: {}".format(
+                        epoch + 1, time.time() - epoch_time
+                    )
+                )
             train_loss = np.average(train_loss)
             vali_loss = self.vali(vali_data, vali_loader, criterion)
-            test_loss = self.vali(test_data, test_loader, criterion)
+            test_loss = self.test(test_data, test_loader, criterion)
             ebar.set_postfix({"vali": vali_loss, "test": test_loss})
-            if use_print: 
-                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            if use_print:
+                print(
+                    "Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                        epoch + 1, train_steps, train_loss, vali_loss, test_loss
+                    )
+                )
             early_stopping(vali_loss, self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping")
@@ -176,108 +163,104 @@ class MovementExp(BaseExp):
 
             adjust_learning_rate(model_optim, epoch + 1, self.args)
 
-        best_model_path = path + '/' + 'checkpoint.pth'
+        best_model_path = path + "/" + "checkpoint.pth"
         self.model.load_state_dict(torch.load(best_model_path))
 
-        return {
-            "vali_loss": vali_loss,
-            "test_loss": test_loss
-        }
+        return {"vali_loss": vali_loss, "test_loss": test_loss}
 
     def test(self, setting, test=0):
-        test_data, test_loader = self._get_data(flag='test')
+        test_data, test_loader = self._get_data(flag="test")
         if test:
-            print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
-
+            print("loading model")
+            self.model.load_state_dict(
+                torch.load(os.path.join("./checkpoints/" + setting, "checkpoint.pth"))
+            )
+        test_correct = 0
+        test_total = 0
+        test_predictions = []
+        test_confidences = []
+        test_targets = []
         preds = []
         trues = []
-        folder_path = './test_results/' + setting + '/'
+        folder_path = "./test_results/" + setting + "/"
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(
+                test_loader
+            ):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
 
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
-
-                # decoder input
-                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
-                # encoder - decoder
-                if self.args.use_amp:
-                    with torch.cuda.amp.autocast():
-                        if self.args.output_attention:
-                            outputs, _, _ = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                        else:
-                            outputs, loss_IB, attn = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                else:
+                with torch.amp.autocast(device_type=self.device, enabled=self.args.use_amp):
                     if self.args.output_attention:
-                        outputs, loss_IB, attn = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-
+                        predictions, confidence = self.model(
+                            batch_x
+                        )
                     else:
-                        outputs, loss_IB, attn = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        predictions, confidence = self.model(
+                            batch_x
+                        )                
+                predictions = predictions[:, -1]  # Get prediction for the last timestep
+                confidence = confidence[:, -1]
 
-                f_dim = -1 if self.args.features == 'MS' else 0
-                outputs = outputs[:, -self.args.pred_len:, :]
-                batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
-                outputs = outputs.detach().cpu().numpy()
-                batch_y = batch_y.detach().cpu().numpy()
-                if test_data.scale and self.args.inverse:
-                    shape = outputs.shape
-                    outputs = test_data.inverse_transform(outputs.squeeze(0)).reshape(shape)
-                    batch_y = test_data.inverse_transform(batch_y.squeeze(0)).reshape(shape)
-        
-                outputs = outputs[:, :, f_dim:]
-                batch_y = batch_y[:, :, f_dim:]
+                # Calculate accuracy
+                predicted_classes = (torch.sigmoid(predictions) > 0.5).float()
+                test_correct += (predicted_classes == batch_y).sum().item()
+                test_total += batch_y.size(0)
 
-                pred = outputs
+                # Store predictions and targets
+                test_predictions.append(predicted_classes.numpy())
+                test_confidences.append(confidence.numpy())
+                test_targets.append(batch_y.numpy())
+
+                pred = predictions
                 true = batch_y
 
                 preds.append(pred)
                 trues.append(true)
                 if i % 20 == 0:
-                    input = batch_x.detach().cpu().numpy()
+                    x = batch_x.detach().cpu().numpy()
                     if test_data.scale and self.args.inverse:
-                        shape = input.shape
-                        input = test_data.inverse_transform(input.squeeze(0)).reshape(shape)
-                    gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
-                    pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
-                    visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
+                        shape = x.shape
+                        x = test_data.inverse_transform(x.squeeze(0)).reshape(
+                            shape
+                        )
+                    gt = np.concatenate((x[0, :, -1], true[0, :, -1]), axis=0)
+                    pd = np.concatenate((x[0, :, -1], pred[0, :, -1]), axis=0)
+                    visual(gt, pd, os.path.join(folder_path, str(i) + ".pdf"))
+        test_predictions = np.concatenate(test_predictions)
+        test_confidences = np.concatenate(test_confidences)
+        test_targets = np.concatenate(test_targets)
+
+        test_acc = test_correct / test_total * 100
+        print(f'Test Accuracy: {test_acc:.2f}%')
 
         preds = np.array(preds)
         trues = np.array(trues)
-        print('test shape:', preds.shape, trues.shape)
+        print("test shape:", preds.shape, trues.shape)
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
-        print('test shape:', preds.shape, trues.shape)
+        print("test shape:", preds.shape, trues.shape)
 
         # result save
-        folder_path = './results/' + setting + '/'
+        folder_path = "./results/" + setting + "/"
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
         mae, mse, rmse, mape, mspe = metric(preds, trues)
-        print('mse:{}, mae:{}'.format(mse, mae))
-        f = open("result_long_term_forecast.txt", 'a')
+        print("mse:{}, mae:{}".format(mse, mae))
+        f = open("result_long_term_forecast.txt", "a")
         f.write(setting + "  \n")
-        f.write('mse:{}, mae:{}'.format(mse, mae))
-        f.write('\n')
-        f.write('\n')
+        f.write("mse:{}, mae:{}".format(mse, mae))
+        f.write("\n")
+        f.write("\n")
         f.close()
 
-        np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
-        np.save(folder_path + 'pred.npy', preds)
-        np.save(folder_path + 'true.npy', trues)
+        np.save(folder_path + "metrics.npy", np.array([mae, mse, rmse, mape, mspe]))
+        np.save(folder_path + "pred.npy", preds)
+        np.save(folder_path + "true.npy", trues)
 
-        return {
-            "mae": mae, 
-            "mse": mse, 
-            "rmse": rmse, 
-            "mape": mape, 
-            "mspe": mspe
-        }
+        return {"mae": mae, "mse": mse, "rmse": rmse, "mape": mape, "mspe": mspe}
