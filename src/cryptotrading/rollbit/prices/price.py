@@ -1,15 +1,8 @@
-import os
 import asyncio
 import time
 import logging
-import numpy as np
-from typing import Optional, Any
-import datetime
 import traceback
-
-import ccxt.async_support as ccxt
-import pandas as pd
-import numpy as np
+import datetime as dt
 
 import cryptotrading.rollbit.prices.formula as formula
 from cryptotrading.rollbit.prices.book import OrderBookManager
@@ -33,7 +26,7 @@ logger = logging.getLogger('price_system')
 
 class PriceSystem:
     def __init__(self, symbols: list[str]):
-        self.levels = PriceLevels()
+        self.levels = {symbol: PriceLevels() for symbol in symbols}
         self.data = PriceMongoAdapter()
         self.books = {symbol: OrderBookManager(symbol, SPOT_EXCHANGES + FUTURES_EXCHANGES) for symbol in symbols}
         self.running = False
@@ -91,7 +84,7 @@ class PriceSystem:
 
             if index_price is not None:
                 # add price and volume to level tracker
-                self.levels.add_price_point(symbol, index_price, volume=calc_results["size"])
+                self.levels[symbol].add_price_point(dt.datetime.now(dt.timezone.utc), index_price, volume=calc_results["size"])
                 # Store the calculated price
                 await self.data.store_price_data(
                     symbol, index_price, condensed_book, valid_books, 
@@ -100,9 +93,9 @@ class PriceSystem:
                 # Update last index price
                 self.last_index_prices[symbol] = index_price   
                 if symbol in self.last_price_times:         
-                    dt = time.time() - self.last_price_times[symbol]
+                    delta = time.time() - self.last_price_times[symbol]
 
-                    logger.info(f"Index price for {symbol}: {index_price:.2f} (from {len(valid_books)} feeds, in {dt:0.2f} seconds)")
+                    logger.info(f"Index price for {symbol}: {index_price:.2f} (from {len(valid_books)} feeds, in {delta:0.2f} seconds)")
                 else:
                     logger.info(f"Index price for {symbol}: {index_price:.2f} (from {len(valid_books)} feeds)")
                 self.last_price_times[symbol] = time.time()
