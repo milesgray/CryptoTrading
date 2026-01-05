@@ -157,7 +157,7 @@ class RetrievalTool():
         return pred_from_retrieval
     
     def retrieve_all(self, data, train=False, device=torch.device('cpu')):
-        assert(self.train_data_all_mg != None)
+        assert(self.train_data_all_mg is not None)
         
         rt_loader = DataLoader(
             data,
