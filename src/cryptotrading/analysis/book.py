@@ -66,7 +66,6 @@ class OrderBookSnapshot:
         
         return True
 
-
 class AdaptiveBucketCalculator:
     """
     Calculate adaptive bucket ranges based on asset characteristics.

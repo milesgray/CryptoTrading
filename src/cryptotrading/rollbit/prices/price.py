@@ -25,10 +25,11 @@ logging.basicConfig(
 logger = logging.getLogger('price_system')
 
 class PriceSystem:
-    def __init__(self, symbols: list[str]):
+    def __init__(self, symbols: list[str], enable_levels: bool = True):
+        self.enable_levels = enable_levels
         self.levels = {symbol: PriceLevels() for symbol in symbols}
         self.data = PriceMongoAdapter()
-        self.books = {symbol: OrderBookManager(symbol, SPOT_EXCHANGES + FUTURES_EXCHANGES) for symbol in symbols}
+        self.books = {symbol: OrderBookManager(symbol, SPOT_EXCHANGES + FUTURES_EXCHANGES) for symbol in symbols}        
         self.running = False
         self.last_index_prices = {}
         self.last_price_times = {}
@@ -78,13 +79,15 @@ class PriceSystem:
             )
 
             index_price = calc_results["price"]
-            if verbose: logger.info(f"Got index price for {symbol}: {index_price}")                    
+            if verbose: 
+                logger.info(f"Got index price for {symbol}: {index_price}")                    
 
             condensed_book = await self.books[symbol].update(calc_results["book"])
 
             if index_price is not None:
                 # add price and volume to level tracker
-                self.levels[symbol].add_price_point(dt.datetime.now(dt.timezone.utc), index_price, volume=calc_results["size"])
+                if self.enable_levels:
+                    self.levels[symbol].add_price_point(dt.datetime.now(dt.timezone.utc), index_price, volume=calc_results["size"])
                 # Store the calculated price
                 await self.data.store_price_data(
                     symbol, index_price, condensed_book, valid_books, 

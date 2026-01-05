@@ -1,21 +1,22 @@
 import React, { useState } from 'react';
 import CandlestickChart from './components/CandlestickChart';
+import OrderBookPanel from './components/OrderBookPanel';
 import { getLatestPrice } from './services/api';
 
 const App = () => {
     const [selectedToken, setSelectedToken] = useState('BTC');
-    const [latestPrice, setLatestPrice] = useState(null);
+    const [latestPriceData, setLatestPriceData] = useState(null);
 
 
     const handleTokenChange = async (event) => {
         const newToken = event.target.value;
         setSelectedToken(newToken);
         try {
-          const price = await getLatestPrice(newToken);
-          setLatestPrice(price);
+          const priceData = await getLatestPrice(newToken);
+          setLatestPriceData(priceData);
         } catch (error) {
             console.error("Failed to fetch latest price:", error);
-            setLatestPrice(null); // Reset or indicate an error
+            setLatestPriceData(null);
         }
     };
 
@@ -25,9 +26,14 @@ const App = () => {
                 <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
                     <h1 className="text-3xl font-bold tracking-tight text-gray-900 flex items-center">
                         Crypto Price Dashboard
-                        {latestPrice !== null && (
+                        {latestPriceData?.price && (
                             <span className="ml-4 text-xl text-gray-600">
-                                Latest Price: {latestPrice.toFixed(2)}
+                                Latest Price: ${latestPriceData.price.toFixed(2)}
+                                {latestPriceData.volume && (
+                                    <span className="ml-2 text-sm text-gray-500">
+                                        Vol: {latestPriceData.volume.toFixed(0)}
+                                    </span>
+                                )}
                             </span>
                         )}
                     </h1>
@@ -49,7 +55,14 @@ const App = () => {
 
                         </select>
                     </div>
-                    <CandlestickChart token={selectedToken} />
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2">
+                            <CandlestickChart token={selectedToken} />
+                        </div>
+                        <div className="lg:col-span-1">
+                            <OrderBookPanel token={selectedToken} latestPriceData={latestPriceData} />
+                        </div>
+                    </div>
                 </div>
             </main>
         </div>
