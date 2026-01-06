@@ -11,128 +11,21 @@ Key fixes:
 import numpy as np
 import torch
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 import logging
 from typing import Dict, Optional
 from pathlib import Path
 from tqdm import tqdm
 import json
 from cryptotrading.predict.utils.augment import rnd_augment, sequence_augment
-from .model import (
-    KoopmanJEPA,
-    GlobalPriceNormalizer,
-    create_multimodal_features
-)
+from .model import KoopmanJEPA
+from .data import CryptoPriceDataset, GlobalPriceNormalizer
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-
-class CryptoPriceDataset(Dataset):
-    """
-    CORRECTED: Dataset with global normalization.
-    
-    Critical: normalizer must be fitted on training set ONLY,
-    then applied to val/test sets.
-    """
-    
-    def __init__(
-        self,
-        prices: np.ndarray,
-        timestamps: np.ndarray,
-        normalizer: GlobalPriceNormalizer,
-        window: int = 768,       
-        stride: int = 50,
-        mode: str = 'train',
-        augment_rounds: int = 0
-    ):
-        """
-        Args:
-            prices: Raw price data
-            timestamps: Corresponding timestamps
-            normalizer: FITTED normalizer (must be fitted before creating dataset)
-            context_window: Context length
-            target_window: Target length
-            prediction_horizon: Steps ahead to predict
-            stride: Step size between samples
-            mode: 'train', 'val', or 'test' (for logging only)
-        """
-        self.prices = prices.astype(np.float32)
-        self.timestamps = timestamps.astype(np.float32)
-        self.normalizer = normalizer
-        self.context_window = window
-        self.target_window = window
-        self.prediction_horizon = window // 4
-        self.mode = mode
-        self.augment_rounds = augment_rounds
-        
-        # Verify normalizer is fitted
-        if not normalizer.fitted:
-            raise ValueError("Normalizer must be fitted before creating dataset!")
-        
-        # Calculate valid indices
-        total_needed = self.context_window + self.prediction_horizon + self.target_window
-        self.valid_indices = np.arange(0, len(prices) - total_needed, stride)
-        
-        logger.info(f"Created {mode} dataset: {len(self.valid_indices)} samples")
-        
-        # Pre-compute features (faster training)
-        logger.info(f"Pre-computing {mode} features...")
-        self._precompute_features()
-    
-    def _precompute_features(self):
-        """Pre-compute features WITHOUT augmentation"""
-        self.features_cache = []
-        
-        for idx in tqdm(range(len(self.valid_indices)), desc=f"Pre-computing {self.mode}"):
-            start = self.valid_indices[idx]
-            
-            ctx_start = start
-            ctx_end = start + self.context_window
-            
-            tgt_start = ctx_end + self.prediction_horizon
-            tgt_end = tgt_start + self.target_window
-            
-            context_prices = self.prices[ctx_start:ctx_end]
-            target_prices = self.prices[tgt_start:tgt_end]
-            
-            # Store RAW prices (augmentation applied in __getitem__)
-            self.features_cache.append({
-                'context_prices': context_prices,
-                'target_prices': target_prices
-            })
-    
-    def __len__(self) -> int:
-        return len(self.valid_indices)
-    
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        cached = self.features_cache[idx]
-        
-        # Apply augmentation ONLY during training
-        augment_rounds = self.augment_rounds if self.mode == 'train' else 0
-        
-        # Create features with optional augmentation
-        x_context = create_multimodal_features(
-            cached['context_prices'],
-            self.normalizer,
-            self.context_window,
-            augment_rounds=augment_rounds
-        )
-        
-        x_target = create_multimodal_features(
-            cached['target_prices'],
-            self.normalizer,
-            self.target_window,
-            augment_rounds=augment_rounds
-        )
-        
-        return {
-            'x_context': x_context,
-            'x_target': x_target
-        }
 
 
 class JEPATrainer:
@@ -211,9 +104,9 @@ class JEPATrainer:
         if loss_weights is None:
             loss_weights = {
                 'alpha_jepa': 1.0,
-                'alpha_regime': 0.01,  # Small weight
+                'alpha_regime': 0.5,  
                 'alpha_spectral': 0.1,
-                'alpha_variance': 0.1  # New weight
+                'alpha_variance': 0.1 
             }
         
         epoch_losses = {
@@ -538,12 +431,12 @@ class JEPATrainer:
                 shuffle=False,
                 num_workers=2
             )
-            for batch in tqdm(loader, desc='Embedding'):
+            for batch in tqdm(loader, desc=f'Creating {label.title()} Embeddings'):
                 x_context = batch['x_context'].to(device)
                 
-                embeddings_batch, _ = model.extract_regime_embeddings(x_context)
+                embeddings_batch, probs_batch = model.extract_regime_embeddings(x_context)
                 embeddings.append(embeddings_batch.detach().cpu())        
-                labels.append(label)
+                labels.append(probs_batch.argmax().item())
             return embeddings, labels
 
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -559,15 +452,22 @@ class JEPATrainer:
         logger.info(f"Total embeddings: {len(embeddings)}, Unique labels: {np.unique(labels)}")
         return embeddings, labels
     
-    def tsne_plot(self, embeddings, labels):
+    def plot_embeddings(self, embeddings, labels, method='pacmap'):
         from sklearn.manifold import TSNE
+        from pacmap import PaCMAP
         import matplotlib.pyplot as plt
         import matplotlib.colors as mcolors
         import numpy as np
         
         # Apply t-SNE to reduce dimensionality to 2D
-        tsne = TSNE(n_components=2, random_state=42, perplexity=30)
-        embeddings_2d = tsne.fit_transform(embeddings)
+        if method == 'tsne':
+            manifold = TSNE(n_components=2, random_state=42, perplexity=30)
+        elif method == 'pacmap':
+            manifold = PaCMAP(n_components=2, n_neighbors=10, MN_ratio=0.5, FP_ratio=2.0) 
+        else:
+            raise ValueError(f"Unknown method: {method}")
+            
+        embeddings_2d = manifold.fit_transform(embeddings)
         
         # Prepare labels for coloring
         unique_labels = np.unique(labels)
@@ -575,7 +475,7 @@ class JEPATrainer:
         numerical_labels = np.array([label_to_int[label] for label in labels])
         
         # Define a colormap for the labels
-        colors = ['green', 'red', 'blue'] # Assign colors to different labels
+        colors = ['#D74288', '#88D742', '#4288D7', '#D78842', '#42D788', '#8842D7'] # Assign colors to different labels
         cmap = mcolors.ListedColormap(colors[:len(unique_labels)])
 
         # Plot the 2D embeddings
@@ -585,7 +485,8 @@ class JEPATrainer:
             embeddings_2d[:, 1],
             c=numerical_labels,
             cmap=cmap,
-            alpha=0.7
+            alpha=0.7,
+            s=0.6,
         )
         
         # Create a legend for the colors (labels)

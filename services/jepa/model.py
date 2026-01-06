@@ -1,16 +1,16 @@
 """
-FINAL Corrected Koopman-JEPA - Fixing OOD Collapse
+Koopman-JEPA Model Implementation
 
-New issue identified: Model overfits to training distribution,
-collapses val/test to zero vectors.
+This module implements the Koopman JEPA architecture for time series forecasting,
+with fixes for out-of-distribution collapse issues.
 
-Additional fixes:
-1. Variance regularization (prevent zero-mapping)
-2. Data augmentation (make training distribution broader)
-3. Stronger weight on spectral loss
+Key features:
+- Conv1D encoder for time series feature extraction
+- Linear Koopman predictor for temporal dynamics
+- Variance regularization to prevent OOD collapse
+- Spectral loss for better eigenfunction learning
 """
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -21,29 +21,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class GlobalPriceNormalizer:
-    """Global normalization - unchanged"""
-    
-    def __init__(self):
-        self.price_mean = None
-        self.price_std = None
-        self.fitted = False
-    
-    def fit(self, all_train_prices: np.ndarray):
-        self.price_mean = float(np.mean(all_train_prices))
-        self.price_std = float(np.std(all_train_prices))
-        self.fitted = True
-        logger.info(f"Fitted normalizer: mean={self.price_mean:.2f}, std={self.price_std:.2f}")
-    
-    def transform(self, prices: np.ndarray) -> np.ndarray:
-        if not self.fitted:
-            raise ValueError("Must call fit() before transform()")
-        eps = 1e-8
-        return (prices - self.price_mean) / (self.price_std + eps)
-
-
 class Conv1DEncoder(nn.Module):
-    """Encoder - unchanged"""
+    """
+
+    """
     
     def __init__(
         self,
@@ -58,11 +39,12 @@ class Conv1DEncoder(nn.Module):
         super().__init__()
         
         self.input_channels = input_channels
+        self.sequence_length = sequence_length
         self.latent_dim = latent_dim
         
+        # Build conv layers
         layers = []
         in_ch = input_channels
-        curr_len = sequence_length
         
         for out_ch, kernel, stride in zip(hidden_channels, kernel_sizes, strides):
             padding = kernel // 2
@@ -73,17 +55,27 @@ class Conv1DEncoder(nn.Module):
                 nn.Dropout(dropout)
             ])
             in_ch = out_ch
-            curr_len = ((curr_len + 2 * padding - kernel) // stride) + 1
         
         self.conv_layers = nn.Sequential(*layers)
-        self.feature_size = in_ch * curr_len
+        
+        # CRITICAL FIX: Calculate actual output size
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, input_channels, sequence_length)
+            dummy_output = self.conv_layers(dummy_input)
+            self.feature_size = dummy_output.numel()
+        
+        logger.info(
+            f"Encoder: {input_channels}x{sequence_length} -> "
+            f"{dummy_output.shape} -> {self.feature_size} features -> {latent_dim}D"
+        )
+        
+        # Projection with correct size
         self.projection = nn.Linear(self.feature_size, latent_dim)
         self.output_norm = nn.LayerNorm(latent_dim)
         
-        # Small initialization
         nn.init.xavier_uniform_(self.projection.weight, gain=0.01)
         nn.init.zeros_(self.projection.bias)
-        
+    
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = self.conv_layers(x)
         features_flat = torch.flatten(features, start_dim=1)
@@ -93,7 +85,11 @@ class Conv1DEncoder(nn.Module):
 
 
 class LinearPredictor(nn.Module):
-    """Linear predictor - unchanged"""
+    """
+    Linear predictor for Koopman dynamics.
+    
+    Maps latent representations to predicted future states using a linear transformation.
+    """
     
     def __init__(self, latent_dim: int, init_identity: bool = True):
         super().__init__()
@@ -110,6 +106,15 @@ class LinearPredictor(nn.Module):
 
 
 class KoopmanJEPA(nn.Module):
+    """
+    Koopman JEPA model for time series forecasting.
+    
+    Uses a Conv1D encoder to extract latent representations and a linear predictor
+    to model Koopman dynamics for future state prediction.
+    
+    The model learns Koopman eigenfunctions to capture temporal dynamics
+    and can optionally predict market regimes.
+    """
     
     def __init__(
         self,
@@ -118,7 +123,10 @@ class KoopmanJEPA(nn.Module):
         latent_dim: int = 32,
         predictor_type: str = 'linear',
         num_regimes: int = 8,
-        init_identity: bool = True
+        init_identity: bool = True,
+        regime_embedding_dim: int = 16,
+        regime_prediction: bool = False,
+        encoder_output_norm: bool = True,
     ):
         super().__init__()
         
@@ -287,81 +295,6 @@ class KoopmanJEPA(nn.Module):
         return properties
 
 
-def augment_price_window(
-    prices: np.ndarray,
-    augment: bool = True
-) -> np.ndarray:
-    """
-    NEW: Data augmentation to make training more robust.
-    
-    Augmentations:
-    1. Random scaling (simulate different price levels)
-    2. Random noise (simulate measurement error)
-    3. Random shift (simulate different baselines)
-    
-    This makes the model less likely to overfit to specific
-    training distribution and collapse on OOD inputs.
-    """
-    if not augment:
-        return prices
-    
-    # Random scaling (±5%)
-    scale = np.random.uniform(0.95, 1.05)
-    
-    # Random noise (0.1% of price std)
-    noise_std = np.std(prices) * 0.001
-    noise = np.random.randn(len(prices)) * noise_std
-    
-    # Random baseline shift (±1% of mean)
-    shift = np.random.randn() * np.mean(prices) * 0.01
-    
-    augmented = prices * scale + noise + shift
-    
-    return augmented
-
-
-def create_multimodal_features(
-    prices: np.ndarray,
-    normalizer: GlobalPriceNormalizer,
-    window_size: int = 768,
-    augment_rounds: int = 0
-) -> torch.Tensor:
-    """
-    UPDATED: Added optional augmentation.
-    """
-    eps = 1e-8
-    
-    # Augment if requested (training only)
-    #if augment_rounds > 0:
-    #    prices = rnd_augment(prices, rounds=augment_rounds)
-    
-    # Ensure window size
-    if len(prices) > window_size:
-        prices = prices[-window_size:]
-    elif len(prices) < window_size:
-        pad_length = window_size - len(prices)
-        prices = np.concatenate([np.full(pad_length, prices[0]), prices])
-    
-    # Global normalization
-    prices_norm = normalizer.transform(prices)
-    
-    # Returns
-    returns = np.zeros_like(prices)
-    returns[1:] = (prices[1:] - prices[:-1]) / (prices[:-1] + eps)
-    
-    # Log returns
-    log_returns = np.zeros_like(prices)
-    log_returns[1:] = np.log(prices[1:] + eps) - np.log(prices[:-1] + eps)
-    
-    # Stack channels
-    features = np.stack([
-        prices_norm,
-        returns,
-        log_returns
-    ], axis=0)
-    
-    return torch.from_numpy(features).float()
-
 
 if __name__ == "__main__":
     """Validation tests"""
@@ -403,22 +336,9 @@ if __name__ == "__main__":
     losses = model.compute_koopman_jepa_loss(x_ctx, x_tgt)
     print(f"✓ JEPA: {losses['jepa'].item():.6f}")
     print(f"✓ Variance: {losses['variance'].item():.6f}")
-    print(f"✓ Spectral: {losses['spectral'].item():.6f}")
-    
-    # Test 5: Augmentation
-    print("\n5. Testing augmentation...")
-    prices = np.random.randn(768) * 1000 + 50000
-    augmented = augment_price_window(prices, augment=True)
-    print(f"  Original mean: {prices.mean():.2f}")
-    print(f"  Augmented mean: {augmented.mean():.2f}")
-    print("  ✓ Should be different but similar")
+    print(f"✓ Spectral: {losses['spectral'].item():.6f}")    
     
     print("\n" + "="*80)
     print("✓ All tests passed!")
     print("="*80)
     
-    print("\nKey additions:")
-    print("  1. Variance regularization (prevents OOD → zero mapping)")
-    print("  2. Data augmentation (broadens training distribution)")
-    print("  3. Stronger spectral loss (0.5 vs 0.1)")
-    print("  4. All previous fixes preserved")
