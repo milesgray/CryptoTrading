@@ -3,7 +3,7 @@ textblob==0.17.1
 vaderSentiment==3.3.2
 pymongo==4.6.1
 python-dotenv==1.0.0
-requests==2.31.0
+requests==2.32.4
 numpy==1.24.3
 pandas==2.0.3
 flask==3.0.0
