@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Pre-commit hook to enforce commit message format and branch naming
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+# Get branch name
+BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+
+# Skip checks for main/master branches
+if [[ "$BRANCH_NAME" == "main" || "$BRANCH_NAME" == "master" ]]; then
+    exit 0
+fi
+
+# Check branch naming convention
+if ! [[ "$BRANCH_NAME" =~ ^(feat|fix|hotfix|docs|refactor|chore)/[a-z0-9-]+$ ]]; then
+    echo -e "${RED}❌ Invalid branch name: '$BRANCH_NAME'${NC}"
+    echo "Branch names must follow the pattern: <type>/<description>"
+    echo "Valid types: feat, fix, hotfix, docs, refactor, chore"
+    echo "Example: feat/user-authentication"
+    exit 1
+fi
+
+# Get commit message from file
+COMMIT_MSG_FILE=$1
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Check commit message format
+if ! echo "$COMMIT_MSG" | grep -qE '^(feat|fix|docs|refactor|test|chore)\([a-z0-9-]+\):*'; then
+    echo -e "${RED}❌ Invalid commit message format${NC}"
+    echo "Commit messages must follow the format:"
+    echo "<type>(<scope>): <subject>"
+    echo ""
+    echo "<body>"
+    echo ""
+    echo "<footer>"
+    echo ""
+    echo "Valid types: feat, fix, docs, refactor, test, chore"
+    echo "Example: feat(auth): add login functionality"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Commit message is valid${NC}"
+exit 0
