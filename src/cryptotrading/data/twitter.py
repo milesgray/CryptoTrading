@@ -1,8 +1,12 @@
 import os
 import json
 import datetime as dt
+from datetime import datetime, timezone
+from typing import Any, Union
+from cryptotrading.data.models import TweetDataPoint
 
 from pymongo import ASCENDING
+from cryptotrading.data.postgres import get_connection, init_pool, _pool
 
 from twitter.account import Account
 from twitter.scraper import Scraper
@@ -34,6 +38,85 @@ class TwitterMongoAdapter:
                 await self.db.create_collection(TWEET_COLLECTION_NAME)
         # Create indexes for faster queries
         await self.tweet_collection.create_index([("timestamp", ASCENDING)])
+
+    async def save_tweet_sentiment(self, tweet_data: Union[TweetDataPoint, Any]) -> bool:
+        try:
+            import dataclasses
+            document = dataclasses.asdict(tweet_data)
+            document['sentiment'] = dataclasses.asdict(tweet_data.sentiment)
+            document['created_at'] = dt.datetime.now(dt.timezone.utc)
+            
+            # Create index for efficient querying
+            await self.tweet_collection.create_index([
+                ('token_symbol', 1),
+                ('timestamp', -1),
+                ('user_id', 1)
+            ])
+            
+            result = await self.tweet_collection.insert_one(document)
+            return bool(result.inserted_id)
+        except Exception as e:
+            return False
+
+    async def get_aggregated_sentiment(self, token_symbol: str, hours_back: int = 1) -> dict:
+        import pandas as pd
+        cutoff_time = dt.datetime.now(dt.timezone.utc) - pd.Timedelta(hours=hours_back)
+        
+        pipeline = [
+            {
+                '$match': {
+                    'token_symbol': token_symbol.upper(),
+                    'timestamp': {'$gte': cutoff_time}
+                }
+            },
+            {
+                '$group': {
+                    '_id': None,
+                    'avg_compound': {'$avg': '$sentiment.compound'},
+                    'avg_bullish_signal': {'$avg': '$price_direction_signals.bullish_signal'},
+                    'avg_bearish_signal': {'$avg': '$price_direction_signals.bearish_signal'},
+                    'avg_uncertainty': {'$avg': '$price_direction_signals.uncertainty_signal'},
+                    'avg_volume_signal': {'$avg': '$price_direction_signals.volume_signal'},
+                    'weighted_sentiment': {
+                        '$avg': {
+                            '$multiply': [
+                                '$sentiment.compound',
+                                '$sentiment.confidence',
+                                {'$log10': {'$add': ['$follower_count', 1]}}
+                            ]
+                        }
+                    },
+                    'total_tweets': {'$sum': 1},
+                    'verified_tweets': {
+                        '$sum': {'$cond': ['$verified', 1, 0]}
+                    },
+                    'high_engagement_tweets': {
+                        '$sum': {
+                            '$cond': [
+                                {'$gt': [{'$add': ['$like_count', '$retweet_count']}, 10]},
+                                1, 0
+                            ]
+                        }
+                    }
+                }
+            }
+        ]
+        
+        cursor = self.tweet_collection.aggregate(pipeline)
+        result = await cursor.to_list(length=1)
+        if result:
+            data = result[0]
+            data['token_symbol'] = token_symbol.upper()
+            data['timestamp'] = dt.datetime.now(dt.timezone.utc)
+            data['hours_analyzed'] = hours_back
+            return data
+        else:
+            return {
+                'token_symbol': token_symbol.upper(),
+                'timestamp': dt.datetime.now(dt.timezone.utc),
+                'hours_analyzed': hours_back,
+                'total_tweets': 0
+            }
 
 class TwitterReader:
     def __init__(self):
@@ -205,5 +288,97 @@ class TwitterReader:
         conversation = get_conversation_chain(root_id)
 
         return conversation
+
+
+class TwitterPostgresAdapter:
+    def __init__(self):
+        pass
+
+    async def initialize(self):
+        if _pool is None:
+            await init_pool()
+
+    async def shutdown(self):
+        pass
+
+    async def save_tweet_sentiment(self, tweet_data: Union[TweetDataPoint, Any]) -> bool:
+        try:
+            tweet_id = tweet_data.tweet_id
+            timestamp = tweet_data.timestamp
+            user_id = str(tweet_data.user_id)
+            text = tweet_data.text
+            sentiment = tweet_data.sentiment
+            score = sentiment.compound
+            magnitude = sentiment.confidence
+            
+            import dataclasses
+            # Prepare metadata dict
+            meta = {
+                "username": tweet_data.username,
+                "token_symbol": tweet_data.token_symbol,
+                "sentiment": dataclasses.asdict(sentiment),
+                "price_direction_signals": tweet_data.price_direction_signals,
+                "follower_count": tweet_data.follower_count,
+                "verified": tweet_data.verified,
+                "retweet_count": tweet_data.retweet_count,
+                "like_count": tweet_data.like_count,
+                "reply_count": tweet_data.reply_count,
+                "raw_data": tweet_data.raw_data
+            }
+            
+            async with get_connection() as conn:
+                await conn.execute('''
+                    INSERT INTO tweet_data (id, created_at, author_id, text, sentiment_score, sentiment_magnitude, metadata)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (id) DO UPDATE
+                    SET created_at = EXCLUDED.created_at, metadata = EXCLUDED.metadata,
+                        sentiment_score = EXCLUDED.sentiment_score, sentiment_magnitude = EXCLUDED.sentiment_magnitude;
+                ''', tweet_id, timestamp, user_id, text, score, magnitude, meta)
+            return True
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error saving tweet to Postgres: {e}")
+            return False
+
+    async def get_aggregated_sentiment(self, token_symbol: str, hours_back: int = 1) -> dict:
+        try:
+            from datetime import timedelta
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+            
+            query = '''
+                SELECT 
+                    AVG(sentiment_score) AS avg_compound,
+                    AVG((metadata->'price_direction_signals'->>'bullish_signal')::double precision) AS avg_bullish_signal,
+                    AVG((metadata->'price_direction_signals'->>'bearish_signal')::double precision) AS avg_bearish_signal,
+                    AVG((metadata->'price_direction_signals'->>'uncertainty_signal')::double precision) AS avg_uncertainty,
+                    AVG((metadata->'price_direction_signals'->>'volume_signal')::double precision) AS avg_volume_signal,
+                    AVG(sentiment_score * sentiment_magnitude * LOG(10, (metadata->>'follower_count')::double precision + 1)) AS weighted_sentiment,
+                    COUNT(*)::int AS total_tweets,
+                    SUM(CASE WHEN (metadata->>'verified')::boolean = TRUE THEN 1 ELSE 0 END)::int AS verified_tweets,
+                    SUM(CASE WHEN (metadata->>'like_count')::int + (metadata->>'retweet_count')::int > 10 THEN 1 ELSE 0 END)::int AS high_engagement_tweets
+                FROM tweet_data
+                WHERE metadata->>'token_symbol' = $1 AND created_at >= $2;
+            '''
+            
+            async with get_connection() as conn:
+                row = await conn.fetchrow(query, token_symbol.upper(), cutoff_time)
+                
+            if row and row['total_tweets'] > 0:
+                res = dict(row)
+                res['token_symbol'] = token_symbol.upper()
+                res['timestamp'] = datetime.now(timezone.utc)
+                res['hours_analyzed'] = hours_back
+                return res
+            else:
+                return {
+                    'token_symbol': token_symbol.upper(),
+                    'timestamp': datetime.now(timezone.utc),
+                    'hours_analyzed': hours_back,
+                    'total_tweets': 0
+                }
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error getting aggregated sentiment from Postgres: {e}")
+            return {}
 
     

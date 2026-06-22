@@ -11,7 +11,7 @@ from cryptotrading.rollbit.prices.serve.models import (
     TransformedOrderBookData
 )
 
-
+from cryptotrading.config import DB_BACKEND
 def process_order_book_data(book_data: Dict[str, Any]) -> OrderBookSummaryData:
     """Convert raw order book data into structured OrderBookSummaryData."""
     result = {
@@ -80,19 +80,9 @@ async def get_candlestick_data(
     granularity: int,
     include_book: bool = False
 ) -> List[CandlestickData]:
-    """Retrieve and aggregate price data into candlestick format.
-
-    Args:
-        token:       The trading symbol (e.g., "BTC/USDT").
-        start_time:  The start of the time range (inclusive).
-        end_time:    The end of the time range (inclusive).
-        granularity: The candlestick interval in seconds.
-        include_book: Whether to include order book data
-
-    Returns:
-        A list of CandlestickData objects.  Returns an empty list if no data is found.
-        Raises an exception if there's a database error.
-    """
+    """Retrieve and aggregate price data into candlestick format."""
+    if DB_BACKEND == 'postgres':
+        return await app.price_adapter.get_candlestick_data(token, start_time, end_time, granularity, include_book)
 
     # Base aggregation pipeline for candlestick data
     pipeline = [
@@ -266,19 +256,17 @@ async def get_historic_price(
     page: int = 1,
     page_size: int = 1000
 ) -> Tuple[List[PriceDataPoint], int]:
-    """
-    Get paginated historic price data for a token within a time range.
-    
-    Args:
-        token: The token symbol to fetch data for
-        start_time: Start of the time range (inclusive)
-        end_time: End of the time range (inclusive)
-        page: Page number (1-based)
-        page_size: Number of items per page
-        
-    Returns:
-        Tuple of (list of PriceDataPoint, total_count)
-    """
+    """Get paginated historic price data for a token within a time range."""
+    if DB_BACKEND == 'postgres':
+        total_count = await app.price_adapter.get_price_data_count(token, start_time, end_time)
+        raw_data = await app.price_adapter.get_price_data(token, start_time, end_time, page_size, page, sort="asc")
+        result = [PriceDataPoint(
+            timestamp=doc["timestamp"],
+            price=doc["price"],
+            book=doc["metadata"].get("book", {}),
+            token=doc["metadata"].get("token", token)
+        ) for doc in raw_data]
+        return result, total_count
     try:
         if page < 1:
             page = 1
@@ -318,6 +306,8 @@ async def get_historic_price(
 
 async def get_latest_price(app: FastAPI,token: str) -> Optional[Dict[str, Any]]:
     """Retrieves the latest index price for a given token."""
+    if DB_BACKEND == 'postgres':
+        return await app.price_adapter.get_latest_price(token)
     try:
         # Find the most recent document for the given symbol
         document = await app.price_collection.find_one(
@@ -352,6 +342,8 @@ async def get_latest_price(app: FastAPI,token: str) -> Optional[Dict[str, Any]]:
 
 async def get_latest_transformed_order_book_point(app: FastAPI, token: str) -> Optional[TransformedOrderBookDataPoint]:
     """Retrieves the latest transformed order book point for a given token."""
+    if DB_BACKEND == 'postgres':
+        return await app.order_book_adapter.get_latest_transformed_order_book_point(token)
 
     try:
         # Find the most recent document for the given symbol
@@ -375,11 +367,9 @@ async def get_transformed_order_book(
     end_time: datetime,
     granularity: int
 ) -> Optional[TransformedOrderBookData]:
-    """Retrieves the transformed order book for a given token.
-    
-    Note: This implementation works with MongoDB timeseries collections by using
-    $setWindowFields for time-based bucketing instead of $group.
-    """
+    """Retrieves the transformed order book for a given token."""
+    if DB_BACKEND == 'postgres':
+        return await app.order_book_adapter.get_transformed_order_book(token, start_time, end_time, granularity)
     try:
         # First, get the raw data points within the time range
         cursor = app.transformed_order_book_collection.find({

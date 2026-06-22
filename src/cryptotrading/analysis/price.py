@@ -1,17 +1,25 @@
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from pymongo import MongoClient
 from datetime import datetime, timedelta
 import pytz
 
-from cryptotrading.data.mongo import get_db, PRICE_COLLECTION_NAME
+from cryptotrading.data.factory import get_price_adapter
+from cryptotrading.config import DB_BACKEND
 
 class PriceAnalytics:
     def __init__(self):
-        """Initialize the analytics utility with MongoDB connection details"""
-        self.db = get_db()
-        self.collection = self.db[PRICE_COLLECTION_NAME]
+        """Initialize the analytics utility with database adapter"""
+        self.adapter = get_price_adapter()
+        # Initialize adapter if needed
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop_policy().get_event_loop()
+        
+        if loop.is_running():
+            loop.create_task(self.adapter.initialize())
+        else:
+            loop.run_until_complete(self.adapter.initialize())
     
     def get_index_prices(self, symbol="BTC", start_time=None, end_time=None, interval="1m"):
         """
@@ -32,33 +40,42 @@ class PriceAnalytics:
         if start_time is None:
             start_time = end_time - timedelta(days=1)
             
-        # Query MongoDB for index prices
-        query = {
-            "metadata.symbol": symbol,
-            "metadata.type": "index_price",
-            "timestamp": {
-                "$gte": start_time,
-                "$lte": end_time
-            }
-        }
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop_policy().get_event_loop()
+            
+        # Get raw price data from database adapter
+        if loop.is_running():
+            # In an active event loop, we run in an executor or helper if async call is needed
+            # For simplicity in this analytical class, we use run_until_complete if we can, or a future
+            import nest_asyncio
+            nest_asyncio.apply()
         
-        projection = {
-            "_id": 0,
-            "timestamp": 1,
-            "price": 1
-        }
-        
-        # Retrieve data and convert to DataFrame
-        cursor = self.collection.find(query, projection).sort("timestamp", 1)
-        data = list(cursor)
+        data = loop.run_until_complete(self.adapter.get_price_data(symbol, start_time, end_time, limit=50000))
         
         if not data:
             return pd.DataFrame()
             
-        df = pd.DataFrame(data)
-        
+        # Standardize representation between Mongo and Postgres
+        processed = []
+        for doc in data:
+            # Postgres returns standard dict with price/timestamp, Mongo might have it differently nested
+            price = doc.get("price")
+            ts = doc.get("timestamp")
+            processed.append({
+                "timestamp": ts,
+                "price": price
+            })
+            
+        df = pd.DataFrame(processed)
+        if df.empty:
+            return df
+            
         # Convert to time series and resample if needed
         df.set_index("timestamp", inplace=True)
+        df.sort_index(inplace=True)
         
         # Resample data based on interval
         if interval != "raw":
@@ -98,53 +115,68 @@ class PriceAnalytics:
         if start_time is None:
             start_time = end_time - timedelta(days=1)
             
-        # Build query
-        query = {
-            "metadata.symbol": symbol,
-            "metadata.type": "exchange_data",
-            "timestamp": {
-                "$gte": start_time,
-                "$lte": end_time
-            }
-        }
-        
-        if exchange:
-            query["metadata.exchange"] = exchange
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop_policy().get_event_loop()
             
-        projection = {
-            "_id": 0,
-            "timestamp": 1,
-            "metadata.exchange": 1,
-            "price": 1,
-            "bid": 1,
-            "ask": 1
-        }
-        
-        # Retrieve data and convert to DataFrame
-        cursor = self.collection.find(query, projection).sort("timestamp", 1)
-        data = list(cursor)
-        
-        if not data:
-            return pd.DataFrame()
+        if loop.is_running():
+            import nest_asyncio
+            nest_asyncio.apply()
             
-        # Process data to flatten the metadata
-        processed_data = []
-        for item in data:
-            processed_item = {
-                "timestamp": item["timestamp"],
-                "exchange": item["metadata"]["exchange"],
-                "price": item["price"]
-            }
+        if DB_BACKEND == 'mongodb':
+            # Mongo query directly on the raw collection since there isn't a dedicated get_exchange_prices in PriceMongoAdapter
+            cursor = self.adapter.price_collection.find({
+                "metadata.symbol": symbol,
+                "metadata.type": "exchange_data",
+                "timestamp": {
+                    "$gte": start_time,
+                    "$lte": end_time
+                }
+            }).sort("timestamp", 1)
+            data = loop.run_until_complete(cursor.to_list(length=None))
             
-            # Add bid and ask if available
-            if "bid" in item:
-                processed_item["bid"] = item["bid"]
-            if "ask" in item:
-                processed_item["ask"] = item["ask"]
-                
-            processed_data.append(processed_item)
+            processed_data = []
+            for item in data:
+                meta = item.get("metadata", {})
+                if exchange and meta.get("exchange") != exchange:
+                    continue
+                processed_item = {
+                    "timestamp": item["timestamp"],
+                    "exchange": meta.get("exchange"),
+                    "price": item["price"]
+                }
+                processed_data.append(processed_item)
+            return pd.DataFrame(processed_data)
+        else:
+            # Postgres: fetch raw exchange data
+            query = '''
+                SELECT time as timestamp, close as price, symbol, exchange, metadata
+                FROM price_data
+                WHERE (metadata->>'token' = $1 OR symbol LIKE $2 OR symbol = $1)
+                  AND exchange LIKE 'exchange_raw_%'
+                  AND time >= $3 AND time <= $4
+                ORDER BY time ASC;
+            '''
+            from cryptotrading.data.postgres import get_connection
             
-        return pd.DataFrame(processed_data)
+            async def run_query():
+                async with get_connection() as conn:
+                    return await conn.fetch(query, symbol, f"{symbol}/%", start_time, end_time)
+                    
+            rows = loop.run_until_complete(run_query())
+            processed_data = []
+            for r in rows:
+                exch = r["exchange"].replace("exchange_raw_", "")
+                if exchange and exch != exchange:
+                    continue
+                processed_data.append({
+                    "timestamp": r["timestamp"],
+                    "exchange": exch,
+                    "price": r["price"]
+                })
+            return pd.DataFrame(processed_data)
         
     def calculate_vwap(self, symbol, window_hours=24):
         """
@@ -245,6 +277,14 @@ class PriceAnalytics:
         }
     
     def close(self):
-        """Close MongoDB connection"""
-        if self.client:
-            self.client.close()
+        """Close database adapter connection"""
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop_policy().get_event_loop()
+            
+        if loop.is_running():
+            import nest_asyncio
+            nest_asyncio.apply()
+        loop.run_until_complete(self.adapter.shutdown())

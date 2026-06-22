@@ -23,108 +23,102 @@ import re
 import time
 import json
 import logging
+import datetime as dt
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
 
 # External dependencies
-from twitter.account import Account
-from twitter.scraper import Scraper
-import tweepy
+import twikit
 import pymongo
 from textblob import TextBlob
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+from pydantic import BaseModel, field_validator
 
-@dataclass
-class SentimentScore:
-    """Sentiment analysis results"""
-    compound: float
-    positive: float
-    negative: float
-    neutral: float
-    polarity: float
-    subjectivity: float
-    confidence: float
+from cryptotrading.data.models import TweetDataPoint, TweetSentiment
+
+# Map TweetData to TweetDataPoint
+TweetData = TweetDataPoint
+
+# Map SentimentScore to TweetSentiment
+SentimentScore = TweetSentiment
 
 def to_date(date_str):
     return dt.datetime.strptime(date_str, '%a %b %d %H:%M:%S %z %Y')
 
-class TwitterClient:
-    def __init__(self):
-        self.cookies = {
-            "ct0": os.getenv("TWITTER_COOKIE_CT0"),
-            "auth_token": os.getenv("TWITTER_COOKIE_AUTH_TOKEN"),
-            "twid": os.getenv("TWITTER_COOKIE_TWID"),
-        }
-        self.user_id = int(self.cookies["twid"])
-        self.account = Account(cookies=self.cookies)
-        self.scraper = Scraper(cookies=self.cookies)
 
-    def get_me(self):
-        return self.user_id
+class TwitterUser(BaseModel):
+    can_dm: Optional[bool] = None
+    can_media_tag: Optional[bool] = None
+    created_at: Optional[datetime] = None
+    default_profile: Optional[bool] = None
+    default_profile_image: Optional[bool] = None
+    description: Optional[str] = None
+    entities: Optional[dict] = None
+    fast_followers_count: Optional[int] = None
+    favourites_count: Optional[int] = None
+    followers_count: Optional[int] = None
+    friends_count: Optional[int] = None
+    has_custom_timelines: Optional[bool] = None
+    is_translator: Optional[bool] = None
+    listed_count: Optional[int] = None
+    location: Optional[str] = None
+    media_count: Optional[int] = None
+    name: Optional[str] = None
+    normal_followers_count: Optional[int] = None
+    pinned_tweet_ids_str: Optional[List[str]] = None
+    possibly_sensitive: Optional[bool] = None
+    profile_banner_url: Optional[str] = None
+    profile_image_url_https: Optional[str] = None
+    profile_interstitial_type: Optional[str] = None
+    screen_name: Optional[str] = None
+    statuses_count: Optional[int] = None
+    translator_type: Optional[str] = None
+    url: Optional[str] = None
+    verified: Optional[bool] = None
+    verified_type: Optional[str] = None
+    want_retweets: Optional[bool] = None
+    withheld_in_countries: Optional[List[str]] = None
 
-    def get_timeline_tweets(self, limit: int = 100, cursor: Optional[str] = None):
+    @field_validator('created_at', mode='before')
+    @classmethod
+    def parse_created_at(cls, v):
+        if isinstance(v, str):
+            # Twitter format: 'Sun Oct 26 03:52:51 +0000 2025'
+            return datetime.strptime(v, '%a %b %d %H:%M:%S %z %Y')
+        return v
 
-        def get_entries(timeline_data: dict) -> list:
-            return timeline_data[0]['data']['home']['home_timeline_urt']['instructions'][0]['entries'] 
-        def get_tweet_metadata(entry: dict) -> dict:
-            return entry['content']['itemContent']['tweet_results']['result']['legacy']
-        def get_tweet(entry: dict) -> dict:
-            try:
-                tweet_info = get_tweet_metadata(entry)
-            
-                return {
-                    "id": tweet_info['id_str'],
-                    "created_at": to_date(tweet_info['created_at']),
-                    "text": tweet_info['full_text'],
-                    "user_id": tweet_info['user_id_str'],
-                }
-            except KeyError:
-                return None
-        
-        timeline = self.account.home_latest_timeline(limit, cursor)
-        tweets = [get_tweet(entry) for entry in get_entries(timeline)]
-        return [t for t in tweets if t]
-
-    def get_following(self, user_id):
-        raw = self.scraper.following([user_id])
-
-        def parse_result(entry):
-            return entry['content']['itemContent']['user_results']['result']
-        def parse_user(entry):
-            try:
-                raw_user = parse_result(entry)
-
-                return {
-                    "id": raw_user["rest_id"],
-                    "username": raw_user["legacy"]["screen_name"],
-                    "name": raw_user["legacy"]["name"],
-                    "verified": raw_user["legacy"]["verified"] or False,
-                    "followers_count": raw_user["legacy"]["followers_count"]
-                }
-            except KeyError:
-                return None
-        instructions_list = [r['data']['user']['result']['timeline']['timeline']['instructions'] for r in raw]
-        instructions = [[i for i in instructions if i['type'] == 'TimelineAddEntries'] for instructions in instructions_list]
-        entries_list = [i[0]['entries'] for i in instructions]
-        entries = sum(entries_list, [])
-        users = [parse_user(e) for e in entries]
-
-        return [u for u in users if u]
-
-    def get_users_tweets(self, user_id):
-        return self.scraper.tweets([user_id])
-
-    def get_users(self, user_ids):
-        return self.scraper.users_by_ids(user_ids)
-
+class Tweet(BaseModel):
+    bookmark_count: Optional[int] = None
+    bookmarked: Optional[bool] = None
+    created_at: Optional[datetime] = None
+    conversation_id_str: Optional[str] = None
+    display_text_range: Optional[List[int]] = None
+    entities: Optional[dict] = None
+    favorite_count: Optional[int] = None
+    favorited: Optional[bool] = None
+    full_text: Optional[str] = None
+    is_quote_status: Optional[bool] = None
+    lang: Optional[str] = None
+    quote_count: Optional[int] = None
+    reply_count: Optional[int] = None
+    retweet_count: Optional[int] = None
+    retweeted: Optional[bool] = None
+    scopes: Optional[dict] = None
+    user_id_str: Optional[str] = None
+    id_str: Optional[str] = None
+    retweeted_status_result: Optional[dict] = None
     
+    @field_validator('created_at', mode='before')
+    @classmethod
+    def parse_created_at(cls, v):
+        if isinstance(v, str):
+            # Twitter format: 'Sun Oct 26 03:52:51 +0000 2025'
+            return datetime.strptime(v, '%a %b %d %H:%M:%S %z %Y')
+        return v
 
 class CryptoSentimentAnalyzer:
     """
@@ -135,15 +129,31 @@ class CryptoSentimentAnalyzer:
         """Initialize the sentiment analyzer"""
         self.logger = self._setup_logging()
         
+        # Helper to run async methods from sync context
+        def run_async(coro):
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    try:
+                        import nest_asyncio
+                        nest_asyncio.apply()
+                    except ImportError:
+                        pass
+                    return loop.run_until_complete(coro)
+                else:
+                    return loop.run_until_complete(coro)
+            except RuntimeError:
+                return asyncio.run(coro)
+        self._run_async = run_async
+
         # Twitter API setup
-        self.twitter_client = TwitterClient()
+        self.twitter_client = twikit.Client('en-US')
         
-        # MongoDB setup
-        self.mongo_client = pymongo.MongoClient(
-            mongo_uri or os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
-        )
-        self.db = self.mongo_client[db_name or os.getenv('MONGODB_DATABASE', 'crypto_sentiment')]
-        self.collection = self.db.tweet_sentiment
+        # Database adapter setup
+        from cryptotrading.data.factory import get_twitter_adapter
+        self.db_adapter = get_twitter_adapter()
+        self._run_async(self.db_adapter.initialize())
         
         # Sentiment analyzers
         self.vader_analyzer = SentimentIntensityAnalyzer()
@@ -229,7 +239,7 @@ class CryptoSentimentAnalyzer:
         
         return list(tokens - false_positives)
     
-    def calculate_sentiment(self, text: str, token_symbol: str = None) -> SentimentScore:
+    def calculate_sentiment(self, text: str, token_symbol: str = None) -> TweetSentiment:
         """Calculate comprehensive sentiment score"""
         clean_text = self.preprocess_text(text)
         
@@ -245,7 +255,7 @@ class CryptoSentimentAnalyzer:
         # Confidence based on text length and crypto relevance
         confidence = self._calculate_confidence(text, token_symbol)
         
-        return SentimentScore(
+        return TweetSentiment(
             compound=vader_scores['compound'],
             positive=vader_scores['pos'],
             negative=vader_scores['neg'],
@@ -401,29 +411,16 @@ class CryptoSentimentAnalyzer:
         
         return any(fmt in text_lower for fmt in formats)
     
-    def save_to_mongodb(self, tweet_data: TweetData) -> bool:
-        """Save analyzed tweet data to MongoDB"""
+    def save_to_database(self, tweet_data: TweetData) -> bool:
+        """Save analyzed tweet data to active database backend"""
         try:
-            document = asdict(tweet_data)
-            document['sentiment'] = asdict(tweet_data.sentiment)
-            document['created_at'] = datetime.now(timezone.utc)
-            
-            # Create index for efficient querying
-            self.collection.create_index([
-                ('token_symbol', 1),
-                ('timestamp', -1),
-                ('user_id', 1)
-            ])
-            
-            result = self.collection.insert_one(document)
-            
-            if result.inserted_id:
-                self.logger.debug(f"Saved tweet {tweet_data.tweet_id} to MongoDB")
+            success = self._run_async(self.db_adapter.save_tweet_sentiment(tweet_data))
+            if success:
+                self.logger.debug(f"Saved tweet {tweet_data.tweet_id} to database")
                 return True
             return False
-            
         except Exception as e:
-            self.logger.error(f"Error saving to MongoDB: {e}")
+            self.logger.error(f"Error saving to database: {e}")
             return False
     
     def run_analysis(self, token_symbol: str, duration_minutes: int = 60,
@@ -455,7 +452,7 @@ class CryptoSentimentAnalyzer:
                     
                     for tweet_data in tweets:
                         if tweet_data.tweet_id not in processed_tweets:
-                            success = self.save_to_mongodb(tweet_data)
+                            success = self.save_to_database(tweet_data)
                             if success:
                                 processed_tweets.add(tweet_data.tweet_id)
                                 self.logger.info(
@@ -480,72 +477,17 @@ class CryptoSentimentAnalyzer:
                                hours_back: int = 1) -> Dict:
         """Get aggregated sentiment data for ML models"""
         try:
-            cutoff_time = datetime.now(timezone.utc) - pd.Timedelta(hours=hours_back)
-            
-            pipeline = [
-                {
-                    '$match': {
-                        'token_symbol': token_symbol.upper(),
-                        'timestamp': {'$gte': cutoff_time}
-                    }
-                },
-                {
-                    '$group': {
-                        '_id': None,
-                        'avg_compound': {'$avg': '$sentiment.compound'},
-                        'avg_bullish_signal': {'$avg': '$price_direction_signals.bullish_signal'},
-                        'avg_bearish_signal': {'$avg': '$price_direction_signals.bearish_signal'},
-                        'avg_uncertainty': {'$avg': '$price_direction_signals.uncertainty_signal'},
-                        'avg_volume_signal': {'$avg': '$price_direction_signals.volume_signal'},
-                        'weighted_sentiment': {
-                            '$avg': {
-                                '$multiply': [
-                                    '$sentiment.compound',
-                                    '$sentiment.confidence',
-                                    {'$log10': {'$add': ['$follower_count', 1]}}
-                                ]
-                            }
-                        },
-                        'total_tweets': {'$sum': 1},
-                        'verified_tweets': {
-                            '$sum': {'$cond': ['$verified', 1, 0]}
-                        },
-                        'high_engagement_tweets': {
-                            '$sum': {
-                                '$cond': [
-                                    {'$gt': [{'$add': ['$like_count', '$retweet_count']}, 10]},
-                                    1, 0
-                                ]
-                            }
-                        }
-                    }
-                }
-            ]
-            
-            result = list(self.collection.aggregate(pipeline))
-            
-            if result:
-                data = result[0]
-                data['token_symbol'] = token_symbol.upper()
-                data['timestamp'] = datetime.now(timezone.utc)
-                data['hours_analyzed'] = hours_back
-                return data
-            else:
-                return {
-                    'token_symbol': token_symbol.upper(),
-                    'timestamp': datetime.now(timezone.utc),
-                    'hours_analyzed': hours_back,
-                    'total_tweets': 0
-                }
-                
+            return self._run_async(self.db_adapter.get_aggregated_sentiment(token_symbol, hours_back))
         except Exception as e:
             self.logger.error(f"Error getting aggregated sentiment: {e}")
             return {}
     
     def cleanup(self):
         """Cleanup resources"""
-        if hasattr(self, 'mongo_client'):
-            self.mongo_client.close()
+        try:
+            self._run_async(self.db_adapter.shutdown())
+        except Exception as e:
+            pass
         self.logger.info("Cleanup completed")
 
 # Example usage and testing

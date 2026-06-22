@@ -74,6 +74,7 @@ class CryptoPriceDataset(Dataset):
         window: int = 768,       
         stride: int = 50,
         mode: str = 'train',
+        features: bool = False,
         augment: bool = False
     ):
         """
@@ -94,6 +95,7 @@ class CryptoPriceDataset(Dataset):
         self.target_window = window
         self.prediction_horizon = window // 4
         self.mode = mode
+        self.features = features
         self.augment = augment
         
         # Verify normalizer is fitted
@@ -142,17 +144,19 @@ class CryptoPriceDataset(Dataset):
         augment = self.augment if self.mode == 'train' else False
         
         # Create features with optional augmentation
-        x_context = create_multimodal_features(
+        x_context = preprocess(
             cached['context_prices'],
             self.normalizer,
             self.context_window,
+            features=self.features,
             augment=augment
         )
         
-        x_target = create_multimodal_features(
+        x_target = preprocess(
             cached['target_prices'],
             self.normalizer,
             self.target_window,
+            features=self.features,
             augment=augment
         )
         
@@ -181,6 +185,7 @@ class StratifiedTemporalDataset(Dataset):
         target_window: int = 768,
         prediction_horizon: int = 256,
         mode: str = 'train',
+        features: bool = False,
         augment: bool = False
     ):
         self.prices = prices.astype(np.float32)
@@ -190,6 +195,7 @@ class StratifiedTemporalDataset(Dataset):
         self.target_window = target_window
         self.prediction_horizon = prediction_horizon
         self.mode = mode
+        self.features = features
         self.augment = augment
         
         if not normalizer.fitted:
@@ -230,22 +236,24 @@ class StratifiedTemporalDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cached = self.features_cache[idx]
         
-        
+
         # Apply augmentation ONLY during training
         augment = self.augment if self.mode == 'train' else False
         
         
-        x_context = create_multimodal_features(
+        x_context = preprocess(
             cached['context_prices'],
             self.normalizer,
             self.context_window,
+            features=self.features,
             augment=augment
         )
         
-        x_target = create_multimodal_features(
+        x_target = preprocess(
             cached['target_prices'],
             self.normalizer,
             self.target_window,
+            features=self.features,
             augment=augment
         )
         
@@ -401,6 +409,7 @@ def create_datasets_stratified(
     train_ratio: float = 0.7,
     val_ratio: float = 0.2,
     n_strata: int = 20,
+    features: bool = False,
     augment_train: bool = False,
     random_seed: int = 42
 ) -> Tuple:
@@ -457,19 +466,19 @@ def create_datasets_stratified(
     train_dataset = StratifiedTemporalDataset(
         prices, timestamps, normalizer, train_indices,
         context_window, target_window, prediction_horizon,
-        mode='train', augment=augment_train
+        mode='train', augment=augment_train, features=features
     )
     
     val_dataset = StratifiedTemporalDataset(
         prices, timestamps, normalizer, val_indices,
         context_window, target_window, prediction_horizon,
-        mode='val', augment=False
+        mode='val', augment=False, features=features
     )
     
     test_dataset = StratifiedTemporalDataset(
         prices, timestamps, normalizer, test_indices,
         context_window, target_window, prediction_horizon,
-        mode='test', augment=False
+        mode='test', augment=False, features=features
     )
     
     return train_dataset, val_dataset, test_dataset, normalizer
@@ -509,10 +518,11 @@ def augment_price_window(
     return augmented
 
 
-def create_multimodal_features(
+def preprocess(
     prices: np.ndarray,
     normalizer: GlobalPriceNormalizer,
     window_size: int = 768,
+    features: bool = False,
     augment: bool = False
 ) -> torch.Tensor:
     """
@@ -547,22 +557,25 @@ def create_multimodal_features(
     # Global normalization
     prices_norm = normalizer.transform(prices)
     
-    # Returns
-    returns = np.zeros_like(prices)
-    returns[1:] = (prices[1:] - prices[:-1]) / (prices[:-1] + eps)
+    if features:
+        # Returns
+        returns = np.zeros_like(prices)
+        returns[1:] = (prices[1:] - prices[:-1]) / (prices[:-1] + eps)
+        
+        # Log returns
+        log_returns = np.zeros_like(prices)
+        log_returns[1:] = np.log(prices[1:] + eps) - np.log(prices[:-1] + eps)
+        
+        # Stack channels
+        data = np.stack([
+            prices_norm,
+            returns,
+            log_returns
+        ], axis=0)
+    else:
+        data = prices_norm
     
-    # Log returns
-    log_returns = np.zeros_like(prices)
-    log_returns[1:] = np.log(prices[1:] + eps) - np.log(prices[:-1] + eps)
-    
-    # Stack channels
-    features = np.stack([
-        prices_norm,
-        returns,
-        log_returns
-    ], axis=0)
-    
-    return torch.from_numpy(features).float()
+    return torch.from_numpy(data).float()
 
 
 if __name__ == "__main__":

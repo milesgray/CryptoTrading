@@ -1,11 +1,22 @@
 import logging
 import datetime as dt
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Optional, Union
+
+from cryptotrading.data.postgres import get_connection, init_pool, _pool
 
 from pymongo import ASCENDING
 
 from cryptotrading.data.mongo import get_db
-from cryptotrading.data.models import OrderBookSnapshot, OrderBookSummaryData, PriceBucket, PriceOutlier
+from cryptotrading.data.models import (
+    TransformedOrderBookData,
+    TransformedOrderBookDataPoint,
+    OrderBookSnapshot, 
+    OrderBookSummaryData, 
+    PriceBucket, 
+    PriceOutlier,
+    ExchangeRawOrderBook,
+)
 from cryptotrading.config import (
     COMPOSITE_ORDER_BOOK_COLLECTION_NAME,
     EXCHANGE_ORDER_BOOK_COLLECTION_NAME,
@@ -95,7 +106,7 @@ class OrderBookMongoAdapter:
     async def store_exchange_order_book(
             self, 
             symbol: str,            
-            raw_data: list[dict], 
+            raw_data: list[Union[ExchangeRawOrderBook, dict]], 
             verbose: bool = False
     ) -> None:
         """Store calculated index price and raw data in MongoDB time series collection"""
@@ -178,7 +189,7 @@ class OrderBookMongoAdapter:
         self, 
         symbol: str, 
         book: dict, 
-        raw_data: list[dict],
+        raw_data: list[Union[ExchangeRawOrderBook, dict]],
         verbose: bool=False
     ) -> None:
         """Store calculated index price and raw composite order book data in MongoDB time series collection"""
@@ -385,7 +396,392 @@ class OrderBookMongoAdapter:
                 for outlier in book_data["ask_outliers"]
             ]
 
+        return OrderBookSummaryData(**result)
+
+
+class OrderBookPostgresAdapter:
+    def __init__(self):
+        pass
+
+    async def initialize(self):
+        if _pool is None:
+            await init_pool()
+
+    async def shutdown(self):
+        pass
+
+    async def store_exchange_order_book(
+        self, 
+        symbol: str,            
+        raw_data: list[Union[ExchangeRawOrderBook, dict]], 
+        verbose: bool = False
+    ) -> None:
+        # Same logic as Mongo: extracts stats and stores
+        timestamp = datetime.now(timezone.utc)
+        token = symbol.split("/")[0] if "/" in symbol else symbol
+        
+        async with get_connection() as conn:
+            for book in raw_data:
+                exchange = book.get('exchange', 'unknown')
+                
+                # Check bids and asks
+                if book.get('bids') and book.get('asks'):
+                    df = order_book_to_df(book['bids'], book['asks'])
+                    
+                    ask_filter = df['side'] == 'a'
+                    bid_filter = df['side'] == 'b'
+                    size_filter = df['size'] > 0
+ 
+                    asks = df[ask_filter & size_filter]
+                    bids = df[bid_filter & size_filter]
+ 
+                    lowest_ask = float(asks['price'].min())
+                    highest_ask = float(asks['price'].max())
+                    lowest_bid = float(bids['price'].min())
+                    highest_bid = float(bids['price'].max())
+                    
+                    spread = abs(lowest_ask - highest_bid)
+                    mid_price = (lowest_ask + highest_bid) / 2
+                    
+                    book['bids'].sort(key=lambda x: x[1], reverse=True)
+                    book['asks'].sort(key=lambda x: x[1], reverse=True)
+ 
+                    highest_volume_bid = book['bids'][0]
+                    highest_volume_ask = book['asks'][0]
+ 
+                    total_bid_size = float(bids["size"].sum())
+                    total_ask_size = float(asks["size"].sum())
+                    
+                    metadata = {
+                        "token": token,
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "spread": spread, 
+                        "price": mid_price,
+                        "lowest_bid": lowest_bid,                        
+                        "highest_bid": highest_bid,
+                        "total_bid_size": total_bid_size,
+                        "highest_volume_bid_price": highest_volume_bid[0],
+                        "highest_volume_bid_vol": highest_volume_bid[1],
+                        "lowest_ask": lowest_ask,
+                        "highest_ask": highest_ask,                        
+                        "total_ask_size": total_ask_size,                        
+                        "highest_volume_ask_price": highest_volume_ask[0],
+                        "highest_volume_ask_vol": highest_volume_ask[1],
+                        "type": "exchange_data"
+                    }
+                    
+                    # Store as a regular row in price_data
+                    await conn.execute('''
+                        INSERT INTO price_data (time, symbol, exchange, close, metadata)
+                        VALUES ($1, $2, $3, $4, $5)
+                        ON CONFLICT (time, symbol, exchange) DO UPDATE
+                        SET close = EXCLUDED.close, metadata = EXCLUDED.metadata;
+                    ''', timestamp, symbol, f"exchange_raw_{exchange}", mid_price, metadata)
+
+    async def store_composite_order_book_data(
+        self, 
+        symbol: str, 
+        book: dict, 
+        raw_data: list[Union[ExchangeRawOrderBook, dict]],
+        verbose: bool = False
+    ) -> None:
+        timestamp = datetime.now(timezone.utc)
+        token = symbol.split("/")[0] if "/" in symbol else symbol
+ 
+        df = order_book_to_df(book['bids'], book['asks'])
+        
+        ask_filter = df['side'] == 'a'
+        bid_filter = df['side'] == 'b'
+        size_filter = df['size'] > 0
+ 
+        asks = df[ask_filter & size_filter]
+        bids = df[bid_filter & size_filter]
+ 
+        lowest_ask = float(asks['price'].min())
+        highest_ask = float(asks['price'].max())
+        lowest_bid = float(bids['price'].min())
+        highest_bid = float(bids['price'].max())
+ 
+        spread = abs(lowest_ask - highest_bid)
+        midpoint = (lowest_ask + highest_bid) / 2
+ 
+        book['bids'].sort(key=lambda x: x[1], reverse=True)
+        book['asks'].sort(key=lambda x: x[1], reverse=True)
+ 
+        largest_size_bid = book['bids'][0]
+        largest_size_ask = book['asks'][0]
+ 
+        total_bid_size = float(bids["size"].sum())
+        total_ask_size = float(asks["size"].sum())
+ 
+        book['bids'].sort(key=lambda x: x[0], reverse=True)
+        book['asks'].sort(key=lambda x: x[0], reverse=False)
+        
+        metadata = {
+            "token": token,
+            "symbol": symbol,                
+            "lowest_ask": lowest_ask,
+            "highest_ask": highest_ask,
+            "largest_size_ask": largest_size_ask,
+            "total_ask_size": total_ask_size,
+            "lowest_bid": lowest_bid,
+            "highest_bid": highest_bid,
+            "largest_size_bid": largest_size_bid,
+            "total_bid_size": total_bid_size,
+            "midpoint": midpoint,
+            "spread": spread,
+            "type": "order_book"
+        }
+        
+        # Serialize lists/tuples for JSONB compatibility
+        serializable_book = {
+            "bids": [[float(price), float(qty)] for price, qty in book["bids"]],
+            "asks": [[float(price), float(qty)] for price, qty in book["asks"]]
+        }
+        
+        async with get_connection() as conn:
+            await conn.execute('''
+                INSERT INTO price_data (time, symbol, exchange, close, metadata)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (time, symbol, exchange) DO UPDATE
+                SET close = EXCLUDED.close, metadata = EXCLUDED.metadata;
+            ''', timestamp, symbol, 'composite', midpoint, {
+                **metadata,
+                "book": serializable_book,
+                "exchanges_count": len(raw_data)
+            })
+ 
+    async def store_transformed_order_book_data(
+        self, 
+        symbol: str, 
+        book: dict, 
+        verbose: bool = False
+    ) -> None:
+        timestamp = datetime.now(timezone.utc)
+        token = symbol.split("/")[0] if "/" in symbol else symbol
+ 
+        df = order_book_to_df(book['bids'], book['asks'])
+        
+        ask_filter = df['side'] == 'a'
+        bid_filter = df['side'] == 'b'
+        size_filter = df['size'] > 0
+ 
+        asks = df[ask_filter & size_filter]
+        bids = df[bid_filter & size_filter]
+ 
+        lowest_ask = float(asks['price'].min())
+        highest_bid = float(bids['price'].max())
+ 
+        spread = abs(lowest_ask - highest_bid)
+        midpoint = (lowest_ask + highest_bid) / 2
+ 
+        metadata = {
+            "token": token,
+            "symbol": symbol,                
+            "lowest_ask": lowest_ask,
+            "highest_bid": highest_bid,
+            "midpoint": midpoint,
+            "spread": spread,
+            "type": "order_book"
+        }
+        
+        async with get_connection() as conn:
+            await conn.execute('''
+                INSERT INTO price_data (time, symbol, exchange, close, metadata)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (time, symbol, exchange) DO UPDATE
+                SET close = EXCLUDED.close, metadata = EXCLUDED.metadata;
+            ''', timestamp, symbol, 'transformed', midpoint, metadata)
+ 
+    async def get_orderbook_data(
+        self,
+        token: str,
+        start_time: datetime,
+        end_time: datetime
+    ) -> list[OrderBookSnapshot]:
+        query = '''
+            SELECT time as timestamp, close as midpoint, metadata
+            FROM price_data
+            WHERE (metadata->>'token' = $1 OR symbol LIKE $2) AND exchange = 'composite' AND time >= $3 AND time <= $4
+            ORDER BY time ASC;
+        '''
+        async with get_connection() as conn:
+            rows = await conn.fetch(query, token, f"{token}/%", start_time, end_time)
+            
+        snapshots = []
+        for r in rows:
+            meta = r["metadata"] or {}
+            book = meta.get("book", {})
+            bids = sorted([(float(p), float(q)) for p, q in book.get("bids", [])], key=lambda x: x[0], reverse=True)
+            asks = sorted([(float(p), float(q)) for p, q in book.get("asks", [])], key=lambda x: x[0])
+            
+            snapshots.append(OrderBookSnapshot(
+                timestamp=r["timestamp"].timestamp(),
+                bids=bids,
+                asks=asks,
+                mid_price=meta.get("midpoint", r["midpoint"])
+            ))
+        return snapshots
+ 
+    @staticmethod
+    def process_order_book_data(book_data: dict[str, Any]) -> OrderBookSummaryData:
+        
+        result = {
+            "bid_buckets": [],
+            "ask_buckets": [],
+            "bid_outliers": [],
+            "ask_outliers": [],
+            "volume": 0.0
+        }
+        
+        if not book_data:
+            return OrderBookSummaryData(**result)
+            
+        if "bid_buckets" in book_data and book_data["bid_buckets"]:
+            result["bid_buckets"] = [
+                PriceBucket(range=bucket[0], avg_price=bucket[1], volume=bucket[2])
+                for bucket in book_data["bid_buckets"]
+            ]
+        
+        if "ask_buckets" in book_data and book_data["ask_buckets"]:
+            result["ask_buckets"] = [
+                PriceBucket(range=bucket[0], avg_price=bucket[1], volume=bucket[2])
+                for bucket in book_data["ask_buckets"]
+            ]
+        
+        if "bid_outliers" in book_data and book_data["bid_outliers"]:
+            result["bid_outliers"] = [
+                PriceOutlier(price=outlier[0], volume=outlier[1])
+                for outlier in book_data["bid_outliers"]
+            ]
+        
+        if "ask_outliers" in book_data and book_data["ask_outliers"]:
+            result["ask_outliers"] = [
+                PriceOutlier(price=outlier[0], volume=outlier[1])
+                for outlier in book_data["ask_outliers"]
+            ]
+ 
         result["volume"] = sum([bucket.volume for bucket in result["bid_buckets"]]) \
                         + sum([bucket.volume for bucket in result["ask_buckets"]])
         
         return OrderBookSummaryData(**result)
+ 
+    async def get_transformed_order_book_since(self, last_checked: datetime) -> list[dict]:
+        query = '''
+            SELECT time as timestamp, close as midpoint, metadata
+            FROM price_data
+            WHERE exchange = 'transformed' AND time > $1
+            ORDER BY time ASC;
+        '''
+        async with get_connection() as conn:
+            rows = await conn.fetch(query, last_checked)
+        return [dict(r) for r in rows]
+ 
+    async def get_latest_transformed_order_book_point(self, token: str) -> Optional[TransformedOrderBookDataPoint]:
+        query = '''
+            SELECT time as timestamp, close as midpoint, metadata
+            FROM price_data
+            WHERE (metadata->>'token' = $1 OR symbol LIKE $2) AND exchange = 'transformed'
+            ORDER BY time DESC LIMIT 1;
+        '''
+        async with get_connection() as conn:
+            row = await conn.fetchrow(query, token, f"{token}/%")
+            
+        if not row:
+            return None
+            
+        meta = row['metadata'] or {}
+        return TransformedOrderBookDataPoint(
+            timestamp=row['timestamp'].replace(tzinfo=timezone.utc) if row['timestamp'].tzinfo is None else row['timestamp'],
+            lowest_ask=meta.get('lowest_ask'),
+            highest_bid=meta.get('highest_bid'),
+            midpoint=meta.get('midpoint', row['midpoint']),
+            spread=meta.get('spread')
+        )
+ 
+    async def get_transformed_order_book(
+        self,
+        token: str,
+        start_time: datetime,
+        end_time: datetime,
+        granularity: int
+    ) -> Optional[Any]:
+        query = '''
+            SELECT time as timestamp, close as midpoint, metadata
+            FROM price_data
+            WHERE (metadata->>'token' = $1 OR symbol LIKE $2) AND exchange = 'transformed' AND time >= $3 AND time <= $4
+            ORDER BY time ASC;
+        '''
+        async with get_connection() as conn:
+            rows = await conn.fetch(query, token, f"{token}/%", start_time, end_time)
+            
+        if not rows:
+            return None
+            
+        points = []
+        current_bucket = None
+        bucket_start = None
+        
+        for row in rows:
+            timestamp = row["timestamp"]
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            ts_ms = int(timestamp.timestamp() * 1000)
+            bucket_time = ts_ms - (ts_ms % (granularity * 1000))
+            
+            if current_bucket is None or bucket_time != bucket_start:
+                if current_bucket is not None:
+                    points.append(current_bucket)
+                
+                bucket_start = bucket_time
+                current_bucket = {
+                    "timestamp": datetime.fromtimestamp(bucket_time / 1000, tz=timezone.utc),
+                    "lowest_ask": float('inf'),
+                    "highest_bid": float('-inf'),
+                    "points_in_bucket": 0
+                }
+            
+            meta = row["metadata"] or {}
+            ask = meta.get("lowest_ask")
+            bid = meta.get("highest_bid")
+            
+            if ask is not None:
+                current_bucket["lowest_ask"] = min(current_bucket["lowest_ask"], ask)
+            if bid is not None:
+                current_bucket["highest_bid"] = max(current_bucket["highest_bid"], bid)
+            
+            current_bucket["points_in_bucket"] += 1
+            
+        if current_bucket is not None and current_bucket["points_in_bucket"] > 0:
+            points.append(current_bucket)
+            
+        result_points = []
+        for point in points:
+            if point["points_in_bucket"] == 0:
+                continue
+                
+            lowest_ask = point["lowest_ask"] if point["lowest_ask"] != float('inf') else None
+            highest_bid = point["highest_bid"] if point["highest_bid"] != float('-inf') else None
+            
+            if lowest_ask is not None and highest_bid is not None:
+                midpoint = (lowest_ask + highest_bid) / 2
+                spread = abs(lowest_ask - highest_bid)
+            else:
+                midpoint = None
+                spread = None
+            
+            result_points.append(TransformedOrderBookDataPoint(
+                timestamp=point["timestamp"],
+                lowest_ask=lowest_ask,
+                highest_bid=highest_bid,
+                midpoint=midpoint,
+                spread=spread
+            ))
+            
+        if result_points:
+            return TransformedOrderBookData(
+                token=token,
+                points=result_points
+            )
+        return None

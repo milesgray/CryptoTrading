@@ -33,6 +33,7 @@ from cryptotrading.config import (
     POSTGRES_USE_PGVECTOR,
     logger
 )
+from cryptotrading.data.models import CandlestickData, OrderBookSnapshot
 
 # Type variables for generic typing
 T = TypeVar('T', bound=BaseModel)
@@ -48,36 +49,8 @@ class DateTimeEncoder(json.JSONEncoder):
             return obj.isoformat()
         return super().default(obj)
 
-# Custom JSON codec for asyncpg
-class JSONBEncoder(asyncpg.TypeCodec):
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-        self.encoder = DateTimeEncoder()
-
-    def encode(self, value):
-        return json.dumps(value, cls=DateTimeEncoder).encode('utf-8')
-
-    def decode(self, value, *args):
-        return json.loads(value.decode('utf-8'))
-
-# Custom type codecs for better type handling
-class TypeCodec(asyncpg.TypeCodec):
-    def __init__(self, oid: int, format_code: int, python_type: type, encoder, decoder):
-        self.oid = oid
-        self.format_code = format_code
-        self.python_type = python_type
-        self._encoder = encoder
-        self._decoder = decoder
-
-    def encode(self, value: Any) -> bytes:
-        if value is None:
-            return b'NULL'
-        return self._encoder(value).encode('utf-8')
-
-    def decode(self, value: bytes, *args) -> Any:
-        if value is None:
-            return None
-        return self._decoder(value.decode('utf-8'))
+def postgres_json_dumps(value):
+    return json.dumps(value, cls=DateTimeEncoder)
 
 # Initialize database connection pool
 async def init_pool(**overrides) -> Pool:
@@ -89,6 +62,35 @@ async def init_pool(**overrides) -> Pool:
     
     # Merge default params with overrides
     params = {**POSTGRES_PARAMS, **overrides}
+    
+    # Extract server settings
+    server_settings = {}
+    if 'application_name' in params:
+        server_settings['application_name'] = params.pop('application_name')
+        
+    # Handle SSL Mode
+    if 'sslmode' in params:
+        sslmode = params.pop('sslmode')
+        if sslmode == 'disable':
+            params['ssl'] = False
+        elif sslmode in ('require', 'verify-ca', 'verify-full'):
+            params['ssl'] = True
+        elif sslmode == 'prefer':
+            params['ssl'] = 'prefer'
+            
+    # Handle timeout
+    if 'connect_timeout' in params:
+        try:
+            params['timeout'] = float(params.pop('connect_timeout'))
+        except (ValueError, TypeError):
+            params.pop('connect_timeout', None)
+            
+    # Remove unsupported arguments
+    for key in ['keepalives', 'keepalives_idle', 'keepalives_interval', 'keepalives_count']:
+        params.pop(key, None)
+        
+    if server_settings:
+        params['server_settings'] = server_settings
     
     # Initialize pool with connection settings
     _pool = await create_pool(
@@ -114,7 +116,7 @@ async def init_connection(conn: Connection):
     # Register JSON codec
     await conn.set_type_codec(
         'jsonb',
-        encoder=json.dumps,
+        encoder=postgres_json_dumps,
         decoder=json.loads,
         schema='pg_catalog',
         format='text'
@@ -679,15 +681,21 @@ document_embedding_repo = DocumentEmbeddingRepository() if POSTGRES_USE_PGVECTOR
 # Initialize database on module import
 if __name__ != "__main__":
     import asyncio
-    
-    async def _init():
+    try:
         try:
-            await init_db()
-        except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
-    
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        loop.create_task(_init())
-    else:
-        loop.run_until_complete(_init())
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop_policy().get_event_loop()
+            
+        async def _init():
+            try:
+                await init_db()
+            except Exception as e:
+                logger.error(f"Failed to initialize database: {e}")
+                
+        if loop.is_running():
+            loop.create_task(_init())
+        else:
+            loop.run_until_complete(_init())
+    except Exception as e:
+        logger.debug(f"Could not auto-initialize database on module import: {e}")

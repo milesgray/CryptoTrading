@@ -1,4 +1,3 @@
-
 import json
 import logging
 import datetime as dt
@@ -26,7 +25,7 @@ from .data import (
     get_transformed_order_book,
     get_latest_price,
     get_historic_price,
-    get_candlestick_data    
+    get_candlestick_data   
 )
 from .websocket import ConnectionManager
 
@@ -78,7 +77,6 @@ app.price_collection = app.db[PRICE_COLLECTION_NAME]
 app.transformed_order_book_collection = app.db[TRANSFORMED_ORDER_BOOK_COLLECTION_NAME]
 app.use_stream_watch = False
 logger.info("Successfully connected to MongoDB.")
-
 
 
 # Background task for MongoDB change streams
@@ -312,6 +310,7 @@ async def websocket_order_book(websocket: WebSocket, token: str):
     finally:
         websocket_manager.disconnect(websocket, 'order_book')
 
+
 # --- REST API Endpoints ---
 @app.get("/historic/price/{token}", response_model=PaginatedResponse)
 async def read_historic_price(
@@ -429,15 +428,29 @@ async def read_latest_transformed_order_book_point(token: str):
 @app.get("/health")
 async def health_check():
     """
-    Health check endpoint.  Returns 200 OK if the server is running and can connect to the database.
+    Health check endpoint. Returns 200 OK if the server is running and can connect to the database.
     """
     try:
-        # Check database connection (simple ping)
         await app.db.command("ping")
         return {"status": "OK", "database": "connected"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=503, detail={"status": "unhealthy", "database": "disconnected", "error": str(e)})
+
+# --- Retrieval Service Endpoints ---
+from fastapi import APIRouter
+
+retrieval_router = APIRouter(prefix="/api/retrieval")
+
+@retrieval_router.get("/forecast")
+async def forecast(symbol: str = "BTC", k: int = 5):
+    """Proxy to retrieval service."""
+    import httpx
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"http://localhost:8000/forecast?symbol={symbol}&k={k}")
+        return response.json()
+
+app.include_router(retrieval_router)
 
 # Add this helper function to handle JSON serialization
 def json_serial(obj):

@@ -25,14 +25,16 @@ const CandlestickChart = ({ token }) => {
   const [startDate, setStartDate] = useState(subDays(new Date(), 7)); // Default: 7 days ago
   const [endDate, setEndDate] = useState(new Date());
   const [granularity, setGranularity] = useState(3600); // Default: 1 hour
-  const [isLiveUpdating, setIsLiveUpdating] = useState(true); // Default: live updates enabled
+  const [isLiveUpdating, setIsLiveUpdating] = useState(false); // Start with live updates disabled
   const [latestPrice, setLatestPrice] = useState(null);
   const [latestTimestamp, setLatestTimestamp] = useState(null);
+  const [historicalDataLoaded, setHistoricalDataLoaded] = useState(false); // Track if historical data is loaded
   const chartContainer = useRef(null);
   const chart = useRef(null);
   const dataTable = useRef(null);
   const updateInterval = useRef(null);
   const chartData = useRef([]);
+  const chartInitializing = useRef(false);
   
   // Update frequency in milliseconds (5 seconds by default)
   const UPDATE_FREQUENCY = 5000;
@@ -46,25 +48,11 @@ const CandlestickChart = ({ token }) => {
     if (!chartContainer.current) return null;
     
     try {
-      // Create a data table
-      const table = anychart.data.table();
-      
-      // Add column names first
-      table.addData([], ['x', 'open', 'high', 'low', 'close', 'volume']);
-      
-      // Create mapping for the data
-      const mapping = table.mapAs({
-        x: 0,
-        open: 1,
-        high: 2,
-        low: 3,
-        close: 4,
-        value: 4, // For tooltips
-        volume: 5
-      });
+      // Create a data table with x as the key field
+      const table = anychart.data.table('x');
       
       console.log('Data table initialized successfully');
-      return { table, mapping };
+      return { table };
     } catch (error) {
       console.error('Error initializing data table:', error);
       return null;
@@ -79,9 +67,11 @@ const CandlestickChart = ({ token }) => {
     const now = Date.now();
     const day = 24 * 60 * 60 * 1000; // ms in a day
     
+    const sampleData = [];
+    
     // Add 30 days of sample data
     for (let i = 30; i >= 0; i--) {
-      const date = new Date(now - (i * day));
+      const timestamp = now - (i * day);
       const basePrice = 100000 + (Math.random() * 20000);
       const open = basePrice;
       const close = basePrice * (0.99 + (Math.random() * 0.02));
@@ -89,24 +79,30 @@ const CandlestickChart = ({ token }) => {
       const low = Math.min(open, close) * (0.99 - Math.random() * 0.01);
       const volume = 100 + (Math.random() * 100);
       
-      dataTable.current.table.addData([
-        date,
-        open,
-        high,
-        low,
-        close,
-        volume
-      ]);
+      sampleData.push({
+        x: timestamp, // Already in milliseconds
+        open: open,
+        high: high,
+        low: low,
+        close: close,
+        volume: volume
+      });
     }
-    console.log('Sample data added');
+    
+    try {
+      dataTable.current.table.addData(sampleData);
+      console.log('Sample data added successfully');
+    } catch (error) {
+      console.error('Error adding sample data:', error);
+    }
   }, []);
   
   // Initialize the chart
   const initChart = useCallback(() => {
     console.log('Initializing chart...');
     
-    if (!chartContainer.current) {
-      console.error('Chart container not available');
+    if (!chartContainer.current || !dataTable.current?.table) {
+      console.error('Chart container or data table not available');
       return;
     }
     
@@ -115,15 +111,31 @@ const CandlestickChart = ({ token }) => {
       // Create a stock chart
       chart.current = anychart.stock();
       
+      // Create mapping for the data
+      const mapping = dataTable.current.table.mapAs({
+        x: 'x',
+        open: 'open',
+        high: 'high',
+        low: 'low',
+        close: 'close',
+        value: 'close'
+      });
+      
+      // Store mapping for later use
+      dataTable.current.mapping = mapping;
+      
       // Create a plot
       const plot = chart.current.plot(0);
       
-      console.log('Creating OHLC series with mapping:', dataTable.current.mapping);
+      console.log('Creating OHLC series with mapping');
       // Create an OHLC series
-      const series = plot.ohlc(dataTable.current.mapping)
+      const series = plot.ohlc(mapping)
         .name('Price')
         .risingStroke('#3ba158')
         .fallingStroke('#fa1c26');
+      
+      // Make candlesticks touch each other
+      series.pointWidth('90%');
       
       // Enable grid and axis
       plot.yGrid(true).xGrid(true);
@@ -131,7 +143,8 @@ const CandlestickChart = ({ token }) => {
       
       console.log('Setting up scroller...');
       // Create scroller
-      chart.current.scroller().ohlc(dataTable.current.mapping);
+      const scrollerSeries = chart.current.scroller().ohlc(mapping);
+      scrollerSeries.pointWidth('90%');
       
       // Add sample data for testing
       addSampleData();
@@ -143,22 +156,6 @@ const CandlestickChart = ({ token }) => {
       
       console.log('Chart initialization complete');
       
-      // Force a resize to ensure the chart renders properly
-      setTimeout(() => {
-        if (chart.current) {
-          console.log('Triggering chart resize...');
-          chart.current.fitAll();
-          
-          // Force redraw after a short delay
-          setTimeout(() => {
-            if (chart.current) {
-              console.log('Forcing chart redraw...');
-              chart.current.draw();
-            }
-          }, 500);
-        }
-      }, 100);
-      
     } catch (error) {
       console.error('Error initializing chart:', error);
     }
@@ -166,20 +163,17 @@ const CandlestickChart = ({ token }) => {
   
   // Initialize data table and chart on mount
   useEffect(() => {
-    console.log('Component mounted, initializing data table...');
+    console.log('Component mounted, checking initialization...');
     
-    if (!dataTable.current) {
+    if (!dataTable.current && chartContainer.current) {
       console.log('No data table found, creating new one...');
       const result = initDataTable();
-      if (result?.table && result.mapping) {
-        console.log('Data table created successfully, initializing chart...');
+      if (result?.table) {
+        console.log('Data table created successfully');
         dataTable.current = result;
-        initChart();
       } else {
         console.error('Failed to create data table:', result);
       }
-    } else {
-      console.log('Data table already exists, skipping initialization');
     }
     
     return () => {
@@ -193,7 +187,7 @@ const CandlestickChart = ({ token }) => {
         chart.current = null;
       }
     };
-  }, [initDataTable, initChart]);
+  }, [initDataTable]);
   
   // Handle live price updates from WebSocket
   useEffect(() => {
@@ -202,149 +196,265 @@ const CandlestickChart = ({ token }) => {
     const handlePriceUpdate = (priceData) => {
       if (!isMounted.current || !priceData || priceData.price === undefined) return;
       
+      // Only process updates if historical data has been loaded
+      if (!historicalDataLoaded) {
+        console.log('Historical data not loaded yet, ignoring price update');
+        return;
+      }
+      
       console.log('Received price update:', priceData);
       const now = new Date(priceData.timestamp || Date.now());
       setLatestPrice(priceData.price);
       
-      // If we don't have a data table yet, initialize it
+      // If we don't have a data table yet, initialize it with minimal setup
       if (!dataTable.current) {
-        console.log('Initializing data table...');
-        const result = initDataTable();
-        if (result?.table && result.mapping) {
-          dataTable.current = result;
-          console.log('Data table initialized, initializing chart...');
-          initChart();
-          console.log('Chart initialization complete');
-        } else {
-          console.error('Failed to initialize data table');
-          return; // Can't proceed without data table
+        console.log('No data table, creating minimal one for live updates...');
+        try {
+          // Create a simple table for live updates
+          const table = anychart.data.table('x');
+          dataTable.current = {
+            table: table,
+            mapping: table.mapAs({
+              x: 'x',
+              open: 'open',
+              high: 'high',
+              low: 'low',
+              close: 'close',
+              value: 'close'
+            })
+          };
+          console.log('Minimal data table created for live updates');
+          
+          // Initialize chart if not already done
+          console.log('Chart initialization check:', {
+            hasChart: !!chart.current,
+            hasContainer: !!chartContainer.current,
+            isInitializing: chartInitializing.current,
+            containerDimensions: chartContainer.current ? {
+              width: chartContainer.current.offsetWidth,
+              height: chartContainer.current.offsetHeight
+            } : null,
+            shouldInitialize: !chart.current && chartContainer.current && !chartInitializing.current
+          });
+          
+          if (!chart.current && chartContainer.current && !chartInitializing.current) {
+            // Check if container has dimensions
+            if (chartContainer.current.offsetWidth === 0 || chartContainer.current.offsetHeight === 0) {
+              console.log('Container has no dimensions, waiting for next update...');
+              return;
+            }
+            
+            console.log('Initializing chart for live updates...');
+            chartInitializing.current = true;
+            
+            try {
+              // Create a minimal chart structure using the existing table
+              import('anychart').then((anychart) => {
+                console.log('AnyChart loaded for live updates...');
+                
+                try {
+                  // Set theme
+                  anychart.theme('lightBlue');
+                  
+                  // Create stock chart
+                  const stockChart = anychart.stock();
+                  
+                  // Use the existing table and mapping
+                  const table = dataTable.current.table;
+                  const mapping = dataTable.current.mapping;
+                  
+                  // Create first plot with candlestick series
+                  const plot = stockChart.plot(0);
+                  plot.yGrid(true).xGrid(true);
+                  plot.yMinorGrid(true).xMinorGrid(true);
+                  
+                  // Create candlestick series (empty for now)
+                  const candlestickSeries = plot.candlestick(mapping);
+                  candlestickSeries.name(token + ' Price');
+                  
+                  // Customize the appearance of candlesticks
+                  candlestickSeries.risingStroke('#0f9d58');
+                  candlestickSeries.risingFill('#0f9d58');
+                  candlestickSeries.fallingStroke('#db4437');
+                  candlestickSeries.fallingFill('#db4437');
+                  
+                  // Make candlesticks touch each other
+                  candlestickSeries.pointWidth('90%');
+                  
+                  // Set chart title
+                  stockChart.title(`${token} Price Chart (Live)`);
+                  
+                  // Draw the chart
+                  console.log('Drawing minimal chart for live updates...');
+                  stockChart.container(chartContainer.current);
+                  stockChart.draw();
+                  
+                  // Save chart reference
+                  chart.current = stockChart;
+                  chartInitializing.current = false;
+                  console.log('Minimal chart created successfully for live updates');
+                  
+                  // Now that the chart is ready, try to redraw any pending data
+                  setTimeout(() => {
+                    if (chart.current && typeof chart.current.draw === 'function') {
+                      try {
+                        chart.current.draw();
+                        console.log('Chart redrawn after initialization');
+                      } catch (drawError) {
+                        console.warn('Error redrawing chart after init:', drawError);
+                      }
+                    }
+                  }, 100);
+                  
+                } catch (chartError) {
+                  console.error('Error creating minimal chart:', chartError);
+                  chartInitializing.current = false;
+                }
+              }).catch(err => {
+                console.error('Failed to load AnyChart for live updates:', err);
+                chartInitializing.current = false;
+              });
+            } catch (error) {
+              console.error('Error initializing chart for live updates:', error);
+              chartInitializing.current = false;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to create minimal data table:', error);
+          return;
         }
       }
 
       try {
-        // If we have existing data, update the last point or create a new one
-        if (chartData.current.length > 0) {
-          const lastPoint = chartData.current[chartData.current.length - 1];
-          
-          if (!lastPoint) {
-            console.error('Last point is null or undefined');
-            return;
-          }
-          
-          // Check if we're still in the same time window
-          const lastPointTime = lastPoint.x instanceof Date ? lastPoint.x : new Date(lastPoint.x);
-          const timeDiff = now - lastPointTime;
-          const isSameWindow = timeDiff < (granularity * 1000);
-          
-          if (isSameWindow) {
-            // Update the last point
-            const updatedPoint = {
-              ...lastPoint,
-              high: Math.max(lastPoint.high, priceData.price),
-              low: Math.min(lastPoint.low, priceData.price),
-              close: priceData.price,
-              volume: priceData.volume + lastPoint.volume,
-              x: now // Update the timestamp to now
+        // Always add new data points for live updates (don't try to update existing ones)
+        const newPoint = {
+          x: now.getTime(), // Ensure consistent millisecond timestamp
+          open: priceData.price,
+          high: priceData.price,
+          low: priceData.price,
+          close: priceData.price,
+          volume: priceData.volume || 0
+        };
+        
+        // Add to our data array
+        chartData.current.push(newPoint);
+        
+        // Keep only last 100 points to prevent memory issues
+        if (chartData.current.length > 100) {
+          chartData.current = chartData.current.slice(-100);
+        }
+        
+        // Update the data table
+        if (dataTable.current?.table) {
+          try {
+            const table = dataTable.current.table;
+            
+            console.log('Table type:', typeof table, 'Table exists:', !!table);
+            
+            // Try object format first (for tables created by renderChart)
+            const objectData = {
+              x: now.getTime(), // Use consistent millisecond timestamp
+              open: Number(newPoint.open),
+              high: Number(newPoint.high),
+              low: Number(newPoint.low),
+              close: Number(newPoint.close),
+              volume: Number(newPoint.volume || 0)
             };
             
-            // Validate updatedPoint before using it
-            if (!updatedPoint || typeof updatedPoint !== 'object') {
-              console.error('Invalid updatedPoint:', updatedPoint);
-              return;
-            }
+            console.log('Adding live data with object format:', objectData);
             
-            // Update in memory
-            const lastIndex = chartData.current.length - 1;
-            if (lastIndex >= 0) {
-              chartData.current[lastIndex] = updatedPoint;
-            } else {
-              console.error('No existing data point to update');
-              return;
-            }
-            
-            // Update the data table
-            if (dataTable.current?.table) {
-              try {
-                // Ensure all values are numbers with fallbacks
-                const rowData = [
-                  now,
-                  Number(updatedPoint.open || 0),
-                  Number(updatedPoint.high || 0),
-                  Number(updatedPoint.low || 0),
-                  Number(updatedPoint.close || 0),
-                  Number(updatedPoint.volume || 0)
-                ];
-                
-                console.log('Adding data to table:', rowData);
-                
-                // Add data in the format AnyChart expects
-                dataTable.current.table.addData(rowData);
-              } catch (error) {
-                console.error('Error adding data to table:', error, {
-                  updatedPoint,
-                  now: now
-                });
-              }
-            }
-          } else {
-            // Create a new candle
-            const newPoint = {
-              x: now,
-              open: lastPoint.close ?? priceData.price, // Fallback to current price if no last close
-              high: priceData.price,
-              low: priceData.price,
-              close: priceData.price,
-              volume: priceData.volume
-            };
-            
-            // Add to our data
-            chartData.current.push(newPoint);
-            
-            // Update the data table
-            if (dataTable.current?.table) {
-              try {
-                // Ensure all values are numbers
-                const rowData = [
-                  now,
-                  Number(newPoint.open),
-                  Number(newPoint.high),
-                  Number(newPoint.low),
-                  Number(newPoint.close),
-                  Number(newPoint.volume || 0)
-                ];
-                
-                console.log('Adding new candle to table:', rowData);
-                
-                // Add data in the format AnyChart expects
-                dataTable.current.table.addData(rowData);
-              } catch (error) {
-                console.error('Error adding new candle to table:', error, {
-                  newPoint,
-                  now: now.toISOString()
-                });
-              }
-            }
-          }
-        } else {
-          // If we don't have chart data yet, initialize it with the current price
-          console.log('Initializing chart with first price point');
-          const newPoint = {
-            x: now,
-            open: priceData.price,
-            high: priceData.price,
-            low: priceData.price,
-            close: priceData.price,
-            volume: priceData.volume
-          };
-          
-          chartData.current = [newPoint];
-          
-          // Add initial data point
-          if (dataTable.current?.table) {
             try {
-              // Ensure all values are numbers
+              table.addData([objectData]);
+              console.log('Live data added successfully');
+              
+              // Trigger chart redraw to show new data
+              if (chart.current && typeof chart.current.draw === 'function') {
+                try {
+                  console.log('Attempting to redraw chart...');
+                  chart.current.draw();
+                  console.log('Chart redrawn with new data');
+                } catch (drawError) {
+                  console.warn('Error redrawing chart:', drawError);
+                  // Try to fit all and redraw again
+                  try {
+                    chart.current.fitAll();
+                    setTimeout(() => {
+                      if (chart.current) {
+                        chart.current.draw();
+                      }
+                    }, 100);
+                  } catch (fitError) {
+                    console.warn('Error with fitAll and redraw:', fitError);
+                  }
+                }
+              } else if (chartInitializing.current) {
+                console.log('Chart is still initializing, will redraw when ready...');
+                // Chart is initializing, it will be redrawn automatically after initialization
+              } else if (!chartContainer.current) {
+                console.log('Chart container not available, waiting for mount...');
+              } else if (chartContainer.current.offsetWidth === 0 || chartContainer.current.offsetHeight === 0) {
+                console.log('Chart container has no dimensions, waiting for layout...');
+              } else {
+                console.warn('Chart not available for redraw, chart.current:', chart.current, 'chartInitializing:', chartInitializing.current);
+                // Try to initialize the chart if it seems like it should exist but doesn't
+                console.log('Attempting fallback chart initialization...');
+                setTimeout(() => {
+                  if (!chart.current && chartContainer.current && !chartInitializing.current) {
+                    console.log('Retrying chart initialization...');
+                    chartInitializing.current = true;
+                    
+                    import('anychart').then((anychart) => {
+                      try {
+                        anychart.theme('lightBlue');
+                        const stockChart = anychart.stock();
+                        const table = dataTable.current.table;
+                        const mapping = dataTable.current.mapping;
+                        
+                        const plot = stockChart.plot(0);
+                        plot.yGrid(true).xGrid(true);
+                        plot.yMinorGrid(true).xMinorGrid(true);
+                        
+                        const candlestickSeries = plot.candlestick(mapping);
+                        candlestickSeries.name(token + ' Price');
+                        candlestickSeries.risingStroke('#0f9d58');
+                        candlestickSeries.risingFill('#0f9d58');
+                        candlestickSeries.fallingStroke('#db4437');
+                        candlestickSeries.fallingFill('#db4437');
+                        
+                        // Make candlesticks touch each other
+                        candlestickSeries.pointWidth('90%');
+                        
+                        stockChart.title(`${token} Price Chart (Live)`);
+                        stockChart.container(chartContainer.current);
+                        stockChart.draw();
+                        
+                        chart.current = stockChart;
+                        chartInitializing.current = false;
+                        console.log('Fallback chart initialization successful');
+                        
+                        // Redraw to show accumulated data
+                        setTimeout(() => {
+                          if (chart.current) {
+                            chart.current.draw();
+                          }
+                        }, 100);
+                      } catch (error) {
+                        console.error('Fallback chart initialization failed:', error);
+                        chartInitializing.current = false;
+                      }
+                    }).catch(err => {
+                      console.error('Fallback AnyChart loading failed:', err);
+                      chartInitializing.current = false;
+                    });
+                  }
+                }, 500);
+              }
+            } catch (tableError) {
+              console.log('Object format failed for live data, trying array format...', tableError);
+              
+              // Try array format as fallback
               const rowData = [
-                now,
+                now.getTime(), // Use consistent millisecond timestamp
                 Number(newPoint.open),
                 Number(newPoint.high),
                 Number(newPoint.low),
@@ -352,21 +462,49 @@ const CandlestickChart = ({ token }) => {
                 Number(newPoint.volume || 0)
               ];
               
-              console.log('Adding initial data point:', rowData);
+              console.log('Trying array format with data:', rowData);
+              table.addData(rowData);
+              console.log('Live data added with array format');
               
-              // Add data in the format AnyChart expects
-              dataTable.current.table.addData(rowData);
-            } catch (error) {
-              console.error('Error adding initial data point:', error, {
-                newPoint,
-                timestamp: now
-              });
+              // Trigger chart redraw to show new data
+              if (chart.current && typeof chart.current.draw === 'function') {
+                try {
+                  console.log('Attempting to redraw chart (array format)...');
+                  chart.current.draw();
+                  console.log('Chart redrawn with new data (array format)');
+                } catch (drawError) {
+                  console.warn('Error redrawing chart (array format):', drawError);
+                  // Try to fit all and redraw again
+                  try {
+                    chart.current.fitAll();
+                    setTimeout(() => {
+                      if (chart.current) {
+                        chart.current.draw();
+                      }
+                    }, 100);
+                  } catch (fitError) {
+                    console.warn('Error with fitAll and redraw (array format):', fitError);
+                  }
+                }
+              } else if (chartInitializing.current) {
+                console.log('Chart is still initializing (array format), will redraw when ready...');
+                // Chart is initializing, it will be redrawn automatically after initialization
+              } else if (!chartContainer.current) {
+                console.log('Chart container not available (array format), waiting for mount...');
+              } else if (chartContainer.current.offsetWidth === 0 || chartContainer.current.offsetHeight === 0) {
+                console.log('Chart container has no dimensions (array format), waiting for layout...');
+              } else {
+                console.warn('Chart not available for redraw (array format), chart.current:', chart.current, 'chartInitializing:', chartInitializing.current);
+                // Note: Fallback initialization is only needed in the first (object format) section
+                // to avoid duplicate attempts
+              }
             }
-          }
-          
-          // Initialize the chart if not already done
-          if (!chart.current) {
-            initChart();
+          } catch (error) {
+            console.error('Error adding live data to table:', error, {
+              newPoint,
+              now: now,
+              dataTable: dataTable.current
+            });
           }
         }
       } catch (error) {
@@ -400,7 +538,7 @@ const CandlestickChart = ({ token }) => {
         webSocketService.disconnect();
       };
     }
-  }, [token, isLiveUpdating, granularity]);
+  }, [token, isLiveUpdating, granularity, historicalDataLoaded]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -453,10 +591,15 @@ const CandlestickChart = ({ token }) => {
       
       if (!data || !Array.isArray(data) || data.length === 0) {
         console.warn('No data received or empty array from API');
-        const errorMsg = "No data available for the selected time range.";
+        const errorMsg = "No historical data available. Chart will show live updates only.";
         console.warn(errorMsg);
         setError(errorMsg);
         setLoading(false);
+        
+        // Still enable live updates even without historical data
+        setHistoricalDataLoaded(true);
+        setIsLiveUpdating(true);
+        console.log('No historical data, but enabling live updates');
         return;
       }
       
@@ -464,7 +607,7 @@ const CandlestickChart = ({ token }) => {
       
       // Format data for the chart
       const mappedData = data.map(item => ({
-        x: new Date(item.timestamp), // Convert timestamp to Date object
+        x: new Date(item.timestamp).getTime(), // Convert timestamp to milliseconds for consistent chart display
         open: parseFloat(item.open),
         high: parseFloat(item.high),
         low: parseFloat(item.low),
@@ -478,9 +621,19 @@ const CandlestickChart = ({ token }) => {
       console.log('Rendering chart with data:', mappedData);
       console.log('Data mapped, rendering chart...');
       renderChart(mappedData);
+      
+      // Mark historical data as loaded and enable live updates
+      setHistoricalDataLoaded(true);
+      setIsLiveUpdating(true);
+      console.log('Historical data loaded successfully, live updates enabled');
     } catch (err) {
       console.error('Error in fetchData:', err);
-      setError(err.message || "An error occurred while fetching data.");
+      setError(err.message || "An error occurred while fetching historical data. Live updates will be attempted.");
+      
+      // Enable live updates even if historical data fetch failed
+      setHistoricalDataLoaded(true);
+      setIsLiveUpdating(true);
+      console.log('Historical data fetch failed, but enabling live updates as fallback');
     } finally {
       console.log('Fetch completed, setting loading to false');
       setLoading(false);
@@ -488,12 +641,6 @@ const CandlestickChart = ({ token }) => {
   };
 
   const renderChart = (data) => {
-    if (!data || data.length === 0) {
-      console.error('No data provided to render chart');
-      setError('No data available to display the chart.');
-      return;
-    }
-
     // Ensure chart container is available and has dimensions
     if (!chartContainer.current) {
       console.error('Chart container not found');
@@ -527,25 +674,23 @@ const CandlestickChart = ({ token }) => {
         // Create stock chart
         const stockChart = anychart.stock();
         
-        // Enable stock tools UI
-        //stockChart.toolbar().enabled(true);
-        
         // Create data table
         const table = anychart.data.table('x');
         
         // Ensure data is in the correct format
-        const formattedData = data.map(item => ({
-          x: item.x.getTime ? item.x.getTime() : new Date(item.x).getTime(),
-          open: item.open,
-          high: item.high,
-          low: item.low,
-          close: item.close,
-          volume: item.volume || 0
-        }));
+        const formattedData = data && data.length > 0 ? data.map(item => ({
+          x: item.x, // Data is already in milliseconds from fetchData
+          open: Number(item.open) || 0,
+          high: Number(item.high) || 0,
+          low: Number(item.low) || 0,
+          close: Number(item.close) || 0,
+          volume: Number(item.volume) || 0
+        })) : [];
         
-        console.log('Adding data to table:', formattedData);
-        table.addData(formattedData);
-        dataTable.current = table;
+        console.log('Adding data to table:', formattedData.length, 'points');
+        if (formattedData.length > 0) {
+          table.addData(formattedData);
+        }
         
         // Mapping for candlestick series
         const mapping = table.mapAs({
@@ -557,14 +702,16 @@ const CandlestickChart = ({ token }) => {
           value: 'close'
         });
         
+        // Store both table and mapping for consistency
+        dataTable.current = {
+          table: table,
+          mapping: mapping
+        };
+        
         // Create first plot with candlestick series
         const plot = stockChart.plot(0);
         plot.yGrid(true).xGrid(true);
         plot.yMinorGrid(true).xMinorGrid(true);
-        
-        // Configure axes
-        // plot.xAxis().title('Time');
-        //plot.yAxis().title('Price');
         
         // Create candlestick series
         const candlestickSeries = plot.candlestick(mapping);
@@ -576,11 +723,14 @@ const CandlestickChart = ({ token }) => {
         candlestickSeries.fallingStroke('#db4437');
         candlestickSeries.fallingFill('#db4437');
         
+        // Make candlesticks touch each other by setting point width
+        candlestickSeries.pointWidth('90%'); // Use 90% of available space
+        
         // Set chart title
         stockChart.title(`${token} Price Chart${isLiveUpdating ? ' (Live)' : ''}`);
         
-        // Create second plot for volume if available
-        if (data[0].volume) {
+        // Create second plot for volume if available and we have data
+        if (formattedData.length > 0 && formattedData.some(item => item.volume > 0)) {
           const volumeMapping = table.mapAs({
             x: 'x',
             value: 'volume'
@@ -602,11 +752,9 @@ const CandlestickChart = ({ token }) => {
           ]));
           
           // Add scroller
-          stockChart.scroller().candlestick(mapping);
+          const scrollerSeries = stockChart.scroller().candlestick(mapping);
+          scrollerSeries.pointWidth('90%');
         }
-        
-        // Configure the chart container
-        console.log('Setting up chart container...');
         
         // Draw the chart
         console.log('Drawing chart...');
@@ -621,10 +769,10 @@ const CandlestickChart = ({ token }) => {
         console.error('Error rendering chart:', error);
         setError(`Failed to render chart: ${error.message}`);
       }
-      }).catch(err => {
-        console.error('Failed to load AnyStock:', err);
-        setError(`Failed to load charting library: ${err.message}. Please try refreshing the page.`);
-      });
+    }).catch(err => {
+      console.error('Failed to load AnyStock:', err);
+      setError(`Failed to load charting library: ${err.message}. Please try refreshing the page.`);
+    });
   };
 
   // Function to update the latest price data
@@ -636,67 +784,38 @@ const CandlestickChart = ({ token }) => {
     chart.current.title(`${token} Price Chart (Live)`);
   }, [token, isLiveUpdating]);
 
-  // Set up the initial data load
+  // Set up the initial data load and chart initialization
   useEffect(() => {
-    // Skip if component is not mounted or no token
-    if (!isMounted.current || !token) return;
+    // Skip if component is not mounted or no token or data table not ready
+    if (!isMounted.current || !token || !dataTable.current?.table || !chartContainer.current) {
+      console.log('Initialization conditions not met:', {
+        isMounted: isMounted.current,
+        hasToken: !!token,
+        hasDataTable: !!dataTable.current?.table,
+        hasContainer: !!chartContainer.current
+      });
+      return;
+    }
     
-    // Set a flag to track if the component is still mounted
-    let isActive = true;
+    // Initialize chart if not already done
+    if (!chart.current) {
+      console.log('Initializing chart...');
+      initChart();
+    }
     
+    // Load data
     const loadData = async () => {
       try {
         await fetchData();
       } catch (error) {
         console.error('Error loading chart data:', error);
-        if (isActive) {
-          setError(`Failed to load chart data: ${error.message}`);
-        }
+        setError(`Failed to load chart data: ${error.message}`);
       }
     };
     
-    console.log('Chart: ', chart.current)
-    console.log('Chart container: ', chartContainer.current)
-    // Ensure the container is mounted before trying to render
-    if (chartContainer.current) {
-      console.log('Chart container is mounted, loading data...', chartContainer.current)
-      
-      loadData();
-    } else {
-      console.log('Chart container is not mounted, waiting...')
-      // If container isn't ready, wait for a short time and try again
-      const timer = setTimeout(() => {
-        if (isMounted.current && chartContainer.current) {
-          console.log('Chart container is mounted, loading data...')
-          loadData();
-        } else {
-          console.log("ERROR! Chart never mounted?!?")
-        }
-      }, 100);
-      
-      return () => clearTimeout(timer);
-    }
+    loadData();
     
-    // Cleanup
-    return () => {
-      console.log('Chart cleanup...')
-      isActive = false;
-      if (chart.current) {
-        console.log('Disposing chart...')
-        try {
-          chart.current.dispose();
-        } catch (e) {
-          console.warn('Error disposing chart:', e);
-        }
-        chart.current = null;
-      }
-      if (updateInterval.current) {
-        console.log('Clearing update interval...')
-        clearInterval(updateInterval.current);
-        updateInterval.current = null;
-      }
-    };
-  }, [token, startDate, endDate, granularity]);
+  }, [token, initChart, fetchData]);
 
   // Handle live updates toggle
   useEffect(() => {
@@ -766,33 +885,6 @@ const CandlestickChart = ({ token }) => {
     return <div>Error: {error}</div>;
   }
 
-  // Add a ref to track if we've attempted to initialize
-  const hasInitialized = useRef(false);
-  
-  // Effect to handle initial render and container availability
-  useEffect(() => {
-    console.log('Initialization effect running', { 
-      hasInitialized: hasInitialized.current, 
-      token, 
-      hasContainer: !!chartContainer.current 
-    });
-    
-    if (!hasInitialized.current && token) {
-      console.log('Initializing chart...');
-      hasInitialized.current = true;
-      
-      // Use a small timeout to ensure the container is mounted
-      const timer = setTimeout(() => {
-        console.log('Delayed initialization - fetching data');
-        fetchData().catch(error => {
-          console.error('Error in initial fetch:', error);
-          setError(`Failed to load chart data: ${error.message}`);
-        });
-      }, 100);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [token, chartContainer.current]);
   
   return (
     <div className="container mx-auto p-4">

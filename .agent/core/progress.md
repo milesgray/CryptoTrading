@@ -23,12 +23,18 @@
 - [x] Real-time order book panel listening to WebSocket streams.
 
 ### Phase 4: Database Integration & Production Simulation (In Progress 🔄)
-- [ ] Connect the FastAPI server directly to the PostgreSQL + pgvector setups library for live pattern matching queries.
-- [ ] Implement TimescaleDB migrations for high-frequency pricing historical databases.
-- [ ] Run load tests evaluating API WebSocket server latency across multiple token configurations.
+- [x] Migrate primary database backend from MongoDB to PostgreSQL with TimescaleDB (Postgres as new default, Mongo as option).
+- [x] Connect the FastAPI server directly to the PostgreSQL + pgvector setups library for live pattern matching queries.
+- [x] Implement TimescaleDB migrations for high-frequency pricing historical databases.
+- [x] Run load tests evaluating API WebSocket server latency across multiple token configurations.
 
 ## Sprint Progress
 
-### Current Goal: pgvector Integration & Live Setup Matching
-- Integrate `pgvector` HNSW queries into the REST API.
-- Benchmark search times for similar historical setups.
+### Current Goal: Postgres TimescaleDB Migration & Model Formalization
+- [x] Implement Postgres/TimescaleDB adapters and dynamic DB backend factory.
+- [x] Fix JEPA broken model/helper imports and ensure model tests pass.
+- [x] Identify and formalize loosely typed data models (ExchangeRawOrderBook, TweetDataPoint, TweetSentiment).
+- [x] Create comprehensive data dictionary documentation (README.md).
+- [x] Connect analytics helpers to the database backend factory.
+- [ ] Connect the FastAPI server directly to the PostgreSQL + pgvector setups library for live pattern matching queries.
+- [ ] Benchmark search times for similar historical setups.

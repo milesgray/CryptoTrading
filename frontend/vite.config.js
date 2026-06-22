@@ -38,8 +38,6 @@ export default defineConfig({
             });
           });
         },
-        // Additional WebSocket options
-        ws: true,
         // Handle connection close
         on: {
           close: (err) => {

@@ -8,6 +8,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Database Backend Configuration
+DB_BACKEND = os.getenv("DB_BACKEND", "postgres").lower()
+
 # MongoDB Configuration (to be deprecated)
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://192.168.0.15:27017")
 DB_NAME = os.getenv("MONGO_DB_NAME", "crypto_prices")

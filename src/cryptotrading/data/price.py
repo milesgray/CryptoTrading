@@ -1,5 +1,6 @@
 import logging
 import datetime
+from datetime import timezone
 from typing import Optional, Any
 
 from pymongo import ASCENDING, DESCENDING
@@ -7,8 +8,10 @@ from pymongo import ASCENDING, DESCENDING
 from cryptotrading.data.mongo import get_db
 from cryptotrading.data.models import (
     CandlestickData,
+    ExchangeRawOrderBook,
 )
-from cryptotrading.data.book import OrderBookMongoAdapter
+from cryptotrading.data.postgres import get_connection, init_pool, _pool
+from cryptotrading.data.book import OrderBookMongoAdapter, OrderBookPostgresAdapter
 from cryptotrading.config import (
     PRICE_COLLECTION_NAME,
 )
@@ -54,7 +57,7 @@ class PriceMongoAdapter:
         symbol: str, 
         index_price: float, 
         book: dict,            
-        raw_data: list[dict], 
+        raw_data: list[ExchangeRawOrderBook], 
         verbose: bool = False
     ) -> None:
         """Store calculated index price and raw data in MongoDB time series collection"""
@@ -369,3 +372,231 @@ class PriceMongoAdapter:
             except Exception as e:
                 logger.error(f"Database error in get_candlestick_data: {e}")
                 raise Exception(f"Database error: {e}")
+
+
+class PricePostgresAdapter:
+    def __init__(self):
+        pass
+
+    async def initialize(self):
+        if _pool is None:
+            await init_pool()
+
+    async def shutdown(self):
+        pass
+
+    async def store_price_data(
+        self, 
+        symbol: str, 
+        index_price: float, 
+        book: dict,            
+        raw_data: list[ExchangeRawOrderBook], 
+        verbose: bool = False
+    ) -> None:
+        timestamp = datetime.datetime.now(timezone.utc)
+        token = symbol.split("/")[0] if "/" in symbol else symbol
+        
+        async with get_connection() as conn:
+            await conn.execute('''
+                INSERT INTO price_data (time, symbol, exchange, close, metadata)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (time, symbol, exchange) DO UPDATE
+                SET close = EXCLUDED.close, metadata = EXCLUDED.metadata;
+            ''', timestamp, symbol, 'index', index_price, {
+                "token": token,
+                "symbol": symbol,
+                "book": book,
+                "type": "index_price",
+                "price": index_price,
+                "exchanges_count": len(raw_data)
+            })
+
+    async def get_price_data(
+        self, 
+        symbol: str, 
+        start_time: datetime.datetime, 
+        end_time: datetime.datetime, 
+        limit: int = 100,
+        page: int = 1,
+        sort: str = "desc"
+    ) -> list[dict]:
+        offset = (page - 1) * limit
+        order_dir = "DESC" if sort == "desc" else "ASC"
+        
+        query = f'''
+            SELECT time as timestamp, close as price, metadata
+            FROM price_data
+            WHERE (metadata->>'token' = $1 OR symbol LIKE $2 OR symbol = $1) AND exchange = 'index' AND time >= $3 AND time <= $4
+            ORDER BY time {order_dir}
+            LIMIT $5 OFFSET $6;
+        '''
+        
+        async with get_connection() as conn:
+            rows = await conn.fetch(query, symbol, f"{symbol}/%", start_time, end_time, limit, offset)
+            
+        results = []
+        for r in rows:
+            meta = dict(r["metadata"]) if r["metadata"] else {}
+            results.append({
+                "timestamp": r["timestamp"].replace(tzinfo=timezone.utc) if r["timestamp"].tzinfo is None else r["timestamp"],
+                "price": r["price"],
+                "metadata": meta
+            })
+        return results
+
+    async def get_price_data_count(
+        self, 
+        symbol: str, 
+        start_time: datetime.datetime, 
+        end_time: datetime.datetime
+    ) -> int:
+        query = '''
+            SELECT COUNT(*) FROM price_data
+            WHERE (metadata->>'token' = $1 OR symbol LIKE $2 OR symbol = $1) AND exchange = 'index' AND time >= $3 AND time <= $4;
+        '''
+        async with get_connection() as conn:
+            val = await conn.fetchval(query, symbol, f"{symbol}/%", start_time, end_time)
+        return val or 0
+
+    async def get_prices(
+        self, 
+        symbol: str, 
+        start_time: datetime.datetime, 
+        end_time: datetime.datetime, 
+        count: int = None,
+        chunk_size: int = 1000
+    ):
+        total = await self.get_price_data_count(symbol, start_time, end_time)
+        if count is None:
+            count = total
+        
+        results = []
+        pages = (count + chunk_size - 1) // chunk_size
+        for page in range(1, pages + 1):
+            data = await self.get_price_data(symbol, start_time, end_time, chunk_size, page, sort="asc")
+            results.extend(data)
+        return results[:count]
+
+    async def get_latest_price(self, token: str) -> Optional[dict[str, Any]]:
+        query = '''
+            SELECT time as timestamp, close as price, metadata
+            FROM price_data
+            WHERE (metadata->>'token' = $1 OR symbol LIKE $2) AND exchange = 'index'
+            ORDER BY time DESC LIMIT 1;
+        '''
+        async with get_connection() as conn:
+            row = await conn.fetchrow(query, token, f"{token}/%")
+            
+        if not row:
+            return None
+            
+        metadata = row['metadata'] or {}
+        order_book = None
+        if "book" in metadata:
+            order_book = OrderBookPostgresAdapter.process_order_book_data(metadata["book"])
+            
+        return {
+            "price": row['price'],
+            "volume": order_book.volume if order_book else None,
+            "timestamp": row['timestamp'].replace(tzinfo=timezone.utc) if row['timestamp'].tzinfo is None else row['timestamp'],
+            "metadata": metadata,
+            "order_book": order_book
+        }
+
+    async def get_candlestick_data(
+        self,
+        token: str,
+        start_time: datetime.datetime,
+        end_time: datetime.datetime,
+        granularity: int,
+        include_book: bool = False
+    ) -> list[CandlestickData]:
+        query = '''
+            SELECT time as timestamp, close as price, metadata
+            FROM price_data
+            WHERE (metadata->>'token' = $1 OR symbol LIKE $2) AND exchange = 'index' AND time >= $3 AND time <= $4
+            ORDER BY time ASC;
+        '''
+        async with get_connection() as conn:
+            rows = await conn.fetch(query, token, f"{token}/%", start_time, end_time)
+            
+        if not rows:
+            return []
+            
+        candle_map = {}
+        def calc_second(doc_time):
+            return doc_time.second - (doc_time.second % (granularity % 60)) if granularity % 60 > 0 else doc_time.second
+        def calc_minute(doc_time):
+            return doc_time.minute - (doc_time.minute % (granularity // 60 % 60)) if granularity // 60 % 60 > 0 else doc_time.minute
+        def calc_hour(doc_time):
+            return doc_time.hour - (doc_time.hour % (granularity // 3600)) if granularity // 3600 > 0 else doc_time.hour
+
+        for row in rows:
+            doc_time = row["timestamp"]
+            if doc_time.tzinfo is None:
+                doc_time = doc_time.replace(tzinfo=timezone.utc)
+            candle_time = doc_time.replace(
+                microsecond=0, 
+                second=calc_second(doc_time),
+                minute=calc_minute(doc_time),
+                hour=calc_hour(doc_time),
+            )
+            
+            if candle_time not in candle_map:
+                candle_map[candle_time] = {
+                    "timestamp": candle_time,
+                    "prices": [],
+                    "exchange_counts": [],
+                    "open": None,
+                    "high": float("-inf"),
+                    "low": float("inf"),
+                    "close": None,
+                    "volume": 0,
+                    "exchange_count": None,
+                    "order_book": {
+                        "bid_buckets": {},
+                        "ask_buckets": {},
+                        "bid_outliers": {},
+                        "ask_outliers": {},
+                    }
+                }
+            
+            price = row["price"]
+            candle_map[candle_time]["prices"].append(price)
+            metadata = row["metadata"] or {}
+            exchanges_count = metadata.get("exchanges_count", 0)
+            candle_map[candle_time]["exchange_counts"].append(exchanges_count)
+            
+            candle_map[candle_time]["high"] = max(candle_map[candle_time]["high"], price)
+            candle_map[candle_time]["low"] = min(candle_map[candle_time]["low"], price)
+            
+            if candle_map[candle_time]["open"] is None:
+                candle_map[candle_time]["open"] = price
+            
+            candle_map[candle_time]["close"] = price
+            
+            if include_book and "book" in metadata:
+                candle_map[candle_time]["order_book"] = {**candle_map[candle_time]["order_book"], **metadata["book"]}
+        
+        candlestick_data = []
+        for candle_time, candle in sorted(candle_map.items()):
+            if candle["exchange_counts"]:
+                candle["exchange_count"] = sum(candle["exchange_counts"]) / len(candle["exchange_counts"])
+            
+            order_book = None
+            if include_book:
+                order_book = OrderBookPostgresAdapter.process_order_book_data(candle["order_book"])
+                
+            candlestick = CandlestickData(
+                timestamp=candle["timestamp"],
+                open=candle["open"],
+                high=candle["high"],
+                low=candle["low"],
+                close=candle["close"],
+                volume=order_book.volume if order_book else 0,
+                exchange_count=candle["exchange_count"],
+                order_book=order_book
+            )
+            candlestick_data.append(candlestick)
+            
+        return candlestick_data

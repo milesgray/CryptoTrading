@@ -1,16 +1,21 @@
 #@title utils
 # helper functions: time
-
-from pathlib import Path
+import logging
 import datetime as dt
-from datetime import timezone
+from pathlib import Path
+from functools import partial
+
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tqdm
 import ccxt
-from functools import partial
+
+from .datetime import pretty_time, to_datetime
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 CCXT_DEFAULT_EXCHANGE = "binanceus"
 PROXIES = None
@@ -23,15 +28,34 @@ def get_connection(exchange, proxy=None):
     else:
         return None
 
-def pull_ohlcv_data(target_market,
-                    n=1,
-                    name="",
-                    span="1s",
-                    min_uts=-np.inf,
-                    proxy=None,
-                    exchange=CCXT_DEFAULT_EXCHANGE,
-                    verbose=False):
-    if verbose: print(f"Pulling {n} {span} data for {target_market} from {exchange}")
+def pull_ohlcv_data(
+    target_market,
+    n=1,
+    name="",
+    span="1s",
+    min_uts=-np.inf,
+    proxy=None,
+    exchange=CCXT_DEFAULT_EXCHANGE,
+    verbose=False,
+):
+    """
+    Pull OHLCV data from CCXT exchange.
+    
+    Args:
+        target_market: Trading pair (e.g., 'BTC/USDT')
+        n: Number of data chunks to fetch
+        name: Optional name for logging
+        span: Timeframe (e.g., '1m', '1h', '1d')
+        min_uts: Minimum Unix timestamp to include
+        proxy: Proxy configuration
+        exchange: CCXT exchange name
+        verbose: Enable verbose logging
+        
+    Returns:
+        List of fetched data chunks
+    """
+    if verbose: 
+        logger.info(f"Pulling {n} {span} data for {target_market} from {exchange}")
     connection = get_connection(exchange, proxy=proxy)
     if len(name) > 0:
         name = f"_{name}"
@@ -53,64 +77,23 @@ def pull_ohlcv_data(target_market,
                 bar.set_postfix({"since": since})
                 bar.update(1)
         except Exception as e:
-            if verbose: print(e)
+            if verbose: 
+                logger.error(f"Error fetching data: {e}", exc_info=True)
             # only increment i on data success
 
     return results
 
-def now():
-    return dt.datetime.now()
-
-def to_unixtime(value: dt.datetime):
-    # must account for timezone, otherwise it's off
-    ut = value.replace(tzinfo=timezone.utc).timestamp()
-    value2 = dt.datetime.fromtimestamp(ut, tz=timezone.utc)  # to_datetime() approach
-    assert value2 == value, f"value: {value}, value2: {value2}"
-    return ut
-
-
-def to_unixtimes(values: list) -> list:
-    return [to_unixtime(v) for v in values]
-
-
-def to_datetime(ut) -> dt.datetime:
-    value = dt.datetime.fromtimestamp(ut, tz=timezone.utc)
-    ut2 = value.timestamp()  # to_unixtime() approach
-    assert ut2 == ut, f"ut: {ut}, ut2: {ut2}"
-    return value
-
-
-def to_datetimes(values: list) -> list[dt.datetime]:
-    return [to_datetime(v) for v in values]
-
-
-def round_to_nearest_hour(value: dt.datetime) -> dt.datetime:
-    return (value.replace(second=0, microsecond=0, minute=0, hour=value.hour)
-            + dt.timedelta(hours=value.minute//30))
-
-
-def pretty_time(value: dt.datetime) -> str:
-    return value.strftime('%Y/%m/%d, %H:%M:%S')
-
-
-def print_datetime_info(descr: str, uts: list):
-    dts = to_datetimes(uts)
-    print(descr + ":")
-    print(f"  starts on: {pretty_time(dts[0])}")
-    print(f"    ends on: {pretty_time(dts[-1])}")
-    print(f"  {len(dts)} datapoints")
-    print(f"  time interval between datapoints: {(dts[1]-dts[0])}")
-
-
-def target_12h_unixtimes(start_dt: dt.datetime) -> list:
-    target_dts = [start_dt + dt.timedelta(hours=h) for h in range(12)]
-    target_uts = to_unixtimes(target_dts)
-    return target_uts
-
-
 # helper-functions: higher level
 def load_from_ohlc_data(file_name: str) -> tuple:
-    """Returns (list_of_unixtimes, list_of_close_prices)"""
+    """
+    Load OHLC data from a file.
+    
+    Args:
+        file_name: Path to the data file
+        
+    Returns:
+        tuple: (list_of_unixtimes, list_of_close_prices)
+    """
     with open(file_name, "r") as file:
         data_str = file.read().rstrip().replace('"', '')
     x = eval(data_str)  # list of lists
@@ -120,11 +103,21 @@ def load_from_ohlc_data(file_name: str) -> tuple:
 
 
 def filter_to_target_uts(
-    target_uts: list,
-    unfiltered_uts: list,
-    unfiltered_vals: list
-) -> list:
-    """Return filtered_vals -- values at at the target timestamps"""
+    target_uts: list[float],
+    unfiltered_uts: list[float],
+    unfiltered_vals: list[float]
+) -> list[float]:
+    """
+    Return filtered_vals -- values at the target timestamps.
+    
+    Args:
+        target_uts: List of target Unix timestamps
+        unfiltered_uts: List of available Unix timestamps
+        unfiltered_vals: List of values corresponding to unfiltered_uts
+        
+    Returns:
+        list: Values filtered to match target timestamps
+    """
     filtered_vals = [None] * len(target_uts)
     for i, target_ut in enumerate(target_uts):
         time_diffs = np.abs(np.asarray(unfiltered_uts) - target_ut)
@@ -139,13 +132,27 @@ def filter_to_target_uts(
 
 # helpers: save/load list
 def save_list(list_: list, file_name: str):
-    """Save a file shaped: [1.2, 3.4, 5.6, ..]"""
+    """
+    Save a list to a file.
+    
+    Args:
+        list_: List to save
+        file_name: Path to save the file
+    """
     p = Path(file_name)
     p.write_text(str(list_))
 
 
 def load_list(file_name: str) -> list:
-    """Load from a file shaped: [1.2, 3.4, 5.6, ..]"""
+    """
+    Load a list from a file.
+    
+    Args:
+        file_name: Path to the file to load
+        
+    Returns:
+        list: Loaded list
+    """
     p = Path(file_name)
     s = p.read_text()
     list_ = eval(s)
@@ -154,6 +161,16 @@ def load_list(file_name: str) -> list:
 
 # helpers: prediction performance
 def calc_nmse(y, yhat) -> float:
+    """
+    Calculate the normalized mean squared error.
+    
+    Args:
+        y: Actual values
+        yhat: Predicted values
+        
+    Returns:
+        float: Normalized mean squared error
+    """
     assert len(y) == len(yhat)
     mse_xy = np.sum(np.square(np.asarray(y) - np.asarray(yhat)))
     mse_x = np.sum(np.square(np.asarray(y)))
@@ -161,7 +178,14 @@ def calc_nmse(y, yhat) -> float:
     return nmse
 
 
-def plot_prices(cex_vals, pred_vals):
+def plot_prices(cex_vals: list[float], pred_vals: list[float]):
+    """
+    Plot CEX values and predicted values.
+    
+    Args:
+        cex_vals: List of CEX values
+        pred_vals: List of predicted values
+    """
     matplotlib.rcParams.update({'font.size': 22})
     x = [h for h in range(0, 12)]
     assert len(x) == len(cex_vals) == len(pred_vals)
@@ -175,12 +199,22 @@ def plot_prices(cex_vals, pred_vals):
     plt.xticks(x)
     plt.show()
 
-def extend_dates(df, n_hours=12):
+def extend_dates(df: pd.DataFrame, n_hours: int = 12) -> pd.DataFrame:
+    """
+    Extend a DataFrame with additional date rows.
+    
+    Args:
+        df: DataFrame to extend
+        n_hours: Number of hours to extend
+        
+    Returns:
+        Extended DataFrame
+    """
     end_time = dt.datetime.fromisoformat(df.iloc[-1].date) \
         if isinstance(df.iloc[-1].date, str) \
         else df.iloc[-1].date
     data = {
-        "date": [end_time + dt.timedelta(hours=(n+1)) for n in range(n_hours)],
+        "date": [end_time + dt.timedelta(hours=(h+1)) for h in range(n_hours)],
         "open":[0 for n in range(n_hours)],
         "high":[0 for n in range(n_hours)],
         "low": [0 for n in range(n_hours)],

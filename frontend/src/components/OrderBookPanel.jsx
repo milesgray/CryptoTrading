@@ -59,7 +59,7 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
         side === 'bid' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
       }`}>
         <span>{formatNumber(bucket.avg_price)}</span>
-        <span className="font-medium">{formatNumber(bucket.volume, 0)}</span>
+        <span className="font-medium">{formatNumber(bucket.volume, 5)}</span>
         <span className="text-xs text-gray-600">{bucket.range}</span>
       </div>
     );
@@ -73,7 +73,7 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
         side === 'bid' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
       } border-l-4 ${side === 'bid' ? 'border-green-500' : 'border-red-500'}`}>
         <span>{formatNumber(outlier.price)}</span>
-        <span>{formatNumber(outlier.volume, 0)}</span>
+        <span>{formatNumber(outlier.volume, 5)}</span>
       </div>
     );
   };

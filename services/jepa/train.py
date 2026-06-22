@@ -42,7 +42,8 @@ class JEPATrainer:
         learning_rate: float = 1e-4,
         weight_decay: float = 1e-5,
         device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
-        use_mixed_precision: bool = True
+        use_mixed_precision: bool = True,
+        save_dir: Optional[Path | str] = None
     ):
         self.model = model.to(device)
         self.device = device
@@ -92,6 +93,8 @@ class JEPATrainer:
             'predictor_properties': [],
             'embedding_stats': []
         }
+
+        self.save_dir = Path(save_dir) if save_dir else None
     
     def train_epoch(
         self,
@@ -104,7 +107,6 @@ class JEPATrainer:
         if loss_weights is None:
             loss_weights = {
                 'alpha_jepa': 1.0,
-                'alpha_regime': 0.5,  
                 'alpha_spectral': 0.1,
                 'alpha_variance': 0.1 
             }
@@ -112,7 +114,6 @@ class JEPATrainer:
         epoch_losses = {
             'total': 0.0,
             'jepa': 0.0,
-            'regime': 0.0,
             'spectral': 0.0,
             'variance': 0.0
         }
@@ -159,6 +160,8 @@ class JEPATrainer:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
             
+            self.model.update_target_encoder()
+
             # Accumulate losses
             for key in epoch_losses:
                 epoch_losses[key] += losses[key].item()
@@ -173,7 +176,6 @@ class JEPATrainer:
             pbar.set_postfix({
                 'total': f"{losses['total'].item():.4f}",
                 'jepa': f"{losses['jepa'].item():.4f}",
-                'regime': f"{losses['regime'].item():.4f}",
                 'spectral': f"{losses['spectral'].item():.4f}",
                 'variance': f"{losses['variance'].item():.4f}"
             })
@@ -208,7 +210,6 @@ class JEPATrainer:
         if loss_weights is None:
             loss_weights = {
                 'alpha_jepa': 1.0,
-                'alpha_regime': 0.01,
                 'alpha_spectral': 0.1,
                 'alpha_variance': 0.1   # NEW
             }
@@ -216,7 +217,6 @@ class JEPATrainer:
         epoch_losses = {
             'total': 0.0,
             'jepa': 0.0,
-            'regime': 0.0,
             'spectral': 0.0,
             'variance': 0.0
         }
@@ -305,9 +305,8 @@ class JEPATrainer:
         """
         Train with comprehensive monitoring.
         """
-        if save_dir is not None:
-            save_dir = Path(save_dir)
-            save_dir.mkdir(exist_ok=True, parents=True)
+        save_dir = save_dir if save_dir else self.save_dir
+        
         
         best_val_loss = float('inf')
         
@@ -323,7 +322,6 @@ class JEPATrainer:
             logger.info(
                 f"Train - Total: {train_losses['total']:.6f}, "
                 f"JEPA: {train_losses['jepa']:.6f}, "
-                f"Regime: {train_losses['regime']:.6f}, "
                 f"Spectral: {train_losses['spectral']:.6f}"
             )
             
@@ -342,7 +340,6 @@ class JEPATrainer:
                 logger.info(
                     f"Val   - Total: {val_losses['total']:.6f}, "
                     f"JEPA: {val_losses['jepa']:.6f}, "
-                    f"Regime: {val_losses['regime']:.6f}"
                 )
                 
                 # Check val/train ratio
@@ -423,83 +420,28 @@ class JEPATrainer:
                 }
                 json.dump(history_json, f, indent=2)
 
-    def make_embeddings(self, datasets: dict) -> np.ndarray:
-        def embed(model, dataset, label, embeddings, labels):
-            loader = DataLoader(
-                dataset,
-                batch_size=1,
-                shuffle=False,
-                num_workers=2
-            )
-            for batch in tqdm(loader, desc=f'Creating {label.title()} Embeddings'):
-                x_context = batch['x_context'].to(device)
-                
-                embeddings_batch, probs_batch = model.extract_regime_embeddings(x_context)
-                embeddings.append(embeddings_batch.detach().cpu())        
-                labels.append(probs_batch.argmax().item())
-            return embeddings, labels
+    def load(self, name: str = 'best_model', folder_path: Optional[Path] = None):
+        folder_path = folder_path if folder_path else self.save_dir
+        path = folder_path / f'{name}.pt'
+        if not path.exists():
+            raise FileNotFoundError(f"Model file not found: {path}")
+        checkpoint = torch.load(path)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.history = checkpoint['history']
+        self.embeddings = checkpoint.get('embeddings', None)
 
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        embeddings = []
-        labels = []
-
-        for key, dataset in datasets.items():
-            embeddings, labels = embed(self.model, dataset, key, embeddings, labels)
-            logger.info(f"Processed {key} dataset: {len(embeddings)} embeddings")
-            
-        embeddings = np.vstack(embeddings)
-        labels = np.array(labels)
-        logger.info(f"Total embeddings: {len(embeddings)}, Unique labels: {np.unique(labels)}")
-        return embeddings, labels
-    
-    def plot_embeddings(self, embeddings, labels, method='pacmap'):
-        from sklearn.manifold import TSNE
-        from pacmap import PaCMAP
-        import matplotlib.pyplot as plt
-        import matplotlib.colors as mcolors
-        import numpy as np
-        
-        # Apply t-SNE to reduce dimensionality to 2D
-        if method == 'tsne':
-            manifold = TSNE(n_components=2, random_state=42, perplexity=30)
-        elif method == 'pacmap':
-            manifold = PaCMAP(n_components=2, n_neighbors=10, MN_ratio=0.5, FP_ratio=2.0) 
-        else:
-            raise ValueError(f"Unknown method: {method}")
-            
-        embeddings_2d = manifold.fit_transform(embeddings)
-        
-        # Prepare labels for coloring
-        unique_labels = np.unique(labels)
-        label_to_int = {label: i for i, label in enumerate(unique_labels)}
-        numerical_labels = np.array([label_to_int[label] for label in labels])
-        
-        # Define a colormap for the labels
-        colors = ['#D74288', '#88D742', '#4288D7', '#D78842', '#42D788', '#8842D7'] # Assign colors to different labels
-        cmap = mcolors.ListedColormap(colors[:len(unique_labels)])
-
-        # Plot the 2D embeddings
-        plt.figure(figsize=(12, 10))
-        _ = plt.scatter(
-            embeddings_2d[:, 0],
-            embeddings_2d[:, 1],
-            c=numerical_labels,
-            cmap=cmap,
-            alpha=0.7,
-            s=0.6,
-        )
-        
-        # Create a legend for the colors (labels)
-        legend_elements = [plt.Line2D([0], [0], marker='o', color='w', label=label,
-                                    markerfacecolor=cmap(label_to_int[label]), markersize=10)
-                        for label in unique_labels]
-        plt.legend(handles=legend_elements, title="Split")
-        
-        plt.title('t-SNE Visualization of Embeddings (Colored by Split)')
-        plt.xlabel('t-SNE Component 1')
-        plt.ylabel('t-SNE Component 2')
-        plt.grid(True)
-
+    def save(self, name: str = 'best_model', folder_path: Optional[Path] = None, **kwargs):
+        folder_path = folder_path if folder_path else self.save_dir
+        if folder_path is not None:
+            folder_path = Path(folder_path)
+            folder_path.mkdir(exist_ok=True, parents=True)
+        torch.save({
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'history': self.history,
+            'embeddings': self.embeddings
+        }, folder_path / f'{name}.pt')
 
 def create_datasets_from_price_client(
     price_client,

@@ -6,7 +6,7 @@ import datetime as dt
 
 import cryptotrading.rollbit.prices.formula as formula
 from cryptotrading.rollbit.prices.book import OrderBookManager
-from cryptotrading.data.price import PriceMongoAdapter
+from cryptotrading.data.factory import get_price_adapter
 from cryptotrading.analysis.levels import PriceLevels
 from cryptotrading.config import (
     SPOT_EXCHANGES, 
@@ -28,7 +28,7 @@ class PriceSystem:
     def __init__(self, symbols: list[str], enable_levels: bool = True):
         self.enable_levels = enable_levels
         self.levels = {symbol: PriceLevels() for symbol in symbols}
-        self.data = PriceMongoAdapter()
+        self.data = get_price_adapter()
         self.books = {symbol: OrderBookManager(symbol, SPOT_EXCHANGES + FUTURES_EXCHANGES) for symbol in symbols}        
         self.running = False
         self.last_index_prices = {}

@@ -14,19 +14,18 @@ RUN curl -sSL https://install.python-poetry.org | POETRY_HOME=/opt/poetry python
     poetry config virtualenvs.create false
 
 # Copy poetry files first (for better Docker layer caching)
-COPY pyproject.toml poetry.lock* ./
+COPY ./src/pyproject.toml ./src/poetry.lock* ./
 
 # Copy the rest of the application files
-COPY ./cryptotrading ./cryptotrading/
-COPY record.sh ./
-COPY README.md ./
+COPY ./src/cryptotrading ./cryptotrading/
+COPY ./src/record.sh ./
 
 # Install dependencies after copying all necessary files
 ARG INSTALL_DEV=false
 RUN if [ "$INSTALL_DEV" = "true" ] ; then \
-        poetry install ; \
+    poetry install ; \
     else \
-        poetry install --only main ; \
+    poetry install --only main ; \
     fi
 
 # Make script executable and list files for debugging
