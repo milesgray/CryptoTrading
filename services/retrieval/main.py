@@ -38,4 +38,4 @@ async def forecast(symbol: str = "BTC", k: int = 5) -> Dict[str, Any]:
     )
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8004)

@@ -32,8 +32,8 @@ class RetrievalForecaster:
         # Retrieve similar segments
         retrieved = self.encoder_service.retrieve_segments(prices, order_book, k=k)
         
-        # Prepare input for LSTM
-        X = np.array([self.encoder_service.encode_segment(prices, order_book)])
+        # Prepare input for LSTM (reshape prices to 60 timesteps with 56 features)
+        X = np.array([self.encoder_service.encode_segment(prices[i:i+1], order_book) for i in range(60)])
         X = X.reshape((1, 60, 56))  # Reshape for LSTM
         
         # Predict
