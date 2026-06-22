@@ -76,8 +76,8 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **Type**: Working memory
 - **Created**: 2026-06-22
 - **Last Modified**: 2026-06-22
-- **SHA256**: `b0a4f271360e5a6a32a04bc654673e151340d671a817245ff1d8bad7ecabe8e5`
-- **Size**: 1498 bytes
+- **SHA256**: `630d6b2c3449c39e2c236c1cf1b190f85e72de28702000da745b54b6fbd8d449`
+- **Size**: 1944 bytes
 - **Status**: Active
 
 #### progress.md
@@ -85,14 +85,23 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **Type**: Progress tracking
 - **Created**: 2026-06-22
 - **Last Modified**: 2026-06-22
-- **SHA256**: `7a980a2b2298e1083957378d04d362c5e12284088c15b1ecabc6429c7b55676c`
-- **Size**: 2322 bytes
+- **SHA256**: `c73a5917b5d3ca3fd0dec3aed023791c1a846ddb4e44c281174bfa281b0d4e23`
+- **Size**: 2535 bytes
 - **Status**: Active
+
+## Plans & Logs Tracking
+
+### plans/
+- **postgres-migration-plan.md**: `.agent/plans/postgres-migration-plan.md` (SHA256: `d00b64c8210c531f7a9c09eea0a732900ab7b5b98eeef9c1efae0cb88180c316`, Size: 3725 bytes)
+
+### task-logs/
+- **task-log_2026-06-22-05-56_postgres-migration.md**: `.agent/task-logs/task-log_2026-06-22-05-56_postgres-migration.md`
 
 ## Memory System Status
 
 ### Overall Health
 - **Status**: Synchronized
-- **Last Check**: 2026-06-22 10:00:00 UTC
-- **Files Tracked**: 6 core files
+- **Last Check**: 2026-06-22 12:05:00 UTC
+- **Files Tracked**: 6 core files + 1 plan + 1 task log
 - **Integrity**: All systems updated and synchronized
+

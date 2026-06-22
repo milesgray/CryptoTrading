@@ -1,22 +1,36 @@
-# Active Context: CryptoTrading Memory Initialization
+# Active Context: Postgres with TimescaleDB Migration
 
 ## Quick Reference
-- **Active Task**: Aligning the Windsurf/Claude Code memory bank (`.agent/core/*.md`) with the CryptoTrading project realities.
-- **Current Branch**: `main`
-- **Key Modules**: `services/serve`, `services/price`, `services/jepa`, `services/embed`, `services/sentiment`, `frontend`.
+- **Feature**: Postgres with TimescaleDB Migration
+- **Branch**: `feature/postgres-timescaledb-migration`
+- **Plan File**: `.agent/plans/postgres-migration-plan.md`
+- **Status**: Planning Complete - Pending Approval
 
 ## Executive Summary
-We are setting up the documentation structure and memory bank for the CryptoTrading system, transitioning it from the Golden Age Hub template. The project is a microservice-based quantitative crypto framework integrating live composite indexing, self-supervised representation learning, pattern matching, and sentiment indexing.
+Migrate the primary backend of the cryptocurrency trading application to PostgreSQL with the TimescaleDB extension. MongoDB will remain supported as an alternative backend, but Postgres will be the new default going forward.
 
-## Key Files
-- `services/serve/app.py`: FastAPI server containing WebSocket endpoints for price/order book streams.
-- `services/price/service.py`: Logging and composite price calculator service.
-- `services/jepa/model.py`: PyTorch Joint Embedding Predictive Architecture for market regimes.
-- `services/embed/pipeline.py`: Contrastive CNN training and pgvector storage pipeline.
-- `services/sentiment/analyzer.py`: Twitter sentiment scraper.
-- `frontend/src/App.jsx`: Dashboards mapping token selection to candlestick charts and order book components.
+## Architecture Overview
+A database backend selector (`DB_BACKEND`) in the config layer chooses the active database adapters (Mongo or Postgres/TimescaleDB) at runtime via a new database adapter factory.
 
-## Next Steps
-- Verify integration between the FastAPI serve application and the Postgres pgvector databases.
-- Test connection pools under load with multiple active symbols.
-- Assess the model inference latency for live setups matching.
+## Tech Stack for This Feature
+- **PostgreSQL**: Primary SQL Database.
+- **TimescaleDB**: Time-series extension for hypertable structures and compression policies.
+- **asyncpg**: Async Python client for Postgres.
+
+## Key Files to Create/Modify
+- `src/cryptotrading/config.py`: Add `DB_BACKEND` support.
+- `src/cryptotrading/data/factory.py`: [NEW] Unified database adapter factory.
+- `src/cryptotrading/data/postgres.py`: Add full-featured adapters matching MongoDB APIs.
+- `services/price/service.py`: Adapt to database factory.
+- `src/cryptotrading/rollbit/prices/serve/app.py` & `data.py`: Update to use Postgres database adapters.
+- `src/cryptotrading/sentiment/analyzer.py`: Refactor tweet persistence to support Postgres.
+
+## Acceptance Criteria
+- [ ] Complete database factory interface implemented.
+- [ ] PostgreSQL adapters implement all price/orderbook/sentiment storage and query APIs.
+- [ ] Serve application runs successfully on top of PostgreSQL/TimescaleDB.
+- [ ] Integration tests pass for both database backends.
+
+## Next Prompt
+Read `.agent/plans/postgres-migration-plan.md` for detailed implementation plan.
+Then proceed with Phase 1 of the implementation plan after user approval.
