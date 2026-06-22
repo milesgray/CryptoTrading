@@ -411,7 +411,7 @@ class CryptoSentimentAnalyzer:
         
         return any(fmt in text_lower for fmt in formats)
     
-    def save_to_mongodb(self, tweet_data: TweetData) -> bool:
+    def save_to_database(self, tweet_data: TweetData) -> bool:
         """Save analyzed tweet data to active database backend"""
         try:
             success = self._run_async(self.db_adapter.save_tweet_sentiment(tweet_data))
@@ -452,7 +452,7 @@ class CryptoSentimentAnalyzer:
                     
                     for tweet_data in tweets:
                         if tweet_data.tweet_id not in processed_tweets:
-                            success = self.save_to_mongodb(tweet_data)
+                            success = self.save_to_database(tweet_data)
                             if success:
                                 processed_tweets.add(tweet_data.tweet_id)
                                 self.logger.info(
