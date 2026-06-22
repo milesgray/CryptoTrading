@@ -1,8 +1,42 @@
 from datetime import datetime    
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
+from typing import List, Optional, Dict, Any, Union
+from pydantic import BaseModel, Field
 from typing import Tuple
 import warnings
+
+class ExchangeRawOrderBook(BaseModel):
+    """Raw order book structure received from an exchange feed"""
+    exchange: str
+    bids: List[Tuple[float, float]]  # [(price, size), ...]
+    asks: List[Tuple[float, float]]  # [(price, size), ...]
+    timestamp: Optional[float] = None
+
+class TweetSentiment(BaseModel):
+    """Vader and TextBlob sentiment analysis results"""
+    compound: float
+    positive: float
+    negative: float
+    neutral: float
+    polarity: float
+    subjectivity: float
+    confidence: float
+
+class TweetDataPoint(BaseModel):
+    """Unified Tweet details and sentiment metrics"""
+    tweet_id: str
+    user_id: Union[int, str]
+    username: str
+    text: str
+    timestamp: datetime
+    token_symbol: str
+    sentiment: TweetSentiment
+    price_direction_signals: Dict[str, float] = Field(default_factory=dict)
+    follower_count: int = 0
+    verified: bool = False
+    retweet_count: int = 0
+    like_count: int = 0
+    reply_count: int = 0
+    raw_data: Optional[Dict[str, Any]] = None
 
 class OrderBookSnapshot(BaseModel):
     """Single order book snapshot with validation"""

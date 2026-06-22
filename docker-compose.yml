@@ -1,23 +1,48 @@
 version: '3.8'
 
 services:
+    timescaledb:
+        image: timescale/timescaledb:latest-pg15
+        container_name: crypto-trading-timescaledb
+        environment:
+            - POSTGRES_DB=crypto_trading
+            - POSTGRES_USER=postgres
+            - POSTGRES_PASSWORD=postgres
+        ports:
+            - "5432:5432"
+        volumes:
+            - pgdata:/var/lib/postgresql/data
+
     serve:
         build:
-            context: ./package
+            context: .
             dockerfile: Dockerfile.serve
         ports:
             - "8000:8000"
-        
+        environment:
+            - DB_BACKEND=postgres
+            - POSTGRES_URI=postgresql://postgres:postgres@timescaledb:5432/crypto_trading
+        depends_on:
+            - timescaledb
+
     record:
         build:
-            context: ./package
+            context: .
             dockerfile: Dockerfile.record
         ports:
             - "8300:8300"
-        
+        environment:
+            - DB_BACKEND=postgres
+            - POSTGRES_URI=postgresql://postgres:postgres@timescaledb:5432/crypto_trading
+        depends_on:
+            - timescaledb
+
     frontend:
         build:
-            context: ./frontend
-            dockerfile: Dockerfile
+            context: .
+            dockerfile: Dockerfile.frontend
         ports:
             - "8080:8080"
+
+volumes:
+    pgdata:

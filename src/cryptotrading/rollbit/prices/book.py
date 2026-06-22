@@ -6,13 +6,13 @@ from typing import Optional
 import numpy as np
 import ccxt.async_support as ccxt
 
+from cryptotrading.data.factory import get_order_book_adapter
 from cryptotrading.analysis.book import condense_order_book
 from cryptotrading.util.book import order_book_to_df
-from cryptotrading.data.book import OrderBookMongoAdapter
-
-STALE_THRESHOLD_SEC = int(os.getenv("STALE_THRESHOLD_SEC", 30))
-PRICE_DEVIATION_THRESHOLD = float(os.getenv("PRICE_DEVIATION_THRESHOLD", 0.1))
-MIN_VALID_FEEDS = int(os.getenv("MIN_VALID_FEEDS", 6))
+from cryptotrading.config import (
+    STALE_THRESHOLD_SEC,
+    PRICE_DEVIATION_THRESHOLD
+)
 
 # Configure logging
 logging.basicConfig(
@@ -24,7 +24,7 @@ logger = logging.getLogger('order_book_manager')
 
 class OrderBookManager:
     def __init__(self, symbol: str, exchange_ids: list[str]):
-        self.data = OrderBookMongoAdapter()
+        self.data = get_order_book_adapter()
         self.running = False
         self.symbol = symbol
         self.exchange_ids = exchange_ids

@@ -11,10 +11,9 @@ from typing import List, Optional, Tuple, Dict, Any
 from dataclasses import dataclass, field
 import numpy as np
 
-from cryptotrading.data.book import OrderBookMongoAdapter
-from cryptotrading.data.price import PriceMongoAdapter
+from cryptotrading.data.factory import get_order_book_adapter, get_price_adapter
 from cryptotrading.data.models import OrderBookSnapshot
-from .pressure_features import OrderBookFeaturizer
+from pressure_features import OrderBookFeaturizer
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +62,8 @@ class OrderBookDataLoader:
     
     def __init__(
         self,
-        orderbook_adapter: Optional[OrderBookMongoAdapter] = None,
-        price_adapter: Optional[PriceMongoAdapter] = None,
+        orderbook_adapter: Optional[Any] = None,
+        price_adapter: Optional[Any] = None,
         featurizer: Optional[OrderBookFeaturizer] = None,
         default_token: str = "BTC",
         expected_interval_seconds: float = 1.0,
@@ -83,8 +82,8 @@ class OrderBookDataLoader:
             max_gap_threshold: Maximum gap size before flagging as issue
             quality_threshold: Minimum quality score for acceptable data
         """
-        self.orderbook_adapter = orderbook_adapter or OrderBookMongoAdapter()
-        self.price_adapter = price_adapter or PriceMongoAdapter()
+        self.orderbook_adapter = orderbook_adapter or get_order_book_adapter()
+        self.price_adapter = price_adapter or get_price_adapter()
         self.featurizer = featurizer or OrderBookFeaturizer()
         self.default_token = default_token
         self.expected_interval_seconds = expected_interval_seconds
@@ -189,13 +188,17 @@ class OrderBookDataLoader:
                         continue
                 
                 # Check for negative prices
+                invalid_price = False
                 for price, volume in snapshot.bids + snapshot.asks:
                     if price <= 0:
                         self.quality_metrics.negative_prices += 1
                         self.quality_metrics.invalid_records += 1
+                        invalid_price = True
                         break
                     if volume <= 0:
                         self.quality_metrics.zero_volumes += 1
+                if invalid_price:
+                    continue
                 
                 # Check timestamp anomalies
                 if snapshot.timestamp <= 0:
@@ -309,6 +312,28 @@ class OrderBookDataLoader:
         logger.info(f"Gap filling complete, now have {len(filled_snapshots)} snapshots")
         
         return filled_snapshots
+    
+    def _convert_to_snapshots(self, raw_data: List[Dict[str, Any]], token: str) -> List[Any]:
+        """Convert raw database dicts to OrderBookSnapshot models"""
+        from pressure_features import OrderBookSnapshot as PressureOrderBookSnapshot
+        snapshots = []
+        for record in raw_data:
+            book = record.get("book", {})
+            timestamp = record.get("timestamp")
+            if isinstance(timestamp, dt.datetime):
+                ts = timestamp.timestamp()
+            else:
+                ts = float(timestamp) if timestamp else 0.0
+                
+            # Use object.__new__ to bypass dataclass __post_init__ validation
+            snapshot = object.__new__(PressureOrderBookSnapshot)
+            snapshot.timestamp = ts
+            snapshot.bids = book.get("bids", [])
+            snapshot.asks = book.get("asks", [])
+            snapshot.mid_price = book.get("mid_price", 0.0)
+            snapshots.append(snapshot)
+            
+        return snapshots
     
     def _interpolate_snapshots(self, prev_snapshot: OrderBookSnapshot, next_snapshot: OrderBookSnapshot, target_time: float) -> OrderBookSnapshot:
         """Simple linear interpolation between two snapshots"""

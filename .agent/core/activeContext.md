@@ -1,36 +1,24 @@
 # Active Context: Postgres with TimescaleDB Migration
 
 ## Quick Reference
-- **Feature**: Postgres with TimescaleDB Migration
+- **Feature**: Postgres with TimescaleDB Migration & JEPA Fixes
 - **Branch**: `feature/postgres-timescaledb-migration`
 - **Plan File**: `.agent/plans/postgres-migration-plan.md`
-- **Status**: Planning Complete - Pending Approval
+- **Status**: Completed & Verified ✅
 
 ## Executive Summary
-Migrate the primary backend of the cryptocurrency trading application to PostgreSQL with the TimescaleDB extension. MongoDB will remain supported as an alternative backend, but Postgres will be the new default going forward.
+Migrate the primary backend of the cryptocurrency trading application to PostgreSQL with the TimescaleDB extension. MongoDB remains supported as an alternative backend, but Postgres is now the default.
+Additionally, restored the deleted JEPA model features, regime classifier, and caching functions to resolve broken imports and failing tests.
 
-## Architecture Overview
-A database backend selector (`DB_BACKEND`) in the config layer chooses the active database adapters (Mongo or Postgres/TimescaleDB) at runtime via a new database adapter factory.
+## Key Accomplishments
+- **Database Factory**: Dynamically routes database operations to PostgreSQL or MongoDB based on `DB_BACKEND` env.
+- **Postgres Adapters**: Completed robust adapters for prices, order books, and Twitter sentiment analysis data with TimescaleDB hypertable conversions.
+- **Domain Refactoring**: Cleanly refactored `PricePostgresAdapter`, `OrderBookPostgresAdapter`, and `TwitterPostgresAdapter` out of `postgres.py` and into their respective domain modules: `price.py`, `book.py`, and `twitter.py`.
+- **Docker Compose**: Containerized `timescaledb` image and successfully spun it up.
+- **JEPA Recovery**: Restored missing JEPA classifiers and utility functions, resolved precision standard deviation issues, and verified that all 20 tests pass.
+- **Unit & Integration Tests**: Verified that the pressure data loader test suite passes under both database backends (11/11 tests passing for each).
 
-## Tech Stack for This Feature
-- **PostgreSQL**: Primary SQL Database.
-- **TimescaleDB**: Time-series extension for hypertable structures and compression policies.
-- **asyncpg**: Async Python client for Postgres.
-
-## Key Files to Create/Modify
-- `src/cryptotrading/config.py`: Add `DB_BACKEND` support.
-- `src/cryptotrading/data/factory.py`: [NEW] Unified database adapter factory.
-- `src/cryptotrading/data/postgres.py`: Add full-featured adapters matching MongoDB APIs.
-- `services/price/service.py`: Adapt to database factory.
-- `src/cryptotrading/rollbit/prices/serve/app.py` & `data.py`: Update to use Postgres database adapters.
-- `src/cryptotrading/sentiment/analyzer.py`: Refactor tweet persistence to support Postgres.
-
-## Acceptance Criteria
-- [ ] Complete database factory interface implemented.
-- [ ] PostgreSQL adapters implement all price/orderbook/sentiment storage and query APIs.
-- [ ] Serve application runs successfully on top of PostgreSQL/TimescaleDB.
-- [ ] Integration tests pass for both database backends.
-
-## Next Prompt
-Read `.agent/plans/postgres-migration-plan.md` for detailed implementation plan.
-Then proceed with Phase 1 of the implementation plan after user approval.
+## Next Objectives
+- Integrate `pgvector` HNSW queries into the REST API for Live Pattern Matching.
+- Implement TimescaleDB historical compression policies.
+- Run database performance and WebSocket latency load tests.

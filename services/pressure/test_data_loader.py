@@ -14,6 +14,11 @@ from data_loader import OrderBookDataLoader, DataQualityMetrics, GapInfo
 from pressure_features import OrderBookFeaturizer, OrderBookSnapshot
 
 
+@pytest.fixture
+def anyio_backend():
+    return 'asyncio'
+
+
 class TestOrderBookDataLoader:
     """Test suite for OrderBookDataLoader"""
     
@@ -101,7 +106,7 @@ class TestOrderBookDataLoader:
         assert loader.expected_interval_seconds == 2.0
         assert loader.quality_threshold == 75.0
     
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_initialize(self, mock_featurizer, mock_adapters):
         """Test async initialization"""
         orderbook_adapter, price_adapter = mock_adapters
@@ -116,7 +121,7 @@ class TestOrderBookDataLoader:
         orderbook_adapter.initialize.assert_called_once()
         price_adapter.initialize.assert_called_once()
     
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_load_orderbook_data_success(self, mock_featurizer, mock_adapters, sample_orderbook_data):
         """Test successful data loading"""
         orderbook_adapter, price_adapter = mock_adapters
@@ -131,6 +136,7 @@ class TestOrderBookDataLoader:
             price_adapter=price_adapter,
             featurizer=mock_featurizer
         )
+        orderbook_adapter.get_orderbook_data = AsyncMock(return_value=loader._convert_to_snapshots(sample_orderbook_data, "BTC"))
         await loader.initialize()
         
         start_time = dt.datetime(2024, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
@@ -155,7 +161,7 @@ class TestOrderBookDataLoader:
             assert len(snapshot.asks) == 3
             assert snapshot.mid_price > 0
     
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_load_orderbook_data_with_gaps(self, mock_featurizer, mock_adapters):
         """Test data loading with gaps"""
         orderbook_adapter, price_adapter = mock_adapters
@@ -192,6 +198,7 @@ class TestOrderBookDataLoader:
             featurizer=mock_featurizer,
             expected_interval_seconds=1.0
         )
+        orderbook_adapter.get_orderbook_data = AsyncMock(return_value=loader._convert_to_snapshots(gapped_data, "BTC"))
         await loader.initialize()
         
         start_time = dt.datetime(2024, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
@@ -209,7 +216,7 @@ class TestOrderBookDataLoader:
         assert quality_metrics.gap_duration_total == 10.0
         assert quality_metrics.max_gap_duration == 10.0
     
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_load_orderbook_data_invalid_data(self, mock_featurizer, mock_adapters):
         """Test handling of invalid data"""
         orderbook_adapter, price_adapter = mock_adapters
@@ -254,6 +261,7 @@ class TestOrderBookDataLoader:
             price_adapter=price_adapter,
             featurizer=mock_featurizer
         )
+        orderbook_adapter.get_orderbook_data = AsyncMock(return_value=loader._convert_to_snapshots(invalid_data, "BTC"))
         await loader.initialize()
         
         start_time = dt.datetime(2024, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)
@@ -274,7 +282,7 @@ class TestOrderBookDataLoader:
         assert quality_metrics.crossed_books == 1
         assert quality_metrics.negative_prices == 1
     
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_load_and_featurize(self, mock_featurizer, mock_adapters, sample_orderbook_data):
         """Test the combined load and featurize method"""
         orderbook_adapter, price_adapter = mock_adapters
@@ -288,6 +296,7 @@ class TestOrderBookDataLoader:
             price_adapter=price_adapter,
             featurizer=mock_featurizer
         )
+        orderbook_adapter.get_orderbook_data = AsyncMock(return_value=loader._convert_to_snapshots(sample_orderbook_data, "BTC"))
         await loader.initialize()
         
         start_time = dt.datetime(2024, 1, 1, 9, 0, 0, tzinfo=dt.timezone.utc)

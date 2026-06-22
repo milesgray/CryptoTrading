@@ -108,7 +108,7 @@ class WebSocketService {
           // If we have a socket, close it
           if (this.socket) {
             try {
-              this.socket.close(1006, 'Connection error');
+              this.socket.close(4000, 'Connection error');
             } catch (e) {
               console.error('[WebSocket] Error closing socket:', e);
             }

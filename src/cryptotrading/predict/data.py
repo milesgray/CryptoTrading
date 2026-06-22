@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import StandardScaler
 
 from cryptotrading.predict.utils.timefeatures import time_features
-from cryptotrading.data.price import PriceMongoAdapter
+from cryptotrading.data.factory import get_price_adapter
 
 
 class TimeSeriesDataset(Dataset):
@@ -152,7 +152,7 @@ class MongoDBPriceForecastDataset(DataFramePriceForecastDataset):
                  limit: Optional[int] = None,
                  size=None, features='S', target='OT', 
                  scale=True, timeenc=0, freq='h'):
-        self.db_adapter = PriceMongoAdapter()
+        self.db_adapter = get_price_adapter()
 
         df = self.db_adapter.get_prices(symbol, start_time, end_time, limit)
 
