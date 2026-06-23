@@ -18,7 +18,11 @@ forecaster = RetrievalForecaster(encoder_service)
 for i in range(100):
     prices = np.random.rand(60) + i * 0.1
     order_book = {"bids": [[100 + i, 10]], "asks": [[101 + i, 10]]}
-    encoder_service.add_segment(prices, order_book, {"id": i})
+    encoder_service.add_segment(prices, order_book, {
+        "id": i,
+        "prices": prices.tolist(),
+        "order_book": order_book
+    })
 
 encoder_service.build_index(n_trees=10)
 
