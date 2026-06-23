@@ -23,7 +23,7 @@ pressure/
 1. Install dependencies:
    ```bash
    cd /home/miles/Development/notebooks/CryptoTrading
-   poetry install
+   uv sync
    ```
 
 2. Configure environment variables:
@@ -34,7 +34,7 @@ pressure/
 3. Run the service:
    ```bash
    cd services/pressure
-   poetry run python oracle.py  # Alert generation
+   uv run python oracle.py  # Alert generation
    ```
 
 ## Usage

@@ -1,1 +1,1 @@
-poetry run fastapi ../services/serve/app.py
+uv run fastapi ../services/serve/app.py

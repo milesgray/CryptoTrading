@@ -1,3 +1,4 @@
+import nest_asyncio
 import pandas as pd
 from datetime import datetime, timedelta
 import pytz
@@ -50,7 +51,6 @@ class PriceAnalytics:
         if loop.is_running():
             # In an active event loop, we run in an executor or helper if async call is needed
             # For simplicity in this analytical class, we use run_until_complete if we can, or a future
-            import nest_asyncio
             nest_asyncio.apply()
         
         data = loop.run_until_complete(self.adapter.get_price_data(symbol, start_time, end_time, limit=50000))
@@ -122,7 +122,7 @@ class PriceAnalytics:
             loop = asyncio.get_event_loop_policy().get_event_loop()
             
         if loop.is_running():
-            import nest_asyncio
+            
             nest_asyncio.apply()
             
         if DB_BACKEND == 'mongodb':
@@ -285,6 +285,5 @@ class PriceAnalytics:
             loop = asyncio.get_event_loop_policy().get_event_loop()
             
         if loop.is_running():
-            import nest_asyncio
             nest_asyncio.apply()
         loop.run_until_complete(self.adapter.shutdown())

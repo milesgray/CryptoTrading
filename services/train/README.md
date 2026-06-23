@@ -19,7 +19,7 @@ train/
 1. Install dependencies:
    ```bash
    cd /home/miles/Development/notebooks/CryptoTrading
-   poetry install
+   uv sync
    ```
 
 2. Configure environment variables:
@@ -30,7 +30,7 @@ train/
 3. Run the service:
    ```bash
    cd services/train
-   poetry run python main.py
+   uv run python main.py
    ```
 
 ## Usage

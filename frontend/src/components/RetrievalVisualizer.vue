@@ -30,7 +30,7 @@ export default {
   },
   methods: {
     async fetchData() {
-      const response = await fetch('http://localhost:8000/forecast?symbol=BTC&k=3');
+      const response = await fetch('/api/retrieval/forecast?symbol=BTC&k=3');
       const data = await response.json();
       this.retrieved = data.retrieved.map(seg => ({
         ...seg,

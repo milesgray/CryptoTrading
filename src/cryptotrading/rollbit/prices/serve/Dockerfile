@@ -8,25 +8,23 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Install Poetry
-RUN curl -sSL https://install.python-poetry.org | POETRY_HOME=/opt/poetry python && \
-    ln -s /opt/poetry/bin/poetry /usr/local/bin/poetry && \
-    poetry config virtualenvs.create false
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Copy poetry files first (for better Docker layer caching)
-COPY pyproject.toml poetry.lock* ./
+# Copy dependency files first (for better Docker layer caching)
+COPY pyproject.toml uv.lock* ./
+
+# Sync dependencies using uv
+ARG INSTALL_DEV=false
+RUN if [ "$INSTALL_DEV" = "true" ] ; then \
+        uv sync --frozen --no-install-project ; \
+    else \
+        uv sync --frozen --no-install-project --no-dev ; \
+    fi
 
 # Copy the rest of the application files
 COPY . .
 COPY README.md ./
-
-# Install dependencies after copying all necessary files
-ARG INSTALL_DEV=false
-RUN if [ "$INSTALL_DEV" = "true" ] ; then \
-        poetry install ; \
-    else \
-        poetry install --only main ; \
-    fi
 
 # Make script executable and list files for debugging
 RUN chmod +x ./record.sh && ls -la
@@ -35,4 +33,4 @@ RUN chmod +x ./record.sh && ls -la
 EXPOSE 8000
 
 # Run application
-CMD ["poetry", "run", "fastapi", "dev", "app.py"]
+CMD ["uv", "run", "fastapi", "dev", "app.py"]

@@ -9,7 +9,7 @@
 ### Backend Infrastructure
 - **FastAPI (0.115.11)**: Async REST & WebSocket server.
 - **Uvicorn**: ASGI server for running FastAPI instances.
-- **Poetry**: Python packaging and dependency management.
+- **uv**: Python packaging and dependency management.
 
 ### Databases & Clients
 - **MongoDB**: Used for storing raw price data, composite order books, and Twitter sentiment documents.
@@ -54,15 +54,15 @@ Shell scripts are located in `src/` to automate microservice startup:
 
 - **Start Serving Server** (`src/dev.sh`):
   ```bash
-  poetry run fastapi dev ../services/serve/app.py --host 0.0.0.0 --port 8362
+  uv run fastapi dev ../services/serve/app.py --host 0.0.0.0 --port 8362
   ```
 - **Start Price Logger** (`src/record.sh`):
   ```bash
-  nohup poetry run python ../services/price/service.py > record_output.log 2>&1 &
+  nohup uv run python ../services/price/service.py > record_output.log 2>&1 &
   ```
 - **Alternative Serve Command** (`src/serve.sh`):
   ```bash
-  poetry run fastapi ../services/serve/app.py
+  uv run fastapi ../services/serve/app.py
   ```
 
 ## Docker Infrastructure
@@ -72,12 +72,12 @@ The deployment configurations are declared across three specialized Dockerfiles:
 ### 1. Dockerfile.serve (REST & WebSockets)
 - **Base Image**: `python:3.12-slim`
 - **Port Exposed**: `8000`
-- **Command**: `poetry run fastapi dev app.py` (running from serve context)
+- **Command**: `uv run fastapi dev app.py` (running from serve context)
 
 ### 2. Dockerfile.record (Ingestion Engine)
 - **Base Image**: `python:3.12-slim`
 - **Port Exposed**: `8300`
-- **Command**: `poetry run python cryptotrading/rollbit/prices/record.py`
+- **Command**: `uv run python cryptotrading/rollbit/prices/record.py`
 
 ### 3. Dockerfile (Frontend)
 - Located in `/frontend/Dockerfile` (node-based production image or dev exposure on port 8080).

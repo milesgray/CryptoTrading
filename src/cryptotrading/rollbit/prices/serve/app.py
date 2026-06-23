@@ -475,8 +475,13 @@ async def health_check():
     Health check endpoint.  Returns 200 OK if the server is running and can connect to the database.
     """
     try:
-        # Check database connection (simple ping)
-        await app.db.command("ping")
+        # Check database connection based on backend
+        if DB_BACKEND == 'mongodb':
+            await app.db.command("ping")
+        else:
+            from cryptotrading.data.postgres import get_connection
+            async with get_connection() as conn:
+                await conn.execute("SELECT 1")
         return {"status": "OK", "database": "connected"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")

@@ -12,7 +12,7 @@ The `price` service fetches and normalizes **real-time price data** from multipl
 1. Install dependencies:
    ```bash
    cd /home/miles/Development/notebooks/CryptoTrading
-   poetry install
+   uv sync
    ```
 
 2. Configure environment variables:
@@ -23,7 +23,7 @@ The `price` service fetches and normalizes **real-time price data** from multipl
 3. Run the service:
    ```bash
    cd services/price
-   poetry run python service.py
+   uv run python service.py
    ```
 
 ## Usage

@@ -253,9 +253,6 @@ const CandlestickChart = ({ token }) => {
                 console.log('AnyChart loaded for live updates...');
                 
                 try {
-                  // Set theme
-                  anychart.theme('lightBlue');
-                  
                   // Create stock chart
                   const stockChart = anychart.stock();
                   
@@ -405,7 +402,6 @@ const CandlestickChart = ({ token }) => {
                     
                     import('anychart').then((anychart) => {
                       try {
-                        anychart.theme('lightBlue');
                         const stockChart = anychart.stock();
                         const table = dataTable.current.table;
                         const mapping = dataTable.current.mapping;
@@ -668,9 +664,6 @@ const CandlestickChart = ({ token }) => {
       console.log('AnyStock loaded, initializing chart...');
       
       try {
-        // Set theme
-        anychart.theme('lightBlue');
-        
         // Create stock chart
         const stockChart = anychart.stock();
         

@@ -7,20 +7,14 @@ to ensure fair and reliable pricing for its trading games. This module provides
 the tools to replicate these calculations.
 """
 
-import logging
 import math
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('price_system')
+from cryptotrading.util.status import StatusManager
 
 def calculate_index_price(
         order_books: list[dict[str, list[tuple[float, float]]]], 
         min_valid_feeds: int = 6,
-        logger: logging.Logger = logger,
+        status: StatusManager = StatusManager('formula.calculate_index_price'),
         return_book: bool = False,
         verbose: bool = False
 ) -> float:
@@ -104,7 +98,7 @@ def calculate_index_price(
         ]
 
         if len(filtered_order_books) < min_valid_feeds:
-            if verbose: logger.warning(f"Not enough valid price feeds after filtering. {len(filtered_order_books)}")
+            if verbose: status.warning(f"Not enough valid price feeds after filtering. {len(filtered_order_books)}")
             return None  # 4. Not enough valid price feeds after filtering.
 
 
@@ -169,7 +163,7 @@ def calculate_index_price(
 
         # v_i must not be empty
         if not v_i:
-            if verbose: logger.warning("Empty v_i list.")
+            if verbose: status.warning("Empty v_i list.")
             return None
 
         # Calculate V (maximum size for mid-price calculation).
@@ -177,7 +171,7 @@ def calculate_index_price(
                 sum(size for _, size in composite_order_book['asks']))
 
         if V == 0:  
-            if verbose: logger.warning("No volume in the order book.")
+            if verbose: status.warning("No volume in the order book.")
             return None  # No volume in the order book
 
         L = 1.0 / V
@@ -192,23 +186,39 @@ def calculate_index_price(
             total_weight += weight
 
         if total_weight == 0.0:
-            if verbose: logger.warning("Total weight is zero.")
+            if verbose: status.warning("Total weight is zero.")
             return None  # Should not happen if V > 0
 
         index_price = total_weighted_price / total_weight
+        
         if return_book:
+            status.update_data({
+                "price": index_price,
+                "size": total_size, 
+                "book": composite_order_book      
+            })
             return {
                 "price": index_price, 
                 "size": total_size,
                 "book": composite_order_book
             }
+        status.update_data({
+            "price": index_price,
+            "size": total_size,            
+        })
         return index_price, total_size
     except Exception as e:
-        logger.error(f"Error calculating index price: {str(e)}")
+        status.error(f"Error calculating index price: {str(e)}")
         return None
 
 
-def calculate_funding_payment(bet_amount: float, multiplier: float, funding_rate: float, hours_open: float) -> float:
+def calculate_funding_payment(
+        bet_amount: float, 
+        multiplier: float, 
+        funding_rate: float, 
+        hours_open: float,
+        status: StatusManager = StatusManager('formula.calculate_funding_payment')
+    ) -> float:
     """
     Calculates the funding payment for a given bet.
 
@@ -232,10 +242,21 @@ def calculate_funding_payment(bet_amount: float, multiplier: float, funding_rate
 
     notional_value = bet_amount * multiplier
     funding_hours = int(hours_open - 8.0) # Only charge for full hours after the first 8.
-    return notional_value * funding_rate * funding_hours
+    payment =  notional_value * funding_rate * funding_hours
+    status.update_data({
+        "payment": payment
+    })
+    return payment
 
 
-def calculate_bust_or_stop_loss_price(p_open: float, bet_multiplier: float, trade_sign: int, bust_buffer: float = 0.0, stop_loss_price:float = None) -> float:
+def calculate_bust_or_stop_loss_price(
+        p_open: float, 
+        bet_multiplier: float, 
+        trade_sign: int, 
+        bust_buffer: float = 0.0, 
+        stop_loss_price:float = None,
+        status: StatusManager = StatusManager('formula.calculate_bust_or_stop_loss_price')
+    ) -> float:
     """
     Calculates the trigger price for a bust or stop loss.
 
@@ -267,12 +288,21 @@ def calculate_bust_or_stop_loss_price(p_open: float, bet_multiplier: float, trad
         p_close = stop_loss_price
 
     p_trigger = p_close * (1 + trade_sign * bust_buffer)
+    status.update_data({"p_trigger": p_trigger})
     return p_trigger
 
 
-def calculate_closing_price(p_open: float, p_close_ideal: float, bet_amount: float, bet_multiplier: float,
-                           base_rate: float, rate_multiplier: float, rate_exponent: float,
-                           position_multiplier: float) -> float:
+def calculate_closing_price(
+        p_open: float, 
+        p_close_ideal: float, 
+        bet_amount: float, 
+        bet_multiplier: float,
+        base_rate: float, 
+        rate_multiplier: float, 
+        rate_exponent: float,
+        position_multiplier: float,
+        status: StatusManager = StatusManager('formula.calculate_closing_price')
+    ) -> float:
     """
     Calculates the closing price for winning trades, considering market impact.
 
@@ -305,4 +335,5 @@ def calculate_closing_price(p_open: float, p_close_ideal: float, bet_amount: flo
         + (bet_amount * bet_multiplier) / (10**6 * price_change_ratio * position_multiplier)
     )
     p_close = p_open + (1 - base_rate) / market_impact_denominator * (p_close_ideal - p_open)
+    status.update_data({"p_close": p_close})
     return p_close

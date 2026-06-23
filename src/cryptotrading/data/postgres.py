@@ -196,7 +196,7 @@ async def init_schema(conn: Connection):
     );
     
     CREATE TABLE IF NOT EXISTS trade_data (
-        id TEXT PRIMARY KEY,
+        id TEXT NOT NULL,
         time TIMESTAMPTZ NOT NULL,
         symbol TEXT NOT NULL,
         exchange TEXT NOT NULL,
@@ -206,7 +206,8 @@ async def init_schema(conn: Connection):
         cost DOUBLE PRECISION GENERATED ALWAYS AS (price * amount) STORED,
         fee_currency TEXT,
         fee_cost DOUBLE PRECISION,
-        metadata JSONB
+        metadata JSONB,
+        PRIMARY KEY (time, id)
     );
     
     CREATE TABLE IF NOT EXISTS tweet_data (
@@ -219,16 +220,22 @@ async def init_schema(conn: Connection):
         entities JSONB,
         metadata JSONB
     );
-    
-    -- Create vector extension table if pgvector is enabled
-    {'CREATE TABLE IF NOT EXISTS document_embeddings ('
-     'id TEXT PRIMARY KEY,'
-     'content TEXT NOT NULL,'
-     'embedding VECTOR(1536),'  -- Default dimension for OpenAI embeddings
-     'metadata JSONB,'
-     'created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()'
-     ');' if POSTGRES_USE_PGVECTOR else ''}
     ''')
+    
+    # Create vector extension table if pgvector is enabled
+    if POSTGRES_USE_PGVECTOR:
+        try:
+            await conn.execute('''
+            CREATE TABLE IF NOT EXISTS document_embeddings (
+                id TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                embedding VECTOR(1536),  -- Default dimension for OpenAI embeddings
+                metadata JSONB,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            ''')
+        except Exception as e:
+            logger.error(f"Failed to create document_embeddings table: {e}")
     
     # Convert regular tables to hypertables if TimescaleDB is enabled
     if POSTGRES_USE_TIMESCALE:
@@ -259,6 +266,11 @@ async def init_schema(conn: Connection):
             CREATE INDEX IF NOT EXISTS idx_trade_data_metadata 
                 ON trade_data USING GIN (metadata);
                 
+            -- Enable compression on hypertables
+            ALTER TABLE price_data SET (timescaledb.compress, timescaledb.compress_segmentby = 'symbol');
+            ALTER TABLE order_book_data SET (timescaledb.compress, timescaledb.compress_segmentby = 'symbol');
+            ALTER TABLE trade_data SET (timescaledb.compress, timescaledb.compress_segmentby = 'symbol');
+
             -- Add compression to historical data
             SELECT add_compression_policy('price_data', INTERVAL '7 days', if_not_exists => TRUE);
             SELECT add_compression_policy('order_book_data', INTERVAL '7 days', if_not_exists => TRUE);
@@ -678,24 +690,5 @@ price_repo = PriceDataRepository()
 order_book_repo = OrderBookRepository()
 document_embedding_repo = DocumentEmbeddingRepository() if POSTGRES_USE_PGVECTOR else None
 
-# Initialize database on module import
-if __name__ != "__main__":
-    import asyncio
-    try:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.get_event_loop_policy().get_event_loop()
-            
-        async def _init():
-            try:
-                await init_db()
-            except Exception as e:
-                logger.error(f"Failed to initialize database: {e}")
-                
-        if loop.is_running():
-            loop.create_task(_init())
-        else:
-            loop.run_until_complete(_init())
-    except Exception as e:
-        logger.debug(f"Could not auto-initialize database on module import: {e}")
+# Database auto-initialization on module import removed to prevent binding to the wrong asyncio event loop.
+# Connections are now initialized lazily on active event loops via get_connection() / initialize().

@@ -3,7 +3,7 @@
 ## Project Timeline
 
 ### Phase 1: Foundation & Data Streaming (Completed ✅)
-- [x] Poetry environment configuration and dependencies (`ccxt`, `motor`, `pymongo`, `fastapi`, `torch`).
+- [x] uv environment configuration and dependencies (`ccxt`, `motor`, `pymongo`, `fastapi`, `torch`).
 - [x] Rollbit Price System composite index price formulation (500ms intervals, multi-exchange parsing, outlier removal, order size caps, exponential weightings).
 - [x] Ingestion and recording service (`services/price`) running with graceful shutdown signals.
 - [x] FastAPI REST/WebSocket serving application (`services/serve`) supporting:
