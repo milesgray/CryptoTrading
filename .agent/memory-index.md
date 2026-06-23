@@ -67,8 +67,8 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **Type**: Technology stack
 - **Created**: 2026-06-22
 - **Last Modified**: 2026-06-22
-- **SHA256**: `37bbd1df4e5defb1101d43b762e608da65878477c254aae9da2aba3db88bc56c`
-- **Size**: 4242 bytes
+- **SHA256**: `159e619874c149b6b6678059e732444c4999de5b96bb4cebfd3e52e374ed499c`
+- **Size**: 4218 bytes
 - **Status**: Active
 
 #### activeContext.md
@@ -76,8 +76,8 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **Type**: Working memory
 - **Created**: 2026-06-22
 - **Last Modified**: 2026-06-22
-- **SHA256**: `630d6b2c3449c39e2c236c1cf1b190f85e72de28702000da745b54b6fbd8d449`
-- **Size**: 1944 bytes
+- **SHA256**: `657a4c1856e0e0de593b26736c1567de618e5e6744400fb494a3cc86b9c99383`
+- **Size**: 1646 bytes
 - **Status**: Active
 
 #### progress.md
@@ -85,8 +85,8 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **Type**: Progress tracking
 - **Created**: 2026-06-22
 - **Last Modified**: 2026-06-22
-- **SHA256**: `c73a5917b5d3ca3fd0dec3aed023791c1a846ddb4e44c281174bfa281b0d4e23`
-- **Size**: 2535 bytes
+- **SHA256**: `500f1fe33ee181118ea65bc7bbdd91cdf0b59c22181ff95904cfd69c1f10d1b6`
+- **Size**: 2921 bytes
 - **Status**: Active
 
 ## Plans & Logs Tracking
@@ -96,6 +96,7 @@ This file serves as the master index for the CryptoTrading memory system, provid
 
 ### task-logs/
 - **task-log_2026-06-22-05-56_postgres-migration.md**: `.agent/task-logs/task-log_2026-06-22-05-56_postgres-migration.md`
+- **task-log_2026-06-22-16-30_poetry-to-uv-migration.md**: `.agent/task-logs/task-log_2026-06-22-16-30_poetry-to-uv-migration.md`
 
 ## Memory System Status
 

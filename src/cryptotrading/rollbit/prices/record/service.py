@@ -3,44 +3,19 @@ import asyncio
 import logging
 import signal
 import time
-import datetime as dt
-from datetime import datetime
+import datetime as dt    
+import threading
 from typing import List, Dict, Any, Optional
+
+import uvicorn
 from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
 from cryptotrading.rollbit.prices.price import PriceSystem
+from cryptotrading.util.status import StatusManager
+from cryptotrading.config import SYMBOLS, REFRESH_INTERVAL_MS
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('price_system')
-
-REFRESH_INTERVAL_MS = int(os.getenv("REFRESH_INTERVAL_MS", 500))
-
-class ServiceStatus:
-    def __init__(self):
-        self.running = False
-        self.paused = False
-        self.start_time = None
-        self.last_error = None
-        self.logs: List[Dict[str, Any]] = []
-        self.max_logs = 1000  # Keep last 1000 log entries
-
-    def add_log(self, level: str, message: str):
-        """Add a log entry to the service status"""
-        logger.log(level, message)
-        self.logs.append({
-            'timestamp': dt.datetime.now(dt.timezone.utc).isoformat(),
-            'level': level,
-            'message': message
-        })
-        # Keep only the last max_logs entries
-        if len(self.logs) > self.max_logs:
-            self.logs = self.logs[-self.max_logs:]
 
 class PriceSystemService:
     _instance = None
@@ -52,11 +27,11 @@ class PriceSystemService:
         return cls._instance
 
     def _initialize(self):
-        self.price_system = PriceSystem()
-        self.status = ServiceStatus()
+        self.price_system = PriceSystem(symbols=SYMBOLS)
+        self.status = StatusManager('price_system_service')
         self.status.running = True
         self.status.start_time = time.time()
-        self.status.add_log('INFO', 'Service initialized')
+        self.status.info('Service initialized')
 
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -65,7 +40,7 @@ class PriceSystemService:
         """Main function to run the price system"""
         try:
             await self.price_system.initialize()
-            self.status.add_log('INFO', 'Price system initialized')
+            self.status.info('Price system initialized')
             while self.status.running:
                 if not self.status.paused:
                     start_time = time.time()
@@ -74,7 +49,7 @@ class PriceSystemService:
                     except Exception as e:
                         error_msg = f"Unexpected error: {str(e)}"
                         self.status.last_error = error_msg
-                        self.status.add_log('ERROR', error_msg)
+                        self.status.error(error_msg)
                     finally:
                         elapsed = (time.time() - start_time) * 1000
                         sleep_time = max(0, REFRESH_INTERVAL_MS - elapsed) / 1000
@@ -83,24 +58,24 @@ class PriceSystemService:
                 else:
                     await asyncio.sleep(1)  # Sleep when paused
         except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
+            self.status.error(f"Unexpected error: {str(e)}")
             return 1
         finally:
             await self.price_system.shutdown()
-            logger.info("Price system shutdown complete")
+            self.status.info("Price system shutdown complete")
             
         return 0
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully"""
-        self.status.add_log('INFO', f'Received signal {signum}, initiating graceful shutdown...')
+        self.status.info(f'Received signal {signum}, initiating graceful shutdown...')
         self.status.running = False
 
     def pause(self):
         """Pause the service"""
         if not self.status.paused:
             self.status.paused = True
-            self.status.add_log('INFO', 'Service paused')
+            self.status.info('Service paused')
             return {"status": "paused", "message": "Service has been paused"}
         return {"status": "already_paused", "message": "Service is already paused"}
 
@@ -108,7 +83,7 @@ class PriceSystemService:
         """Resume the service"""
         if self.status.paused:
             self.status.paused = False
-            self.status.add_log('INFO', 'Service resumed')
+            self.status.info('Service resumed')
             return {"status": "resumed", "message": "Service has been resumed"}
         return {"status": "not_paused", "message": "Service is not paused"}
 
@@ -116,7 +91,7 @@ class PriceSystemService:
         """Stop the service"""
         if self.status.running:
             self.status.running = False
-            self.status.add_log('INFO', 'Service stop requested')
+            self.status.info('Service stop requested')
             return {"status": "stopping", "message": "Service is stopping"}
         return {"status": "not_running", "message": "Service is not running"}
 
@@ -128,8 +103,7 @@ class PriceSystemService:
             "uptime_seconds": time.time() - (self.status.start_time or 0),
             "last_error": self.status.last_error,
             "logs_count": len(self.status.logs),
-            "last_index_price": self.status.last_index_price,
-            "last_price_time": self.status.last_price_time
+            "data": self.status.get_data(),
         }
 
     def get_logs(self, limit: int = 100, level: Optional[str] = None):
@@ -209,8 +183,7 @@ async def run_service():
 
 def start_service():
     """Start the service with FastAPI"""
-    import uvicorn
-    import threading
+
     
     # Start the FastAPI server in a separate thread
     def run_fastapi():

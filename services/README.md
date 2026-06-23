@@ -24,7 +24,7 @@ This folder contains self-contained services that power the Polymarket trading b
 1. Install dependencies for all services:
    ```bash
    cd /home/miles/Development/notebooks/CryptoTrading
-   poetry install
+   uv sync
    ```
 
 2. Configure environment variables:
@@ -37,7 +37,7 @@ This folder contains self-contained services that power the Polymarket trading b
 3. Run a service:
    ```bash
    cd services/<service_name>
-   poetry run python main.py
+   uv run python main.py
    ```
 
 ## Development

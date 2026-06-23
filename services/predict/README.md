@@ -12,7 +12,7 @@ The `predict` service generates trading signals using predictive models (e.g., M
 1. Install dependencies:
    ```bash
    cd /home/miles/Development/notebooks/CryptoTrading
-   poetry install
+   uv sync
    ```
 
 2. Configure environment variables:
@@ -23,7 +23,7 @@ The `predict` service generates trading signals using predictive models (e.g., M
 3. Run the service:
    ```bash
    cd services/predict
-   poetry run python service.py
+   uv run python service.py
    ```
 
 ## Usage

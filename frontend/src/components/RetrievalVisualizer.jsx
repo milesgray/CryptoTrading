@@ -15,7 +15,7 @@ const RetrievalVisualizer = () => {
   }, []);
 
   const fetchData = async () => {
-    const response = await fetch('http://localhost:8000/api/retrieval/forecast?symbol=BTC&k=3');
+    const response = await fetch('/api/retrieval/forecast?symbol=BTC&k=3');
     const data = await response.json();
     setRetrieved(data.retrieved.map(seg => ({
       ...seg,

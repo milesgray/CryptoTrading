@@ -9,8 +9,14 @@ class PriceLevels:
     Supports multiple timeframes and calculates level strength.
     """
     
-    def __init__(self, lookback_periods=None, timeframes=None, level_threshold=0.05, 
-                 level_proximity=0.01, max_levels=10):
+    def __init__(
+        self,
+        lookback_periods=None,
+        timeframes=None,
+        level_threshold=0.05,
+        level_proximity=0.01,
+        max_levels=10
+    ):
         """
         Initialize the PriceLevels detector.
         
