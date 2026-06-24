@@ -21,6 +21,7 @@ services:
             - DB_BACKEND=postgres
             - POSTGRES_URI=postgresql://postgres:postgres@timescaledb:5432/crypto_trading
             - RETRIEVAL_SERVICE_URL=http://retrieval:8000
+            - PYTHONUNBUFFERED=1
         depends_on:
             - timescaledb
             - retrieval
@@ -34,6 +35,7 @@ services:
         environment:
             - DB_BACKEND=postgres
             - POSTGRES_URI=postgresql://postgres:postgres@timescaledb:5432/crypto_trading
+            - PYTHONUNBUFFERED=1
         depends_on:
             - timescaledb
 
@@ -46,6 +48,8 @@ services:
         environment:
             - DB_BACKEND=postgres
             - POSTGRES_URI=postgresql://postgres:postgres@timescaledb:5432/crypto_trading
+            - MIN_VALID_FEEDS=2
+            - PYTHONUNBUFFERED=1
         depends_on:
             - timescaledb
 

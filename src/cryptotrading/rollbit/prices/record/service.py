@@ -16,6 +16,12 @@ from cryptotrading.rollbit.prices.price import PriceSystem
 from cryptotrading.util.status import StatusManager
 from cryptotrading.config import SYMBOLS, REFRESH_INTERVAL_MS
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
 
 class PriceSystemService:
     _instance = None
