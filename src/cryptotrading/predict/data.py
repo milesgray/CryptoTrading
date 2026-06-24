@@ -173,13 +173,13 @@ def data_provider(args, flag):
         )
     elif args.data_path.endswith('.json'):
         dataset = DBPriceForecastDataset(
-            flag,
-            args.symbol,
-            args.start_time,
-            args.end_time,
-            args.seq_len,
-            args.label_len,
-            args.pred_len,
+            flag=flag,
+            symbol=args.symbol,
+            start_time=args.start_time,
+            end_time=args.end_time,
+            size=[args.seq_len, args.label_len, args.pred_len],
+            features=args.features,
+            target=args.target,
             scale=args.scale,
             timeenc=args.timeenc,
             freq=args.freq

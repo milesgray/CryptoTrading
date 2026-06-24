@@ -497,13 +497,21 @@ retrieval_router = APIRouter(prefix="/retrieval")
 
 @retrieval_router.get("/forecast")
 async def forecast(symbol: str = "BTC", k: int = 5):
-    """Proxy to retrieval service."""
+    """Proxy to retrieval service with robust timeout and error handling."""
     import httpx
     import os
     retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://localhost:8000")
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"{retrieval_url}/forecast?symbol={symbol}&k={k}")
-        return response.json()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{retrieval_url}/forecast?symbol={symbol}&k={k}")
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPError as e:
+        logger.error(f"Error proxying to retrieval service: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Retrieval service error: {str(e)}"
+        )
 
 app.include_router(retrieval_router)
 
