@@ -138,3 +138,25 @@ def test_raft_retrieval_augmented_training_step(basic_configs):
     assert "vali_loss" in metrics
     assert "test_loss" in metrics
     assert os.path.exists(os.path.join(basic_configs.checkpoints, setting, "checkpoint.pth"))
+
+
+def test_raft_test_only_evaluation(basic_configs):
+    """Verifies that the RAFT model can run in test-only mode (is_training=0)
+    without throwing an AttributeError due to uninitialized retrieval database.
+    """
+    # 1. Run a quick training step first to produce a checkpoint
+    basic_configs.model = 'RAFT'
+    exp_train = ForecastExp(basic_configs)
+    setting = "test_raft_eval_run"
+    exp_train.train(setting)
+    
+    # 2. Re-instantiate in test-only mode
+    basic_configs.is_training = 0
+    exp_test = ForecastExp(basic_configs)
+    
+    # 3. Call test evaluation, which loads checkpoint and triggers pre-computation
+    test_metrics = exp_test.test(setting, test=1)
+    
+    assert "mae" in test_metrics
+    assert "mse" in test_metrics
+    assert test_metrics["mse"] >= 0

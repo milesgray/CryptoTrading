@@ -172,7 +172,7 @@ class MovementExp(BaseExp):
         if test:
             print("loading model")
             self.model.load_state_dict(
-                torch.load(os.path.join("./checkpoints/" + setting, "checkpoint.pth"))
+                torch.load(os.path.join(self.args.checkpoints, setting, "checkpoint.pth"))
             )
         test_correct = 0
         test_total = 0
@@ -230,8 +230,8 @@ class MovementExp(BaseExp):
         test_acc = test_correct / test_total * 100
         print(f'Test Accuracy: {test_acc:.2f}%')
 
-        preds = np.array(preds)
-        trues = np.array(trues)
+        preds = np.concatenate(preds, axis=0)
+        trues = np.concatenate(trues, axis=0)
         print("test shape:", preds.shape, trues.shape)
         preds = preds.reshape(-1, preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-1])

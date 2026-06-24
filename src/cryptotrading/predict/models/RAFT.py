@@ -52,6 +52,14 @@ class RAFT(nn.Module):
 #                 configs.enc_in * configs.seq_len, configs.num_class)
 
     def prepare_dataset(self, train_data, valid_data, test_data):
+        if not hasattr(self, 'rt') or self.rt is None:
+            self.rt = RetrievalTool(
+                seq_len=self.seq_len,
+                pred_len=self.pred_len,
+                channels=self.channels,
+                n_period=self.n_period,
+                topm=self.topm,
+            )
         self.rt.prepare_dataset(train_data)
         
         self.retrieval_dict = {}

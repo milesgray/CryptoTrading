@@ -321,7 +321,14 @@ class ForecastExp(BaseExp):
         test_data, test_loader = self._get_data(flag='test')
         if test:
             print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
+            self.model.load_state_dict(torch.load(os.path.join(self.args.checkpoints, setting, 'checkpoint.pth')))
+
+        # Run pre-computation phase for retrieval-augmented models like RAFT if not already done
+        if hasattr(self.model, 'prepare_dataset') and not hasattr(self.model, 'retrieval_dict'):
+            print("Pre-computing retrieval vectors for RAFT model during test evaluation...")
+            train_data, _ = self._get_data(flag='train')
+            vali_data, _ = self._get_data(flag='val')
+            self.model.prepare_dataset(train_data, vali_data, test_data)
 
         preds = []
         trues = []
@@ -379,8 +386,8 @@ class ForecastExp(BaseExp):
                     pd = np.concatenate((input_val[0, :, -1], pred[0, :, -1]), axis=0)
                     visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
 
-        preds = np.array(preds)
-        trues = np.array(trues)
+        preds = np.concatenate(preds, axis=0)
+        trues = np.concatenate(trues, axis=0)
         print('test shape:', preds.shape, trues.shape)
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
