@@ -12,6 +12,7 @@ def get_proxy(country_id=good_countries, verbose=True):
     except Exception as e:
         if verbose: print(e)
         return None
+
 def test_proxy(proxy, verbose=True):
     try:
         url = 'https://httpbin.org/ip'
@@ -23,6 +24,7 @@ def test_proxy(proxy, verbose=True):
     except Exception as e:
         if verbose: print(e)
         return False
+
 def geo_lookup(ip=None, verbose=True):
     url = f'https://api.ipgeolocation.io/ipgeo?apiKey={IP_GEO_API_KEY}'
     if ip: url = f"{url}&ip={ip}"

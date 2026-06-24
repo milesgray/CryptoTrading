@@ -141,7 +141,7 @@ async def init_connection(conn: Connection):
                 'vector',
                 encoder=lambda x: str(x) if x else None,
                 decoder=lambda x: [float(v) for v in x[1:-1].split(',')] if x else None,
-                schema='pg_catalog',
+                schema='public',
                 format='text'
             )
         except Exception as e:

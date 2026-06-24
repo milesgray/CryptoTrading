@@ -67,7 +67,6 @@ const CandlestickChart = ({ token }) => {
       if (!dataTable.current) {
         console.log('No data table, creating minimal one for live updates...');
         try {
-          // Create a simple table for live updates
           const table = anychart.data.table('x');
           dataTable.current = {
             table: table,
@@ -80,288 +79,103 @@ const CandlestickChart = ({ token }) => {
               value: 'close'
             })
           };
-          console.log('Minimal data table created for live updates');
-          
-          // Initialize chart if not already done
-          console.log('Chart initialization check:', {
-            hasChart: !!chart.current,
-            hasContainer: !!chartContainer.current,
-            isInitializing: chartInitializing.current,
-            containerDimensions: chartContainer.current ? {
-              width: chartContainer.current.offsetWidth,
-              height: chartContainer.current.offsetHeight
-            } : null,
-            shouldInitialize: !chart.current && chartContainer.current && !chartInitializing.current
-          });
           
           if (!chart.current && chartContainer.current && !chartInitializing.current) {
-            // Check if container has dimensions
             if (chartContainer.current.offsetWidth === 0 || chartContainer.current.offsetHeight === 0) {
-              console.log('Container has no dimensions, waiting for next update...');
               return;
             }
-            
-            console.log('Initializing chart for live updates...');
             chartInitializing.current = true;
-            
-            try {
-              // Create a minimal chart structure using the existing table
-              import('anychart').then((anychart) => {
-                console.log('AnyChart loaded for live updates...');
+            import('anychart').then((anychart) => {
+              try {
+                const stockChart = anychart.stock();
+                const table = dataTable.current.table;
+                const mapping = dataTable.current.mapping;
+                const plot = stockChart.plot(0);
+                plot.yGrid(true).xGrid(true);
+                plot.yMinorGrid(true).xMinorGrid(true);
                 
-                try {
-                  // Create stock chart
-                  const stockChart = anychart.stock();
-                  
-                  // Use the existing table and mapping
-                  const table = dataTable.current.table;
-                  const mapping = dataTable.current.mapping;
-                  
-                  // Create first plot with candlestick series
-                  const plot = stockChart.plot(0);
-                  plot.yGrid(true).xGrid(true);
-                  plot.yMinorGrid(true).xMinorGrid(true);
-                  
-                  // Create candlestick series (empty for now)
-                  const candlestickSeries = plot.candlestick(mapping);
-                  candlestickSeries.name(token + ' Price');
-                  
-                  // Customize the appearance of candlesticks
-                  candlestickSeries.risingStroke('#0f9d58');
-                  candlestickSeries.risingFill('#0f9d58');
-                  candlestickSeries.fallingStroke('#db4437');
-                  candlestickSeries.fallingFill('#db4437');
-                  
-                  // Make candlesticks touch each other
-                  candlestickSeries.pointWidth('90%');
-                  
-                  // Set chart title
-                  stockChart.title(`${token} Price Chart (Live)`);
-                  
-                  // Draw the chart
-                  console.log('Drawing minimal chart for live updates...');
-                  stockChart.container(chartContainer.current);
-                  stockChart.draw();
-                  
-                  // Save chart reference
-                  chart.current = stockChart;
-                  chartInitializing.current = false;
-                  console.log('Minimal chart created successfully for live updates');
-                  
-                  // Now that the chart is ready, try to redraw any pending data
-                  setTimeout(() => {
-                    if (chart.current && typeof chart.current.draw === 'function') {
-                      try {
-                        chart.current.draw();
-                        console.log('Chart redrawn after initialization');
-                      } catch (drawError) {
-                        console.warn('Error redrawing chart after init:', drawError);
-                      }
-                    }
-                  }, 100);
-                  
-                } catch (chartError) {
-                  console.error('Error creating minimal chart:', chartError);
-                  chartInitializing.current = false;
-                }
-              }).catch(err => {
-                console.error('Failed to load AnyChart for live updates:', err);
+                const candlestickSeries = plot.candlestick(mapping);
+                candlestickSeries.name(token + ' Price');
+                candlestickSeries.risingStroke('#0f9d58');
+                candlestickSeries.risingFill('#0f9d58');
+                candlestickSeries.fallingStroke('#db4437');
+                candlestickSeries.fallingFill('#db4437');
+                candlestickSeries.pointWidth('90%');
+                
+                stockChart.title(`${token} Price Chart (Live)`);
+                stockChart.container(chartContainer.current);
+                stockChart.draw();
+                
+                chart.current = stockChart;
                 chartInitializing.current = false;
-              });
-            } catch (error) {
-              console.error('Error initializing chart for live updates:', error);
-              chartInitializing.current = false;
-            }
+              } catch (err) {
+                console.error(err);
+                chartInitializing.current = false;
+              }
+            });
           }
         } catch (error) {
-          console.error('Failed to create minimal data table:', error);
+          console.error(error);
           return;
         }
       }
 
       try {
-        // Always add new data points for live updates (don't try to update existing ones)
-        const newPoint = {
-          x: now.getTime(), // Ensure consistent millisecond timestamp
-          open: priceData.price,
-          high: priceData.price,
-          low: priceData.price,
-          close: priceData.price,
-          volume: priceData.volume || 0
-        };
+        // Aggregate ticks into the current granularity time bucket
+        const bucketSizeMs = (granularity || 3600) * 1000;
+        const bucketStartMs = Math.floor(now.getTime() / bucketSizeMs) * bucketSizeMs;
         
-        // Add to our data array
-        chartData.current.push(newPoint);
+        let activePoint = null;
+        const lastIdx = chartData.current.length - 1;
         
-        // Keep only last 100 points to prevent memory issues
-        if (chartData.current.length > 100) {
-          chartData.current = chartData.current.slice(-100);
+        if (lastIdx >= 0 && chartData.current[lastIdx].x === bucketStartMs) {
+          // Update the current active candle
+          const lastPoint = chartData.current[lastIdx];
+          lastPoint.close = Number(priceData.price);
+          lastPoint.high = Math.max(Number(lastPoint.high), Number(priceData.price));
+          lastPoint.low = Math.min(Number(lastPoint.low), Number(priceData.price));
+          lastPoint.volume = Number(lastPoint.volume) + Number(priceData.volume || 0);
+          activePoint = { ...lastPoint };
+        } else {
+          // Create a new candle starting this period
+          const prevClose = lastIdx >= 0 ? chartData.current[lastIdx].close : Number(priceData.price);
+          activePoint = {
+            x: bucketStartMs,
+            open: prevClose,
+            high: Math.max(prevClose, Number(priceData.price)),
+            low: Math.min(prevClose, Number(priceData.price)),
+            close: Number(priceData.price),
+            volume: Number(priceData.volume || 0)
+          };
+          chartData.current.push(activePoint);
         }
-        
-        // Update the data table
+
+        // Limit the size of in-memory dataset to prevent memory bloat over time
+        if (chartData.current.length > 1000) {
+          chartData.current = chartData.current.slice(-1000);
+        }
+
+        // Update the AnyChart data table with the aggregated candle
         if (dataTable.current?.table) {
-          try {
-            const table = dataTable.current.table;
-            
-            console.log('Table type:', typeof table, 'Table exists:', !!table);
-            
-            // Try object format first (for tables created by renderChart)
-            const objectData = {
-              x: now.getTime(), // Use consistent millisecond timestamp
-              open: Number(newPoint.open),
-              high: Number(newPoint.high),
-              low: Number(newPoint.low),
-              close: Number(newPoint.close),
-              volume: Number(newPoint.volume || 0)
-            };
-            
-            console.log('Adding live data with object format:', objectData);
-            
-            try {
-              table.addData([objectData]);
-              console.log('Live data added successfully');
-              
-              // Trigger chart redraw to show new data
-              if (chart.current && typeof chart.current.draw === 'function') {
-                try {
-                  console.log('Attempting to redraw chart...');
-                  chart.current.draw();
-                  console.log('Chart redrawn with new data');
-                } catch (drawError) {
-                  console.warn('Error redrawing chart:', drawError);
-                  // Try to fit all and redraw again
-                  try {
-                    chart.current.fitAll();
-                    setTimeout(() => {
-                      if (chart.current) {
-                        chart.current.draw();
-                      }
-                    }, 100);
-                  } catch (fitError) {
-                    console.warn('Error with fitAll and redraw:', fitError);
-                  }
-                }
-              } else if (chartInitializing.current) {
-                console.log('Chart is still initializing, will redraw when ready...');
-                // Chart is initializing, it will be redrawn automatically after initialization
-              } else if (!chartContainer.current) {
-                console.log('Chart container not available, waiting for mount...');
-              } else if (chartContainer.current.offsetWidth === 0 || chartContainer.current.offsetHeight === 0) {
-                console.log('Chart container has no dimensions, waiting for layout...');
-              } else {
-                console.warn('Chart not available for redraw, chart.current:', chart.current, 'chartInitializing:', chartInitializing.current);
-                // Try to initialize the chart if it seems like it should exist but doesn't
-                console.log('Attempting fallback chart initialization...');
-                setTimeout(() => {
-                  if (!chart.current && chartContainer.current && !chartInitializing.current) {
-                    console.log('Retrying chart initialization...');
-                    chartInitializing.current = true;
-                    
-                    import('anychart').then((anychart) => {
-                      try {
-                        const stockChart = anychart.stock();
-                        const table = dataTable.current.table;
-                        const mapping = dataTable.current.mapping;
-                        
-                        const plot = stockChart.plot(0);
-                        plot.yGrid(true).xGrid(true);
-                        plot.yMinorGrid(true).xMinorGrid(true);
-                        
-                        const candlestickSeries = plot.candlestick(mapping);
-                        candlestickSeries.name(token + ' Price');
-                        candlestickSeries.risingStroke('#0f9d58');
-                        candlestickSeries.risingFill('#0f9d58');
-                        candlestickSeries.fallingStroke('#db4437');
-                        candlestickSeries.fallingFill('#db4437');
-                        
-                        // Make candlesticks touch each other
-                        candlestickSeries.pointWidth('90%');
-                        
-                        stockChart.title(`${token} Price Chart (Live)`);
-                        stockChart.container(chartContainer.current);
-                        stockChart.draw();
-                        
-                        chart.current = stockChart;
-                        chartInitializing.current = false;
-                        console.log('Fallback chart initialization successful');
-                        
-                        // Redraw to show accumulated data
-                        setTimeout(() => {
-                          if (chart.current) {
-                            chart.current.draw();
-                          }
-                        }, 100);
-                      } catch (error) {
-                        console.error('Fallback chart initialization failed:', error);
-                        chartInitializing.current = false;
-                      }
-                    }).catch(err => {
-                      console.error('Fallback AnyChart loading failed:', err);
-                      chartInitializing.current = false;
-                    });
-                  }
-                }, 500);
-              }
-            } catch (tableError) {
-              console.log('Object format failed for live data, trying array format...', tableError);
-              
-              // Try array format as fallback
-              const rowData = [
-                now.getTime(), // Use consistent millisecond timestamp
-                Number(newPoint.open),
-                Number(newPoint.high),
-                Number(newPoint.low),
-                Number(newPoint.close),
-                Number(newPoint.volume || 0)
-              ];
-              
-              console.log('Trying array format with data:', rowData);
-              table.addData(rowData);
-              console.log('Live data added with array format');
-              
-              // Trigger chart redraw to show new data
-              if (chart.current && typeof chart.current.draw === 'function') {
-                try {
-                  console.log('Attempting to redraw chart (array format)...');
-                  chart.current.draw();
-                  console.log('Chart redrawn with new data (array format)');
-                } catch (drawError) {
-                  console.warn('Error redrawing chart (array format):', drawError);
-                  // Try to fit all and redraw again
-                  try {
-                    chart.current.fitAll();
-                    setTimeout(() => {
-                      if (chart.current) {
-                        chart.current.draw();
-                      }
-                    }, 100);
-                  } catch (fitError) {
-                    console.warn('Error with fitAll and redraw (array format):', fitError);
-                  }
-                }
-              } else if (chartInitializing.current) {
-                console.log('Chart is still initializing (array format), will redraw when ready...');
-                // Chart is initializing, it will be redrawn automatically after initialization
-              } else if (!chartContainer.current) {
-                console.log('Chart container not available (array format), waiting for mount...');
-              } else if (chartContainer.current.offsetWidth === 0 || chartContainer.current.offsetHeight === 0) {
-                console.log('Chart container has no dimensions (array format), waiting for layout...');
-              } else {
-                console.warn('Chart not available for redraw (array format), chart.current:', chart.current, 'chartInitializing:', chartInitializing.current);
-                // Note: Fallback initialization is only needed in the first (object format) section
-                // to avoid duplicate attempts
-              }
-            }
-          } catch (error) {
-            console.error('Error adding live data to table:', error, {
-              newPoint,
-              now: now,
-              dataTable: dataTable.current
-            });
+          const table = dataTable.current.table;
+          const objectData = {
+            x: activePoint.x,
+            open: Number(activePoint.open),
+            high: Number(activePoint.high),
+            low: Number(activePoint.low),
+            close: Number(activePoint.close),
+            volume: Number(activePoint.volume || 0)
+          };
+          
+          table.addData([objectData]);
+          
+          // Redraw the chart to show the live candle growing/shrinking
+          if (chart.current && typeof chart.current.draw === 'function') {
+            chart.current.draw();
           }
         }
       } catch (error) {
-        console.error('Error in handlePriceUpdate:', error, { priceData });
+        console.error('Error updating live price table:', error);
       }
     };
 
@@ -477,31 +291,7 @@ const CandlestickChart = ({ token }) => {
     }
   }, [token, startDate, endDate, granularity]);
 
-  // State for retrieved segments
-  const [retrievedSegments, setRetrievedSegments] = useState([]);
 
-  // Fetch forecast data and set retrieved segments
-  const fetchForecast = useCallback(async () => {
-    try {
-      const response = await fetch(`/api/retrieval/forecast?symbol=${token}&k=3`);
-      if (!response.ok) return;
-      const data = await response.json();
-      if (data && data.retrieved) {
-        setRetrievedSegments(data.retrieved);
-      }
-    } catch (e) {
-      console.warn('Failed to fetch forecast segments:', e);
-    }
-  }, [token]);
-
-  // Set up polling for forecast segments every 10 seconds
-  useEffect(() => {
-    if (historicalDataLoaded) {
-      fetchForecast();
-      const interval = setInterval(fetchForecast, 10000);
-      return () => clearInterval(interval);
-    }
-  }, [historicalDataLoaded, fetchForecast]);
 
   const renderChart = (data) => {
     // Ensure chart container is available and has dimensions
@@ -586,78 +376,7 @@ const CandlestickChart = ({ token }) => {
         // Make candlesticks touch each other by setting point width
         candlestickSeries.pointWidth('90%'); // Use 90% of available space
         
-        // --- Overlay Standardized & Rescaled Retrieved Futures / Segments ---
-        if (formattedData.length > 0 && retrievedSegments && retrievedSegments.length > 0) {
-          const lastPoint = formattedData[formattedData.length - 1];
-          const lastTime = lastPoint.x;
-          
-          // Let N be the length of the retrieved segment prices
-          // We calculate the average of the last N close prices from formattedData to scale the standardized data
-          retrievedSegments.forEach((segment, idx) => {
-            if (segment.prices && Array.isArray(segment.prices)) {
-              const segLen = segment.prices.length;
-              
-              // Extract last N points (or fewer if we have less data)
-              const lastNPoints = formattedData.slice(-segLen);
-              const lastNCloses = lastNPoints.map(p => p.close);
-              const avgLastN = lastNCloses.length > 0 
-                ? lastNCloses.reduce((a, b) => a + b, 0) / lastNCloses.length 
-                : lastPoint.close;
-              
-              // Standardize the retrieved segment prices (z-score: (x - mean) / std)
-              const meanSeg = segment.prices.reduce((a, b) => a + b, 0) / segLen;
-              const varianceSeg = segment.prices.reduce((a, b) => a + Math.pow(b - meanSeg, 2), 0) / segLen;
-              const stdSeg = Math.sqrt(varianceSeg) || 1e-8;
-              
-              const standardizedPrices = segment.prices.map(p => (p - meanSeg) / stdSeg);
-              
-              // Rescale to match the level of the target N-period moving average
-              // We use the standard deviation of the last N closes to match volatility
-              const stdLastN = lastNCloses.length > 1
-                ? Math.sqrt(lastNCloses.reduce((a, b) => a + Math.pow(b - avgLastN, 2), 0) / (lastNCloses.length - 1))
-                : 1e-8;
-              
-              // Fallback to minimal volatility scaling if std is zero or negligible
-              const scaleStd = stdLastN > 0 ? stdLastN : avgLastN * 0.005;
-              
-              const rescaledPrices = standardizedPrices.map(sp => avgLastN + sp * scaleStd);
-              
-              const segmentTable = anychart.data.table('x');
-              const segmentData = [];
-              
-              // Anchor to the last actual chart close price
-              segmentData.push({
-                x: lastTime,
-                value: lastPoint.close
-              });
-              
-              const stepMs = granularity * 1000;
-              rescaledPrices.forEach((priceVal, pIdx) => {
-                segmentData.push({
-                  x: lastTime + (pIdx + 1) * stepMs,
-                  value: priceVal
-                });
-              });
-              
-              segmentTable.addData(segmentData);
-              const segmentMapping = segmentTable.mapAs({
-                x: 'x',
-                value: 'value'
-              });
-              
-              const forecastLine = plot.line(segmentMapping);
-              forecastLine.name(`Retrieved Future #${segment.id}`);
-              
-              const colors = ['#3b82f6', '#8b5cf6', '#ec4899'];
-              const chosenColor = colors[idx % colors.length];
-              forecastLine.stroke({
-                color: chosenColor,
-                dash: '4 4',
-                thickness: 2
-              });
-            }
-          });
-        }
+
         
         // Set chart title
         stockChart.title(`${token} Price Chart${isLiveUpdating ? ' (Live)' : ''}`);
@@ -737,7 +456,7 @@ const CandlestickChart = ({ token }) => {
       console.log('Rendering chart from useEffect...');
       renderChart(chartData.current);
     }
-  }, [loading, token, retrievedSegments]);
+  }, [loading, token]);
 
   // Handle live updates toggle
   useEffect(() => {

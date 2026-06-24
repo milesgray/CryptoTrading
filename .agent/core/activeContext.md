@@ -1,26 +1,23 @@
-# Active Context: Poetry to uv Migration & Real Exchange Data Recording
+# Active Context: Dedicated Forecasting Panel & Next Candle Predictor
 
 ## Quick Reference
-- **Feature**: Switch Python Packaging and Dependencies to uv, and record/retrieve actual exchange prices
-- **Branch**: `feature/uv-migration-and-retrieval`
-- **Plan File**: `/home/miles/.gemini/antigravity-ide/brain/93870454-a7cb-43d9-a756-25c3ea989e4e/walkthrough.md`
+- **Feature**: Dedicated Forecasting Panel, Next-Candle Color Classifier, and Configurable Ports
+- **Branch**: `feature/forecast-visualization-and-predictions`
 - **Status**: Completed & Verified ✅
 
 ## Executive Summary
-Migrate the entire repository from Poetry to `uv` for python packaging, orchestrate services under Docker Compose, and transition the pattern retrieval forecasting service from using simulated mock data to indexing and querying actual live prices recorded from exchanges.
+Decouple forecasting projections from the main trading chart by building a specialized, full-width Pattern Matching & Retrieval Forecast panel. Integrate dynamic settings (number of segments, length, frequency, order book weight) and checkbox toggles for individual patterns. Render a high-impact Next Candle Color Predictor widget to classify the direction of the immediate next price move (GREEN/RED) with consensus confidence, and parameterize all service ports dynamically in the Docker Compose setup.
 
 ## Key Accomplishments
-- **PEP 621 Standard**: Converted all `pyproject.toml` files from `[tool.poetry]` configurations to standard PEP 621 `[project]` definitions with Hatchling build backends.
-- **Lockfile Upgrades**: Removed legacy `poetry.lock` files and generated standard `uv.lock` files.
-- **Docker builds optimized**: Configured all service Dockerfiles to install `uv` via fast binaries and use `uv sync --frozen --no-install-project` to speed up and cache container builds.
-- **Sustained Retrieval Daemon**: Added a Uvicorn execution block in `services/retrieval/main.py` so the container runs persistently on port 8000.
-- **Real Price Recording & Ingestion**: Configured `MIN_VALID_FEEDS=2` in `docker-compose.yml` to allow the `record` service to compute and record actual index prices even when some exchanges are rate-limited.
-- **Real-time Logging Observability**: Added `PYTHONUNBUFFERED=1` to the python containers and added `logging.basicConfig(level=logging.INFO)` in the `record` service to enable real-time logs.
-- **Successful Database Retrieval**: Bypassed simulated/mock price data fallbacks on startup. The retrieval service successfully connected to TimescaleDB, fetched 44,381 real historical price candles, indexed 44,322 sliding window segments, built the vector index, and successfully served live `/forecast` similarity queries.
-- **AnyChart split() Fix**: Resolved AnyChart `.split()` runtime crash by converting volume labels format from tokenized strings to custom JavaScript formatting callback functions.
-- **Standardized Forecast Scaling**: Standardized retrieved futures data using Z-score mapping and rescaled it dynamically by the moving average of the last $N$ prices to align forecasting projection lines smoothly with the historical close price.
+- **Clean Main Candlestick Chart**: Pruned `CandlestickChart.jsx` to remove all forecast overlays, states, and polling, returning it to a clean, highly optimized historical/live price candlestick visualizer.
+- **Dedicated Retrieval Panel**: Rebuilt `RetrievalVisualizer.jsx` into a premium React dashboard component using ECharts to visualize recent query price history, individual retrieved patterns, and the calculated "Consensus Projection" line.
+- **Interactive Settings & Toggles**: Added slider/select controls for segment count ($k$), segment length, frequency, and order book weight, along with color-coded checkbox toggles to show/hide individual retrieved sequences dynamically.
+- **Next Candle Color Predictor**: Implemented a prominent indicator classifying the color of the very next candle (GREEN/RED) by calculating the consensus direction of the first forecasted step relative to the current close. Includes a horizontal progress bar showing consensus confidence (e.g. 80% of matches agree).
+- **Consensus Metrics**: Added a summary statistics card displaying expected forecast return, bullish consensus ratio, uncertainty (forecast volatility), and average match strength.
+- **Parameterize Compose Configurations**: Added configurable host port variables (for TimescaleDB, serve, retrieval, record, and frontend) to `.env` and `.env.example`, and updated `docker-compose.yml` to pull these configurations dynamically.
+- **Fixed pgvector Type Registration**: Solved the `unknown type: pg_catalog.vector` warning by changing the schema in the connection's `set_type_codec` call from `'pg_catalog'` to `'public'` in `postgres.py`.
 
 ## Next Objectives
-- Integrate `pgvector` HNSW queries into the REST API for Live Pattern Matching.
-- Implement TimescaleDB historical compression policies.
-- Run database performance and WebSocket latency load tests.
+- Implement historical TimescaleDB compression and retention policies.
+- Run database performance and latency load tests under simulated high-frequency updates.
+- Integrate pgvector HNSW index queries into the forecasting logic.

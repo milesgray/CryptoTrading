@@ -87,7 +87,7 @@ class PriceSystem:
                     self.levels[symbol].add_price_point(dt.datetime.now(dt.timezone.utc), index_price, volume=calc_results["size"])
                 # Store the calculated price
                 await self.data.store_price_data(
-                    symbol, index_price, condensed_book, valid_books, 
+                        symbol, index_price, condensed_book, valid_books, 
                     verbose=verbose)
                 
                 # Update last index price
@@ -96,9 +96,11 @@ class PriceSystem:
                 if symbol in self.last_price_times:         
                     delta = time.time() - self.last_price_times[symbol]
 
-                    self.status.info(f"Index price for {symbol}: {index_price:.2f} (from {len(valid_books)} feeds, in {delta:0.2f} seconds)")
+                    if self.status.verbose:
+                        self.status.info(f"Index price for {symbol}: {index_price:.2f} (from {len(valid_books)} feeds, in {delta:0.2f} seconds)")
                 else:
-                    self.status.info(f"Index price for {symbol}: {index_price:.2f} (from {len(valid_books)} feeds)")
+                    if self.status.verbose:
+                        self.status.info(f"Index price for {symbol}: {index_price:.2f} (from {len(valid_books)} feeds)")
                 self.last_price_times[symbol] = time.time()
                 self.status.update_data({"last_price_times": self.last_price_times})   
             else:

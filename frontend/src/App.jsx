@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import CandlestickChart from './components/CandlestickChart';
 import OrderBookPanel from './components/OrderBookPanel';
+import RetrievalVisualizer from './components/RetrievalVisualizer';
 import { getLatestPrice } from './services/api';
 
 const App = () => {
@@ -42,8 +43,8 @@ const App = () => {
             </header>
 
             <main>
-                <div className="mx-auto max-w-7xl py-6 sm:px-6 lg:px-8">
-                      <div className="mb-4">
+                <div className="mx-auto max-w-7xl py-6 sm:px-6 lg:px-8 flex flex-col gap-6">
+                      <div className="mb-2">
                         <label htmlFor="token-select" className="block text-sm font-medium text-gray-700">Select Token:</label>
                         <select
                           id="token-select"
@@ -55,6 +56,8 @@ const App = () => {
 
                         </select>
                     </div>
+                    
+                    {/* Upper row: Main Candlestick Chart & Order Book Panel */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="lg:col-span-2">
                             <CandlestickChart token={selectedToken} />
@@ -62,6 +65,11 @@ const App = () => {
                         <div className="lg:col-span-1">
                             <OrderBookPanel token={selectedToken} latestPriceData={latestPriceData} />
                         </div>
+                    </div>
+                    
+                    {/* Lower row: Dedicated Pattern Match Retrieval & Forecast Panel */}
+                    <div className="w-full">
+                        <RetrievalVisualizer token={selectedToken} />
                     </div>
                 </div>
             </main>

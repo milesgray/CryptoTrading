@@ -13,8 +13,9 @@ LOG_LEVELS = {
 }
 
 class StatusManager:
-    def __init__(self, name: str, max_logs: int = 1000):
+    def __init__(self, name: str, verbose: bool = False, max_logs: int = 1000):
         self.name = name
+        self.verbose = verbose
         self.logger = logging.getLogger(name)
         self.running = False
         self.paused = False

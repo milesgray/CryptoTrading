@@ -75,6 +75,7 @@ class DataFramePriceForecastDataset(Dataset):
         cols.remove(self.target)
         cols.remove(date_col)
         df_raw = df_raw[[date_col] + cols + [self.target]]
+        
         num_train = int(len(df_raw) * 0.7)
         num_test = int(len(df_raw) * 0.2)
         num_vali = len(df_raw) - num_train - num_test
@@ -144,7 +145,7 @@ class CSVPriceForecastDataset(DataFramePriceForecastDataset):
         df = pd.read_csv(csv_path)
         super().__init__(df, flag, size, features, target, scale, timeenc, freq) 
 
-class MongoDBPriceForecastDataset(DataFramePriceForecastDataset):
+class DBPriceForecastDataset(DataFramePriceForecastDataset):
     def __init__(self, flag: Literal['train', 'test', 'val'] = 'train', 
                  symbol: str = "BTC", 
                  start_time: Optional[datetime] = None, 
@@ -160,8 +161,28 @@ class MongoDBPriceForecastDataset(DataFramePriceForecastDataset):
 
 def data_provider(args, flag):
     if args.data_path.endswith('.csv'):
-        dataset = CSVPriceForecastDataset(args.data_path, flag, args.seq_len, args.label_len, args.pred_len)
+        dataset = CSVPriceForecastDataset(
+            args.data_path,
+            flag,
+            size=[args.seq_len, args.label_len, args.pred_len],
+            features=args.features,
+            target=args.target,
+            scale=args.scale,
+            timeenc=args.timeenc,
+            freq=args.freq
+        )
     elif args.data_path.endswith('.json'):
-        dataset = MongoDBPriceForecastDataset(flag, args.symbol, args.start_time, args.end_time, args.seq_len, args.label_len, args.pred_len)
+        dataset = DBPriceForecastDataset(
+            flag,
+            args.symbol,
+            args.start_time,
+            args.end_time,
+            args.seq_len,
+            args.label_len,
+            args.pred_len,
+            scale=args.scale,
+            timeenc=args.timeenc,
+            freq=args.freq
+        )
 
     return dataset
