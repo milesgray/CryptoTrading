@@ -41,24 +41,30 @@ async def startup_event():
             include_book=True
         )
         
-        if not candles or len(candles) < 60:
+        if not candles or len(candles) < 120:  # Need enough points for window (60) + horizon (60)
             logger.warning(f"Insufficient historical data found ({len(candles) if candles else 0} points). Falling back to mock data for indexing.")
             # Fallback to avoid service startup crash if DB is empty
             for i in range(100):
                 prices = np.random.rand(60) + i * 0.1
+                future_prices = np.random.rand(60) + (i + 60) * 0.1
                 order_book = {"bids": [[100 + i, 10]], "asks": [[101 + i, 10]]}
                 encoder_service.add_segment(prices, order_book, {
                     "id": i,
-                    "prices": prices.tolist(),
+                    "historical_prices": prices.tolist(),
+                    "prices": future_prices.tolist(),
                     "order_book": order_book
                 })
         else:
             logger.info(f"Loaded {len(candles)} historical candles. Building sliding window segments...")
-            # Build sliding windows of size 60
+            # Build sliding windows of size 60 with a forecasting horizon of 60
             window_size = 60
-            for i in range(len(candles) - window_size + 1):
+            horizon = 60
+            for i in range(len(candles) - window_size - horizon + 1):
                 window = candles[i : i + window_size]
+                future_window = candles[i + window_size : i + window_size + horizon]
+                
                 prices = np.array([float(c.close) for c in window])
+                future_prices = np.array([float(c.close) for c in future_window])
                 
                 # Retrieve the order book from the last candle in the window
                 last_candle = window[-1]
@@ -76,7 +82,8 @@ async def startup_event():
                 
                 encoder_service.add_segment(prices, order_book, {
                     "id": i,
-                    "prices": prices.tolist(),
+                    "historical_prices": prices.tolist(),
+                    "prices": future_prices.tolist(),
                     "order_book": order_book
                 })
             
@@ -87,10 +94,12 @@ async def startup_event():
         # Fallback setup on database connection error
         for i in range(100):
             prices = np.random.rand(60) + i * 0.1
+            future_prices = np.random.rand(60) + (i + 60) * 0.1
             order_book = {"bids": [[100 + i, 10]], "asks": [[101 + i, 10]]}
             encoder_service.add_segment(prices, order_book, {
                 "id": i,
-                "prices": prices.tolist(),
+                "historical_prices": prices.tolist(),
+                "prices": future_prices.tolist(),
                 "order_book": order_book
             })
             

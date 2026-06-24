@@ -28,6 +28,11 @@ dependencies = [
     "alembic>=1.11.3",
     "pgvector>=0.2.0",
     "scipy>=1.15.3",
+    "torch>=2.12.1",
+    "scikit-learn>=1.7.2",
+    "einops>=0.8.2",
+    "tqdm>=4.68.3",
+    "pmdarima>=2.1.1",
 ]
 
 [build-system]
@@ -36,3 +41,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["cryptotrading"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]

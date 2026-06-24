@@ -1,23 +1,23 @@
-# Active Context: Dedicated Forecasting Panel & Next Candle Predictor
+# Active Context: Forecasting Training Pipeline & RAFT Support
 
 ## Quick Reference
-- **Feature**: Dedicated Forecasting Panel, Next-Candle Color Classifier, and Configurable Ports
-- **Branch**: `feature/forecast-visualization-and-predictions`
+- **Feature**: Forecasting Training Pipeline, Index-Aware Dataloaders, and RAFT Model Support
+- **Branch**: `feature/forecast-training-pipeline`
 - **Status**: Completed & Verified ✅
 
 ## Executive Summary
-Decouple forecasting projections from the main trading chart by building a specialized, full-width Pattern Matching & Retrieval Forecast panel. Integrate dynamic settings (number of segments, length, frequency, order book weight) and checkbox toggles for individual patterns. Render a high-impact Next Candle Color Predictor widget to classify the direction of the immediate next price move (GREEN/RED) with consensus confidence, and parameterize all service ports dynamically in the Docker Compose setup.
+Implement and integrate the training side of the timeseries forecasting engine in the `CryptoTrading` quantitative trading framework. Resolve package-level import pathways, implement index-aware timeseries datasets to yield absolute sample indices, and extend the training experiment runners to support the shape-similarity Retrieval-Augmented Forecasting Transformer (RAFT) model. Verify the entire pipeline with a comprehensive integration test suite.
 
 ## Key Accomplishments
-- **Clean Main Candlestick Chart**: Pruned `CandlestickChart.jsx` to remove all forecast overlays, states, and polling, returning it to a clean, highly optimized historical/live price candlestick visualizer.
-- **Dedicated Retrieval Panel**: Rebuilt `RetrievalVisualizer.jsx` into a premium React dashboard component using ECharts to visualize recent query price history, individual retrieved patterns, and the calculated "Consensus Projection" line.
-- **Interactive Settings & Toggles**: Added slider/select controls for segment count ($k$), segment length, frequency, and order book weight, along with color-coded checkbox toggles to show/hide individual retrieved sequences dynamically.
-- **Next Candle Color Predictor**: Implemented a prominent indicator classifying the color of the very next candle (GREEN/RED) by calculating the consensus direction of the first forecasted step relative to the current close. Includes a horizontal progress bar showing consensus confidence (e.g. 80% of matches agree).
-- **Consensus Metrics**: Added a summary statistics card displaying expected forecast return, bullish consensus ratio, uncertainty (forecast volatility), and average match strength.
-- **Parameterize Compose Configurations**: Added configurable host port variables (for TimescaleDB, serve, retrieval, record, and frontend) to `.env` and `.env.example`, and updated `docker-compose.yml` to pull these configurations dynamically.
-- **Fixed pgvector Type Registration**: Solved the `unknown type: pg_catalog.vector` warning by changing the schema in the connection's `set_type_codec` call from `'pg_catalog'` to `'public'` in `postgres.py`.
+- **Index-Aware Timeseries Dataset**: Updated `DataFramePriceForecastDataset` to yield 5-tuples containing absolute sample indices, enabling retrieval-augmented models to index their historical search databases correctly.
+- **Package Import Resolutions**: Resolved all Python 3 relative/absolute import crashes and case-sensitive naming mismatches across the `cryptotrading.predict` submodules.
+- **Flexible Experiment Runners**: Extended `ForecastExp` and `MovementExp` to support the custom training steps required by RAFT (pre-computation database generation and index-based forward signatures).
+- **Dynamic Mode Selection**: Resolved an indexing out-of-bounds error during validation and testing loops by dynamically determining the RAFT forward pass mode (`'train'`, `'valid'`, `'test'`) based on the dataset's `set_type` attribute.
+- **Resilient Movement Training**: Corrected a training loop bug in `MovementExp` where `self.test` was incorrectly called instead of `self.vali` at epoch ends.
+- **Comprehensive Verification**: Developed and ran a robust test suite (`tests/test_training_pipeline.py`) verifying index-aware dataloaders, standard model training updates, and RAFT shape-similarity retrieval training. The full repository test suite passes with 100% success (8 passed).
 
 ## Next Objectives
-- Implement historical TimescaleDB compression and retention policies.
+- Implement historical database compression and retention policies on TimescaleDB.
+- Benchmark training throughput and retrieval speed under simulated high-frequency workloads.
 - Run database performance and latency load tests under simulated high-frequency updates.
 - Integrate pgvector HNSW index queries into the forecasting logic.

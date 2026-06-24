@@ -1,17 +1,33 @@
+import logging
 import datetime as dt
-from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
-from fastapi import FastAPI
-from cryptotrading.rollbit.prices.serve.models import (
-    OrderBookSummaryData, PriceBucket, 
-    PriceOutlier, 
-    CandlestickData, 
-    PriceDataPoint, 
-    TransformedOrderBookDataPoint, 
-    TransformedOrderBookData
-)
 
+from fastapi import FastAPI, HTTPException
+from pymongo import DESCENDING
+
+try:
+    from cryptotrading.rollbit.prices.serve.models import (
+        OrderBookSummaryData, PriceBucket, 
+        PriceOutlier, 
+        CandlestickData, 
+        PriceDataPoint, 
+        TransformedOrderBookDataPoint, 
+        TransformedOrderBookData
+    )
+except ModuleNotFoundError:
+    from .models import (
+        OrderBookSummaryData, PriceBucket, 
+        PriceOutlier, 
+        CandlestickData, 
+        PriceDataPoint, 
+        TransformedOrderBookDataPoint, 
+        TransformedOrderBookData
+    )
 from cryptotrading.config import DB_BACKEND
+
+logger = logging.getLogger(__name__)
+
+
 def process_order_book_data(book_data: Dict[str, Any]) -> OrderBookSummaryData:
     """Convert raw order book data into structured OrderBookSummaryData."""
     result = {
@@ -75,8 +91,8 @@ def process_order_book_data(book_data: Dict[str, Any]) -> OrderBookSummaryData:
 async def get_candlestick_data(
     app: FastAPI,
     token: str,
-    start_time: datetime,
-    end_time: datetime,
+    start_time: dt.datetime,
+    end_time: dt.datetime,
     granularity: int,
     include_book: bool = False
 ) -> List[CandlestickData]:
@@ -251,8 +267,8 @@ async def get_candlestick_data(
 async def get_historic_price(
     app: FastAPI,
     token: str, 
-    start_time: datetime,
-    end_time: datetime,
+    start_time: dt.datetime,
+    end_time: dt.datetime,
     page: int = 1,
     page_size: int = 1000
 ) -> Tuple[List[PriceDataPoint], int]:
@@ -363,8 +379,8 @@ async def get_latest_transformed_order_book_point(app: FastAPI, token: str) -> O
 async def get_transformed_order_book(
     app: FastAPI,
     token: str,
-    start_time: datetime,
-    end_time: datetime,
+    start_time: dt.datetime,
+    end_time: dt.datetime,
     granularity: int
 ) -> Optional[TransformedOrderBookData]:
     """Retrieves the transformed order book for a given token."""
@@ -399,7 +415,7 @@ async def get_transformed_order_book(
                 # Start a new bucket
                 bucket_start = bucket_time
                 current_bucket = {
-                    "timestamp": datetime.fromtimestamp(bucket_time / 1000, tz=dt.timezone.utc),
+                    "timestamp": dt.datetime.fromtimestamp(bucket_time / 1000, tz=dt.timezone.utc),
                     "lowest_ask": float('inf'),
                     "highest_bid": float('-inf'),
                     "points_in_bucket": 0

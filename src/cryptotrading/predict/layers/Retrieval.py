@@ -41,12 +41,12 @@ class RetrievalTool():
 
         for i in range(len(train_data)):
             td = train_data[i]
-            train_data_all.append(td[1])
+            train_data_all.append(td[0])
             
             if self.with_dec:
-                y_data_all.append(td[2][-(train_data.pred_len + train_data.label_len):])
+                y_data_all.append(td[1][-(train_data.pred_len + train_data.label_len):])
             else:
-                y_data_all.append(td[2][-train_data.pred_len:])
+                y_data_all.append(td[1][-train_data.pred_len:])
             
         self.train_data_all = torch.tensor(np.stack(train_data_all, axis=0)).float()
         self.train_data_all_mg, _ = self.decompose_mg(self.train_data_all)
@@ -169,7 +169,7 @@ class RetrievalTool():
         
         retrievals = []
         with torch.no_grad():
-            for index, batch_x, batch_y, batch_x_mark, batch_y_mark in tqdm(rt_loader):
+            for batch_x, batch_y, batch_x_mark, batch_y_mark, index in tqdm(rt_loader):
                 pred_from_retrieval = self.retrieve(batch_x.float().to(device), index, train=train)
                 pred_from_retrieval = pred_from_retrieval.cpu()
                 retrievals.append(pred_from_retrieval)

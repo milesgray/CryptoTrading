@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
-from layers.Embed import (
+from cryptotrading.predict.layers.Embed import (
     DataEmbedding, DataEmbedding_wo_pos,DataEmbedding_wo_pos_temp,DataEmbedding_wo_temp
 )
-from layers.AutoCorrelation import AutoCorrelation, AutoCorrelationLayer
-from layers.Autoformer_EncDec import (
+from cryptotrading.predict.layers.AutoCorrelation import AutoCorrelation, AutoCorrelationLayer
+from cryptotrading.predict.layers.Autoformer_EncDec import (
     Encoder, Decoder, EncoderLayer, DecoderLayer, my_Layernorm, series_decomp
 )
 

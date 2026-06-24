@@ -1,8 +1,9 @@
 import argparse
 import os
 import torch
-from exp import ForecastExp, MovementExp
-from utils.print_args import print_args
+from cryptotrading.predict.exp.forecast import ForecastExp
+from cryptotrading.predict.exp.movement import MovementExp
+from cryptotrading.predict.utils.print_args import print_args
 import random
 import numpy as np
 from tqdm import tqdm

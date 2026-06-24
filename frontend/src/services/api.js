@@ -414,4 +414,64 @@ export const getLatestPrice = async (token) => {
       }
       throw error;
   }
-}
+};
+
+export const getServices = async () => {
+  try {
+    const response = await api.get('/services');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching services:', error);
+    throw error;
+  }
+};
+
+export const startService = async (name) => {
+  try {
+    const response = await api.post(`/services/${name}/start`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error starting service ${name}:`, error);
+    throw error;
+  }
+};
+
+export const stopService = async (name) => {
+  try {
+    const response = await api.post(`/services/${name}/stop`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error stopping service ${name}:`, error);
+    throw error;
+  }
+};
+
+export const restartService = async (name) => {
+  try {
+    const response = await api.post(`/services/${name}/restart`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error restarting service ${name}:`, error);
+    throw error;
+  }
+};
+
+export const getServiceLogs = async (name, limit = 100) => {
+  try {
+    const response = await api.get(`/services/${name}/logs`, { params: { limit } });
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching logs for service ${name}:`, error);
+    throw error;
+  }
+};
+
+export const updateServiceConfig = async (name, config) => {
+  try {
+    const response = await api.post(`/services/${name}/config`, { config });
+    return response.data;
+  } catch (error) {
+    console.error(`Error updating config for service ${name}:`, error);
+    throw error;
+  }
+};

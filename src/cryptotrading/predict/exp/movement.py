@@ -1,7 +1,7 @@
-from data_provider.data_factory import data_provider
+from cryptotrading.predict.data import data_provider
 from .base import BaseExp
-from utils.tools import EarlyStopping, adjust_learning_rate, visual
-from utils.metrics import metric
+from cryptotrading.predict.utils.tools import EarlyStopping, adjust_learning_rate, visual
+from cryptotrading.predict.utils.metrics import metric
 from cryptotrading.predict.models import get_model
 import torch
 import torch.nn as nn
@@ -11,7 +11,7 @@ import time
 import warnings
 import numpy as np
 from tqdm import tqdm
-from utils.tools import use_amp
+from cryptotrading.predict.utils.tools import use_amp
 
 warnings.filterwarnings("ignore")
 
@@ -36,14 +36,13 @@ class MovementExp(BaseExp):
         total_loss = []
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark) in enumerate(vali_loader):
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_index) in enumerate(vali_loader):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float()
-
                 batch_x_mark = batch_x_mark.float().to(self.device)
 
                 # encoder - decoder                
-                with torch.amp.autocast(device_type=self.device, enabled=self.args.use_amp):
+                with torch.amp.autocast(device_type=self.device.type, enabled=self.args.use_amp):
                     outputs, _ = self.model(batch_x, batch_x_mark)                
                     outputs = outputs[:, -1]
 
@@ -51,7 +50,6 @@ class MovementExp(BaseExp):
                     true = batch_y.detach().cpu()
 
                     loss = criterion(pred, true)
-
                     total_loss.append(loss.item())
         total_loss = np.average(total_loss)
         self.model.train()
@@ -68,7 +66,6 @@ class MovementExp(BaseExp):
             os.makedirs(path)
 
         time_now = time.time()
-
         train_steps = len(train_loader)
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
 
@@ -77,6 +74,7 @@ class MovementExp(BaseExp):
 
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
+            
         ebar = tqdm(range(self.args.train_epochs), disable=use_print)
         for epoch in ebar:
             iter_count = 0
@@ -85,7 +83,7 @@ class MovementExp(BaseExp):
             self.model.train()
             epoch_time = time.time()
             bar = tqdm(enumerate(train_loader), disable=use_print)
-            for i, (batch_x, batch_y, batch_x_mark) in bar:
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_index) in bar:
                 metrics = {}
                 iter_count += 1
                 model_optim.zero_grad()
@@ -95,8 +93,9 @@ class MovementExp(BaseExp):
                 total_loss = None
                 train_correct = 0
                 train_total = 0
+                
                 # encoder - decoder
-                with torch.amp.autocast(device_type=self.device, enabled=self.args.use_amp):
+                with torch.amp.autocast(device_type=self.device.type, enabled=self.args.use_amp):
                     outputs, confidence = self.model(batch_x, batch_x_mark)
                     outputs = outputs[:, -1]
 
@@ -113,9 +112,9 @@ class MovementExp(BaseExp):
                     metrics["loss_avg"] = sum(train_loss) / len(train_loss)
                     metrics["acc"] = train_correct / train_total
                     metrics["confidence"] = confidence.mean().item()
-                    metrics["correct_confidence"] = correct_confidence.mean().item()
+                    metrics["correct_confidence"] = correct_confidence.mean().item() if len(correct_confidence) > 0 else 0.0
                     metrics["incorrect_confidence"] = (
-                        incorrect_confidence.mean().item()
+                        incorrect_confidence.mean().item() if len(incorrect_confidence) > 0 else 0.0
                     )
                 
                 if use_print and (i + 1) % 100 == 0:
@@ -148,7 +147,7 @@ class MovementExp(BaseExp):
                 )
             train_loss = np.average(train_loss)
             vali_loss = self.vali(vali_data, vali_loader, criterion)
-            test_loss = self.test(test_data, test_loader, criterion)
+            test_loss = self.vali(test_data, test_loader, criterion)
             ebar.set_postfix({"vali": vali_loss, "test": test_loss})
             if use_print:
                 print(
@@ -188,21 +187,14 @@ class MovementExp(BaseExp):
 
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, batch_index) in enumerate(
                 test_loader
             ):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
 
-                with torch.amp.autocast(device_type=self.device, enabled=self.args.use_amp):
-                    if self.args.output_attention:
-                        predictions, confidence = self.model(
-                            batch_x
-                        )
-                    else:
-                        predictions, confidence = self.model(
-                            batch_x
-                        )                
+                with torch.amp.autocast(device_type=self.device.type, enabled=self.args.use_amp):
+                    predictions, confidence = self.model(batch_x, batch_x_mark)                
                 predictions = predictions[:, -1]  # Get prediction for the last timestep
                 confidence = confidence[:, -1]
 
@@ -212,15 +204,15 @@ class MovementExp(BaseExp):
                 test_total += batch_y.size(0)
 
                 # Store predictions and targets
-                test_predictions.append(predicted_classes.numpy())
-                test_confidences.append(confidence.numpy())
-                test_targets.append(batch_y.numpy())
+                test_predictions.append(predicted_classes.cpu().numpy())
+                test_confidences.append(confidence.cpu().numpy())
+                test_targets.append(batch_y.cpu().numpy())
 
                 pred = predictions
                 true = batch_y
 
-                preds.append(pred)
-                trues.append(true)
+                preds.append(pred.cpu().numpy())
+                trues.append(true.cpu().numpy())
                 if i % 20 == 0:
                     x = batch_x.detach().cpu().numpy()
                     if test_data.scale and self.args.inverse:
@@ -228,8 +220,8 @@ class MovementExp(BaseExp):
                         x = test_data.inverse_transform(x.squeeze(0)).reshape(
                             shape
                         )
-                    gt = np.concatenate((x[0, :, -1], true[0, :, -1]), axis=0)
-                    pd = np.concatenate((x[0, :, -1], pred[0, :, -1]), axis=0)
+                    gt = np.concatenate((x[0, :, -1], true.cpu().numpy()[0]), axis=0)
+                    pd = np.concatenate((x[0, :, -1], pred.cpu().numpy()[0]), axis=0)
                     visual(gt, pd, os.path.join(folder_path, str(i) + ".pdf"))
         test_predictions = np.concatenate(test_predictions)
         test_confidences = np.concatenate(test_confidences)
@@ -241,8 +233,8 @@ class MovementExp(BaseExp):
         preds = np.array(preds)
         trues = np.array(trues)
         print("test shape:", preds.shape, trues.shape)
-        preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
-        trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
+        preds = preds.reshape(-1, preds.shape[-1])
+        trues = trues.reshape(-1, trues.shape[-1])
         print("test shape:", preds.shape, trues.shape)
 
         # result save
@@ -250,6 +242,7 @@ class MovementExp(BaseExp):
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
+        # For movement prediction, mae/mse are computed on binary probabilities
         mae, mse, rmse, mape, mspe = metric(preds, trues)
         print("mse:{}, mae:{}".format(mse, mae))
         f = open("result_long_term_forecast.txt", "a")

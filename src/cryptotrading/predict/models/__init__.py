@@ -1,15 +1,15 @@
-from Autoformer import Autoformer
-from DLinear import DLinear
-from ETSformer import ETSformer
-from Informer import Informer
-from Linear import Linear
-from NLinear import NLinear
-from Pyraformer import Pyraformer
-from RAFT import RAFT
-from Stat_models import Naive_repeat,Arima,SArima,GBRT
-from TemporalFlow import TemporalFlow
-from Transformer import Transformer
-from WAVESTATE import WAVESTATE
+from .Autoformer import Autoformer
+from .DLinear import DLinear
+from .ETSFormer import ETSformer
+from .Informer import Informer
+from .Linear import Linear
+from .NLinear import NLinear
+from .Pyraformer import Pyraformer
+from .RAFT import RAFT
+from .Stat_models import Naive_repeat, Arima, SArima, GBRT
+from .TemporalFlow import TemporalFlowNetwork as TemporalFlow
+from .Transformer import Transformer
+from .WAVESTATE import WAVESTATE
 
 
 def get_model(configs):
@@ -38,11 +38,13 @@ def get_model(configs):
     else:
         raise ValueError('Model not found')
 
-__all__ = ['get_model', 
-'Autoformer', 'DLinear', 
-'ETSformer', 'Informer', 
-'Linear', 'NLinear', 
-'Naive_repeat', 'Arima', 'SArima', 'GBRT',
-'Pyraformer', 'RAFT', 
-'TemporalFlow', 'Transformer', 
-'WAVESTATE']
+__all__ = [
+    'get_model', 
+    'Autoformer', 'DLinear', 
+    'ETSformer', 'Informer', 
+    'Linear', 'NLinear', 
+    'Naive_repeat', 'Arima', 'SArima', 'GBRT',
+    'Pyraformer', 'RAFT', 
+    'TemporalFlow', 'Transformer', 
+    'WAVESTATE'
+]

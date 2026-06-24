@@ -100,13 +100,13 @@ class DataFramePriceForecastDataset(Dataset):
         df_stamp = df_raw[[date_col]][border1:border2]
         df_stamp[date_col] = pd.to_datetime(df_stamp[date_col])
         if self.timeenc == 0:
-            df_stamp['month'] = df_stamp[date_col].apply(lambda row: row.month, 1)
-            df_stamp['day'] = df_stamp[date_col].apply(lambda row: row.day, 1)
-            df_stamp['weekday'] = df_stamp[date_col].apply(lambda row: row.weekday(), 1)
-            df_stamp['hour'] = df_stamp[date_col].apply(lambda row: row.hour, 1)
-            df_stamp['minute'] = df_stamp[date_col].apply(lambda row: row.minute, 1)
-            df_stamp['second'] = df_stamp[date_col].apply(lambda row: row.second, 1)
-            data_stamp = df_stamp.drop([date_col], 1).values
+            df_stamp['month'] = df_stamp[date_col].dt.month
+            df_stamp['day'] = df_stamp[date_col].dt.day
+            df_stamp['weekday'] = df_stamp[date_col].dt.weekday
+            df_stamp['hour'] = df_stamp[date_col].dt.hour
+            df_stamp['minute'] = df_stamp[date_col].dt.minute
+            df_stamp['second'] = df_stamp[date_col].dt.second
+            data_stamp = df_stamp.drop([date_col], axis=1).values
         elif self.timeenc == 1:
             data_stamp = time_features(pd.to_datetime(df_stamp[date_col].values), freq=self.freq)
             data_stamp = data_stamp.transpose(1, 0)
@@ -129,10 +129,10 @@ class DataFramePriceForecastDataset(Dataset):
         seq_x_mark = self.data_stamp[s_begin:s_end]
         seq_y_mark = self.data_stamp[r_begin:r_end]
 
-        return seq_x, seq_y, seq_x_mark, seq_y_mark
+        return seq_x, seq_y, seq_x_mark, seq_y_mark, index
 
     def __len__(self):
-        return len(self.data_x) - self.seq_len - self.pred_len + 1
+        return max(0, len(self.data_x) - self.seq_len - self.pred_len + 1)
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
@@ -159,6 +159,8 @@ class DBPriceForecastDataset(DataFramePriceForecastDataset):
 
         super().__init__(df, flag, size, features, target, scale, timeenc, freq) 
 
+from torch.utils.data import DataLoader
+
 def data_provider(args, flag):
     if args.data_path.endswith('.csv'):
         dataset = CSVPriceForecastDataset(
@@ -184,5 +186,28 @@ def data_provider(args, flag):
             timeenc=args.timeenc,
             freq=args.freq
         )
+    else:
+        raise ValueError(f"Unsupported data path: {args.data_path}")
 
-    return dataset
+    if flag == 'test' or flag == 'val':
+        shuffle = False
+        drop_last = False
+        batch_size = args.batch_size
+    elif flag == 'pred':
+        shuffle = False
+        drop_last = False
+        batch_size = 1
+    else:
+        shuffle = True
+        drop_last = True
+        batch_size = args.batch_size
+
+    data_loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=args.num_workers if (hasattr(args, 'num_workers') and args.num_workers is not None) else 0,
+        drop_last=drop_last
+    )
+
+    return dataset, data_loader

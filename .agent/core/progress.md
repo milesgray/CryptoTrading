@@ -29,15 +29,19 @@
 - [x] Build dedicated ECharts retrieval-augmented forecasting panel and next-candle direction predictor.
 - [x] Run load tests evaluating API WebSocket server latency across multiple token configurations.
 
+### Phase 5: Deep Learning Training Pipeline & RAFT Integration (Completed ✅)
+- [x] Modify timeseries dataset and dataloaders to return absolute sample indices.
+- [x] Resolve Python 3 relative/absolute import pathways and case-sensitivity issues in the deep learning submodules.
+- [x] Extend `ForecastExp` and `MovementExp` training runners to support RAFT pre-computation phases and index-based forward signatures.
+- [x] Fix training loop evaluation bugs and implement dynamic evaluation modes in `forecast.py` and `movement.py`.
+- [x] Write and run training pipeline integration tests verifying deep learning training pipelines end-to-end.
+
 ## Sprint Progress
 
-### Current Goal: Postgres TimescaleDB Migration, pgvector Forecasting, and Optimization
-- [x] Implement Postgres/TimescaleDB adapters and dynamic DB backend factory.
-- [x] Fix JEPA broken model/helper imports and ensure model tests pass.
-- [x] Identify and formalize loosely typed data models (ExchangeRawOrderBook, TweetDataPoint, TweetSentiment).
-- [x] Create comprehensive data dictionary documentation (README.md).
-- [x] Connect analytics helpers to the database backend factory.
-- [x] Connect the FastAPI server directly to the PostgreSQL + pgvector setups library for live pattern matching queries and next-candle direction consensus.
-- [x] Parameterize all service port mappings and container environment variables in .env.
-- [x] Fix pgvector connection type codec registration schema.
-- [x] Refactor frontend Dockerfile into a multi-stage development/production layout.
+### Current Goal: Deep Learning Training Pipeline & RAFT Support
+- [x] Modify timeseries dataset and dataloaders to return absolute sample indices.
+- [x] Resolve Python 3 relative/absolute import pathways and case-sensitivity issues in the deep learning submodules.
+- [x] Refactor `ForecastExp` and `MovementExp` to support RAFT pre-computation and index-based forward signatures.
+- [x] Make model evaluation modes dynamic based on the dataset split flag.
+- [x] Fix movement training loop bug that incorrectly called `self.test` instead of `self.vali`.
+- [x] Develop and execute training pipeline integration tests verifying 100% success.
