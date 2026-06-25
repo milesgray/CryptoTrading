@@ -119,7 +119,10 @@ if __name__ == '__main__':
     print('Args in experiment:')
     print_args(args)
 
-    if args.task_name == 'forecast':
+    if args.task_name in ('forecast', 'long_term_forecast', 'short_term_forecast'):
+        # Normalize 'forecast' to 'long_term_forecast' so model forward() branches match
+        if args.task_name == 'forecast':
+            args.task_name = 'long_term_forecast'
         Exp = ForecastExp
     elif args.task_name == 'movement':
         Exp = MovementExp

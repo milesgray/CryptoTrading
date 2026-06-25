@@ -60,8 +60,10 @@ class RetrievalForecaster:
             h_mean, h_std = np.mean(h_arr), np.std(h_arr)
             
             if q_std > 1e-8 and h_std > 1e-8:
-                q_norm = (prices - q_mean) / q_std
-                h_norm = (h_arr - h_mean) / h_std
+                # Truncate to equal length to prevent ValueError in corrcoef
+                min_len = min(len(prices), len(h_arr))
+                q_norm = (prices[:min_len] - q_mean) / q_std
+                h_norm = (h_arr[:min_len] - h_mean) / h_std
                 correlation = float(np.corrcoef(q_norm, h_norm)[0, 1])
                 if np.isnan(correlation):
                     correlation = 0.0
