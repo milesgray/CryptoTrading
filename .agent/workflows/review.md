@@ -60,3 +60,15 @@ Make sure to:
 4. Remember that if a specific git commit is referenced, it may not be checked out and local code states may be different.
 5. Make sure to remove json file after posting the review.
 6. If you need to make changes to the code, make sure to commit them and push them to the remote repository.
+
+## Troubleshooting GitHub PR Reviews API (HTTP 422)
+
+If the `post-to-pr.sh` script fails with **HTTP 422 Unprocessable Entity ("Line could not be resolved")**, it is due to one of two causes:
+1. **Unpushed Local Changes**: If the review references new lines introduced by your local bug fixes, you **must commit and push** those changes to the remote branch before posting the review, otherwise GitHub's remote does not recognize the new line numbers.
+2. **Comment Outside Diff Range**: GitHub's PR reviews API only permits comments on lines that are modified or added as part of the PR diff. If a code review comment is placed on a pre-existing line that wasn't changed:
+   - Identify the actual modified lines using:
+     ```bash
+     git --no-pager diff --no-ext-diff -U0 main -- <path-to-file>
+     ```
+   - Re-map the comment's `line` property in the JSON file to a line number within one of the changed blocks (ranges of lines marked with `+` in the diff), and update the comment body accordingly.
+
