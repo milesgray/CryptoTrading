@@ -2,8 +2,8 @@
 
 ## Quick Reference
 - **Feature**: Forecasting Training Pipeline, Index-Aware Dataloaders, and RAFT Model Support
-- **Branch**: `feature/forecast-training-pipeline`
-- **Status**: Completed & Verified ✅
+- **Branch**: `main` (Merged from `feature/forecast-training-pipeline`)
+- **Status**: Merged & Completed ✅
 
 ## Executive Summary
 Implement and integrate the training side of the timeseries forecasting engine in the `CryptoTrading` quantitative trading framework. Resolve package-level import pathways, implement index-aware timeseries datasets to yield absolute sample indices, and extend the training experiment runners to support the shape-similarity Retrieval-Augmented Forecasting Transformer (RAFT) model. Verify the entire pipeline with a comprehensive integration test suite.
