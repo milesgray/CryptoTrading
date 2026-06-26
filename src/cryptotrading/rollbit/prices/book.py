@@ -139,27 +139,13 @@ class OrderBookManager:
         
         current_time = time.time() * 1000  # Current time in milliseconds
         valid_books = []
-        book_dfs = {}
-        
-        # Calculate median mid price
         mid_prices = []
-        spreads = []
         for book in order_books:
             if book['bids'] and book['asks']:
                 best_bid = book['bids'][0][0]
                 best_ask = book['asks'][0][0]
                 mid_price = (best_bid + best_ask) / 2                
                 mid_prices.append(mid_price)
-
-                book_df = order_book_to_df(book['bids'], book['asks'])
-                ask_filter = book_df['side'] == 'a'
-                bid_filter = book_df['side'] == 'b'
-                size_filter = book_df['size'] > 0
-                highest_bid = book_df[ask_filter & size_filter]['price'].max()
-                lowest_ask = book_df[bid_filter & size_filter]['price'].min()
-                                
-                spreads.append(abs(lowest_ask - highest_bid))
-                book_dfs[book['exchange']] = book_df
         
         if not mid_prices:
             return []
