@@ -29,6 +29,7 @@ const ServiceControlDashboard = () => {
   useEffect(() => {
     let socket = null;
     let pollInterval = null;
+    let isPolling = false;
 
     const handleStatusUpdate = (data) => {
       setServices(data);
@@ -57,9 +58,24 @@ const ServiceControlDashboard = () => {
       });
 
       // Automatically select the first service if none is selected
-      if (data.length > 0 && !selectedService) {
-        setSelectedService(data[0].name);
-      }
+      setSelectedService(curr => curr || data[0]?.name || null);
+    };
+
+    const startPolling = () => {
+      if (isPolling) return;
+      isPolling = true;
+      console.log('[Orchestrator Status] Falling back to HTTP polling (3s interval)');
+      
+      const fetchStatus = async () => {
+        try {
+          const data = await getServices();
+          handleStatusUpdate(data);
+        } catch (err) {
+          console.error('Error polling services:', err);
+        }
+      };
+      fetchStatus();
+      pollInterval = setInterval(fetchStatus, 3000);
     };
 
     // Try WebSocket connection first
@@ -90,24 +106,16 @@ const ServiceControlDashboard = () => {
       startPolling();
     }
 
-    const startPolling = () => {
-      const fetchStatus = async () => {
-        try {
-          const data = await getServices();
-          handleStatusUpdate(data);
-        } catch (err) {
-          console.error('Error polling services:', err);
-        }
-      };
-      fetchStatus();
-      pollInterval = setInterval(fetchStatus, 2000);
-    };
-
     return () => {
-      if (socket) socket.close();
+      if (socket) {
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+        socket.close();
+      }
       if (pollInterval) clearInterval(pollInterval);
     };
-  }, [selectedService]);
+  }, []);
 
   // 2. Log Polling
   useEffect(() => {

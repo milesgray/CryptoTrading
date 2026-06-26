@@ -40,7 +40,7 @@ If questions 3 and 4 are both "no" / "none", stop here. **No skill action needed
 Before creating anything, scan all available skills to check for overlap.
 
 ```
-.windsurf/skills/
+.agent/skills/
 .claude/skills/
 ```
 
@@ -80,7 +80,7 @@ Only proceed here if Steps 3–4 justify action.
 
 1. Copy the existing `SKILL.md` to a writable location:
    ```bash
-   cp .windsurf/skills/<path>/SKILL.md /tmp/<skill-name>/SKILL.md
+   cp .agent/skills/<path>/SKILL.md /tmp/<skill-name>/SKILL.md
    ```
 2. Identify exactly what to add:
    - New pitfall or gotcha → add to a `## Known Issues / Pitfalls` section

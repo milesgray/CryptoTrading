@@ -47,7 +47,7 @@ git remote prune origin      # clean up stale refs
 - `--ff-only`: Fast-forward only (fails if non-linear history—safer)
 - Use `--no-ff` if you want to preserve merge commits
 
-## Windsurf Integration
+## agent Integration
 Add to your existing workflow chain. Full sequence:
 1. **commit** → staged changes
 2. **lint** → code quality

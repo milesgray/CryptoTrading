@@ -1,24 +1,22 @@
-# Active Context: Order Book Analytics & Multi-Exchange Metrics
+# Active Context: FastAPI Serve Service Router Split
 
 ## Quick Reference
-- **Feature**: Order Book Validation Correction & Multi-Exchange Meta-Statistics
-- **Branch**: `main`
+- **Feature**: FastAPI Serve Service Router Split & Modularization
+- **Branch**: `refactor/split-serve-routers`
 - **Status**: Completed ✅
 
 ## Executive Summary
-Verified all order book analytics, fixed bid/ask filter bugs in the feed validator, added detailed mathematical docstrings to the Rollbit pricing formulation, and introduced a new cross-exchange metrics calculator to track price dispersion, concentration (HHI), and global arbitrage opportunities. Wrote a comprehensive test suite to ensure correctness under all edge cases.
+Refactored the monolithic API gateway server in `services/serve/app.py` into separate, modular `APIRouter` submodules under `services/serve/routers/`. Verified WebSocket connection sharing, proxy forwarding to the pattern retrieval service, subprocess orchestration endpoints, and validated all integrations via local unit tests and manual curl endpoints verification.
 
 ## Key Accomplishments
-- **Feed Validator Correction**: Corrected a swapped filters logic bug in `validate_feeds` in `book.py` where bid/ask filters were inverted for highest bid and lowest ask.
-- **Rollbit Pricing Documentation**: Added mathematical derivations and operational docstrings detailing the 11-step composite price index calculation.
-- **Multi-Exchange Metrics Module**: Implemented `metrics.py` calculating:
-  - **Price Dispersion**: Standard deviation of exchange mid-prices.
-  - **Global Arbitrage**: Crossed-book detections across exchanges (identifying buy/sell pairs and spreads).
-  - **Liquidity Concentration (HHI)**: Herfindahl-Hirschman Index of order book depth.
-  - **Index Deviation**: Mean absolute deviation and standard deviation of each feed from the calculated index price.
-- **Comprehensive Unit Tests**: Developed `tests/test_order_book_analytics.py` verifying standard operations, crossed book filtering, outlier filtering, metrics, and feed validator fixes. All tests pass successfully (13 passed total).
+- **Modularized FastAPI Endpoints**: Extracted endpoints from `app.py` into logical groups:
+  - `routers/market.py`: All price REST/WebSocket streams, order books, and candlestick endpoints.
+  - `routers/retrieval.py`: Proxying forecasting queries to the retrieval service.
+  - `routers/services.py`: Subprocess control REST routes and services status updates WebSocket.
+- **Unified Connection Management**: Instantiated a global shared `websocket_manager = ConnectionManager()` in `services/serve/websocket.py` to prevent duplicate pools between the background change watchers and active WebSocket endpoints.
+- **Decoupled Architecture**: Bound application dependencies (database connection handles and ingestion adapters) directly to the incoming request/websocket context via `request.app` / `websocket.app` properties.
+- **Validation**: All 13 local unit tests passed successfully. The `serve` Docker container was rebuilt, started, and manually verified via health check and retrieval forecast proxies.
 
 ## Next Objectives
-- Integrate cross-exchange metrics into the main database storing pipeline.
-- Hook metrics into the frontend dashboard for real-time visualization.
-- Configure alerts when arbitrage opportunities rise above a profitable threshold.
+- Clean up unused docker images.
+- Investigate persistent state storage for service configurations.

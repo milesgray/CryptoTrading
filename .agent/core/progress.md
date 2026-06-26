@@ -42,11 +42,18 @@
 - [x] Implement multi-exchange order book meta-statistics (price dispersion, HHI concentration, global arbitrage spreads).
 - [x] Write and verify comprehensive unit tests in `tests/test_order_book_analytics.py`.
 
+### Phase 7: FastAPI Codebase Refactoring & Modularity (Completed ✅)
+- [x] Modularize `services/serve/app.py` by extracting endpoints to specific APIRouters under `services/serve/routers/`.
+- [x] Extract market feed REST/WebSocket streams to `market.py`.
+- [x] Extract retrieval forecasting proxy to `retrieval.py`.
+- [x] Extract background service control and status WebSocket endpoints to `services.py`.
+- [x] Resolve circular imports by shifting dependencies to request/websocket contexts.
+- [x] Instantiate a unified global `websocket_manager` singleton in `websocket.py`.
+
 ## Sprint Progress
 
-### Current Goal: Order Book Analytics & Multi-Exchange Metrics
-- [x] Fix bid/ask filter logic bug in `validate_feeds` in `book.py`.
-- [x] Add detailed mathematical docstrings to the Rollbit index price calculation in `formula.py`.
-- [x] Implement multi-exchange order book meta-statistics (price dispersion, HHI concentration, global arbitrage spreads).
-- [x] Write and verify comprehensive unit tests in `tests/test_order_book_analytics.py`.
-- [x] Update Memory Bank and walkthrough documentation.
+### Current Goal: FastAPI Serve Service Router Split
+- [x] Extract endpoints from monolithic serving app to router submodules.
+- [x] Instantiate unified WebSocket ConnectionManager singleton.
+- [x] Update memory bank, active context, and README documentation.
+- [x] Verify local tests and run live Docker compose queries.

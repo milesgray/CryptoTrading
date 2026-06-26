@@ -78,14 +78,14 @@ Before touching anything, confirm the task is actually done:
 
 Update the project's persistent memory so future sessions start with accurate context.
 
-1. Check for a memory file. Look for: `.windsurf/memory.md`, `AGENTS.md`, `CONTEXT.md`, `docs/memory.md`, `.cursor/memory.md`, or any file the project uses as an LLM context anchor.
+1. Check for a memory file. Look for: `.agent/memory.md`, `AGENTS.md`, `CONTEXT.md`, `docs/memory.md`, `.cursor/memory.md`, or any file the project uses as an LLM context anchor.
 2. If a memory file exists, update it to reflect:
    - The task that was just completed (one-line summary)
    - Any new environment variables, secrets, or config values introduced
    - Any new dependencies added (`requirements.txt`, `package.json`, etc.)
    - Any architectural decisions made during this task
    - Current known blockers or next steps (if any)
-3. If no memory file exists, create `.windsurf/memory.md` with the above fields using this template:
+3. If no memory file exists, create `.agent/memory.md` with the above fields using this template:
 
    ```markdown
    # Project Memory
