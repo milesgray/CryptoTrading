@@ -117,10 +117,10 @@ flowchart TD
 
 <EventHandlers>
   <Handler event="SessionStart">
-    <Action>Check if `.windsurf/` directory structure exists</Action>
+    <Action>Check if `.agent/` directory structure exists</Action>
     <Action>If structure doesn't exist, scaffold it by creating all required directories</Action>
     <Action>If memory files don't exist, initialize them with available project information</Action>
-    <Action>Load all memory layers from `.windsurf/core/`</Action>
+    <Action>Load all memory layers from `.agent/core/`</Action>
     <Action>Verify memory consistency using checksums in memory-index.md</Action>
     <Action>Identify current task context from activeContext.md</Action>
     <Action>Create a memory of this initialization process using the CASCADE GENERATED MEMORY system for automatic reminder via EPHEMERAL MEMORY</Action>
@@ -134,7 +134,7 @@ flowchart TD
   </Handler>
 
   <Handler event="ErrorDetected">
-    <Action>Document error details in `.windsurf/errors/`</Action>
+    <Action>Document error details in `.agent/errors/`</Action>
     <Action>Check memory for similar errors</Action>
     <Action>Apply recovery strategy</Action>
     <Action>Update error patterns</Action>

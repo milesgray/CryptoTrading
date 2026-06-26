@@ -11,13 +11,13 @@ This directory contains scripts to automate and enforce the Git workflow defined
 
 1. Make the scripts executable:
    ```bash
-   chmod +x .windsurf/git_workflow.sh
-   chmod +x .windsurf/pre-commit
+   chmod +x .agent/git_workflow.sh
+   chmod +x .agent/pre-commit
    ```
 
 2. Set up the pre-commit hook:
    ```bash
-   ln -s ../../.windsurf/pre-commit .git/hooks/pre-commit
+   ln -s ../../.agent/pre-commit .git/hooks/pre-commit
    ```
 
 ## Usage
@@ -31,7 +31,7 @@ This directory contains scripts to automate and enforce the Git workflow defined
 
 2. Run the commit script:
    ```bash
-   ./.windsurf/git_workflow.sh
+   ./.agent/git_workflow.sh
    ```
 
 3. Follow the interactive prompts to create a properly formatted commit.

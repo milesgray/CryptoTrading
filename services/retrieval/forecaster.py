@@ -84,16 +84,16 @@ class RetrievalForecaster:
             aligned_paths.append(aligned_path)
             
             # Calculate segment-specific returns and parameters
-            start_p = f_arr[0] if len(f_arr) > 0 else 1.0
-            end_p = f_arr[-1] if len(f_arr) > 0 else 1.0
-            pct_return = ((end_p - start_p) / start_p) * 100
+            start_p = float(f_arr[0]) if len(f_arr) > 0 else 1.0
+            end_p = float(f_arr[-1]) if len(f_arr) > 0 else 1.0
+            pct_return = float(((end_p - start_p) / start_p) * 100)
             
             seg_copy = {
-                "id": seg.get("id", idx),
+                "id": int(seg.get("id", idx)),
                 "historical_prices": hist_prices,
                 "prices": future_prices,  # The forecast series read by the frontend
                 "order_book": seg.get("order_book", {}),
-                "similarity": similarity,
+                "similarity": float(similarity),
                 "pctReturn": pct_return,
                 "direction": "BULLISH" if pct_return >= 0 else "BEARISH"
             }

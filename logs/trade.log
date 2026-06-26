@@ -1,3 +1,0 @@
-2026-06-25 00:05:08,848 - mock_polymarket_broker - INFO - Mock Polymarket Trade Broker started.
-2026-06-25 00:05:08,848 - mock_polymarket_broker - INFO - Initial USD Balance: $10,000.00
-2026-06-25 00:05:09,857 - mock_polymarket_broker - INFO - Graceful shutdown received.

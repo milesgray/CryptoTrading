@@ -17,8 +17,10 @@ Verified all order book analytics, fixed bid/ask filter bugs in the feed validat
   - **Liquidity Concentration (HHI)**: Herfindahl-Hirschman Index of order book depth.
   - **Index Deviation**: Mean absolute deviation and standard deviation of each feed from the calculated index price.
 - **Comprehensive Unit Tests**: Developed `tests/test_order_book_analytics.py` verifying standard operations, crossed book filtering, outlier filtering, metrics, and feed validator fixes. All tests pass successfully (13 passed total).
+- **NumPy Serialization Fix**: Resolved a `PydanticSerializationError` in the `/forecast` endpoint of the retrieval service by casting numpy float32/int32 primitives to standard Python floats/ints.
 
 ## Next Objectives
 - Integrate cross-exchange metrics into the main database storing pipeline.
 - Hook metrics into the frontend dashboard for real-time visualization.
 - Configure alerts when arbitrage opportunities rise above a profitable threshold.
+- Improve the startup scaling of the retrieval service segment indexing when database contains a very large number of candles (150k+).
