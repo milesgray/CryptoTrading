@@ -26,16 +26,11 @@ import logging
 import datetime as dt
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
-from dataclasses import dataclass, asdict
 
 # External dependencies
 import twikit
-import pymongo
 from textblob import TextBlob
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-import pandas as pd
-from dotenv import load_dotenv
-
 from pydantic import BaseModel, field_validator
 
 from cryptotrading.data.models import TweetDataPoint, TweetSentiment

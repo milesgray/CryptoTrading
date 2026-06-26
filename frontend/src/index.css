@@ -1,3 +1,39 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Fix for unreadable dropdown option text on light/white backgrounds */
+select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+/* Ensure dark dropdowns have readable options */
+.bg-slate-900 option,
+.bg-slate-950 option,
+.bg-slate-800 option,
+select.bg-slate-900 option,
+select.bg-slate-950 option,
+select.bg-slate-800 option {
+  background-color: #0f172a !important;
+  color: #f1f5f9 !important;
+}
+
+/* Fix for unreadable text selections in input fields and textareas */
+input::selection, 
+textarea::selection,
+input *::selection,
+textarea *::selection {
+  background-color: #4f46e5 !important; /* indigo-600 */
+  color: #ffffff !important;
+}
+
+/* Prevent Chrome/WebKit autofill from forcing a white/light-blue background in dark inputs */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px #0f172a inset !important; /* bg-slate-900 */
+  -webkit-text-fill-color: #cbd5e1 !important;             /* text-slate-300 */
+  transition: background-color 5000s ease-in-out 0s;
+}

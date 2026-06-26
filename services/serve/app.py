@@ -1,12 +1,10 @@
 import json
 import logging
 import datetime as dt
-from typing import List
 from datetime import datetime
-
 import pytz
 import asyncio
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from cryptotrading.data.mongo import get_db
@@ -14,36 +12,24 @@ from cryptotrading.data.factory import get_price_adapter, get_order_book_adapter
 from cryptotrading.config import PRICE_COLLECTION_NAME, TRANSFORMED_ORDER_BOOK_COLLECTION_NAME, DB_BACKEND
 from .models import (
     PriceDataPoint,
-    TransformedOrderBookDataPoint,
-    CandlestickData,
-    PaginatedResponse,
-    LatestPriceData,
-    TransformedOrderBookData
+    TransformedOrderBookDataPoint
 )
-from .data import (
-    process_order_book_data,
-    get_latest_transformed_order_book_point,
-    get_transformed_order_book,
-    get_latest_price,
-    get_historic_price,
-    get_candlestick_data   
-)
-from .websocket import ConnectionManager
+from .data import process_order_book_data
+from .websocket import websocket_manager
 
-# Configure logging (optional, but good practice)
+from .routers.market import router as market_router
+from .routers.retrieval import router as retrieval_router
+from .routers.services import router as services_router, ws_router as services_ws_router
+
+# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("fastapi_server")
-
-# Initialize WebSocket manager
-websocket_manager = ConnectionManager()
-
 
 app = FastAPI(title="Crypto Price API", 
              description="Provides candlestick data for cryptocurrency prices with WebSocket support for real-time updates.", 
              version="1.0")
 
 # --- CORS (Cross-Origin Resource Sharing) Configuration ---
-# Allow requests from specific origins (replace with your frontend's URL)
 origins = [
     "http://localhost:3000",  # Default React port
     "http://localhost:8000",  # Default FastAPI port
@@ -52,7 +38,6 @@ origins = [
     "https://your-frontend-domain.com",  # Production frontend
 ]
 
-# Configure CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -88,6 +73,15 @@ else:
     app.transformed_order_book_collection = None
     app.use_stream_watch = False
     logger.info("Successfully connected to PostgreSQL/TimescaleDB.")
+
+
+def json_serial(obj):
+    """JSON serializer for objects not serializable by default json code"""
+    if isinstance(obj, (datetime, dt.date)):
+        return obj.isoformat()
+    if hasattr(obj, 'dict'):
+        return obj.dict()
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 
 # Background task for database change streams
@@ -180,6 +174,7 @@ async def watch_price_changes():
         except Exception as e:
             logger.error(f"Error in price polling: {e}")
             await asyncio.sleep(5)  # Wait longer on error
+
 
 async def watch_order_book_changes():
     logger.info("Starting order book polling")
@@ -279,199 +274,7 @@ async def startup_event():
     logger.info("Started database change stream watchers")
 
 
-# --- WebSocket Endpoints ---
-
-@app.websocket("/ws/price/{token}")
-async def websocket_price(websocket: WebSocket, token: str):
-    await websocket_manager.connect(websocket, 'price')
-    
-    async def send_message(message: dict):
-        try:
-            await websocket.send_text(json.dumps(message, default=json_serial))
-            return True
-        except (WebSocketDisconnect, RuntimeError) as e:
-            logger.debug(f"Failed to send message (connection closed): {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Error sending message: {e}")
-            return False
-    
-    try:
-        # Send current price immediately on connection
-        price_data = await get_latest_price(app, token)
-        if price_data and not await send_message({
-            'type': 'price_update',
-            'token': token,
-            'data': price_data.dict() if hasattr(price_data, 'dict') else price_data
-        }):
-            return  # Stop if we couldn't send the initial message
-        
-        # Keep connection alive with heartbeats
-        while True:
-            await asyncio.sleep(30)  # Send heartbeat every 30 seconds
-            if not await send_message({'type': 'ping'}):
-                break  # Stop if we can't send a heartbeat
-                
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for token {token}")
-    except Exception as e:
-        logger.error(f"WebSocket error for token {token}: {e}")
-    finally:
-        websocket_manager.disconnect(websocket, 'price')
-
-@app.websocket("/ws/order_book/{token}")
-async def websocket_order_book(websocket: WebSocket, token: str):
-    await websocket_manager.connect(websocket, 'order_book')
-    
-    async def send_message(message: dict):
-        try:
-            await websocket.send_text(json.dumps(message, default=json_serial))
-            return True
-        except (WebSocketDisconnect, RuntimeError) as e:
-            logger.debug(f"Failed to send order book message (connection closed): {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Error sending order book message: {e}")
-            return False
-    
-    try:
-        # Send current order book immediately on connection
-        order_book = await get_latest_transformed_order_book_point(app, token)
-        if order_book and not await send_message({
-            'type': 'order_book_update',
-            'token': token,
-            'data': order_book.dict()
-        }):
-            return  # Stop if we couldn't send the initial message
-        
-        # Keep connection alive with heartbeats
-        while True:
-            await asyncio.sleep(30)  # Send heartbeat every 30 seconds
-            if not await send_message({'type': 'ping'}):
-                break  # Stop if we can't send a heartbeat
-                
-    except WebSocketDisconnect:
-        logger.info(f"Order book WebSocket disconnected for token {token}")
-    except Exception as e:
-        logger.error(f"Order book WebSocket error for token {token}: {e}")
-    finally:
-        websocket_manager.disconnect(websocket, 'order_book')
-
-
 # --- REST API Endpoints ---
-@app.get("/historic/price/{token}", response_model=PaginatedResponse)
-async def read_historic_price(
-    token: str,
-    start: datetime = Query(..., description="Start time (ISO 8601 format)"),
-    end: datetime = Query(..., description="End time (ISO 8601 format)"),
-    page: int = Query(1, ge=1, description="Page number (1-based)"),
-    page_size: int = Query(1000, ge=1, le=10000, description="Number of items per page (max 10000)")
-):
-    """
-    Get paginated historic price data for a token within a time range.
-    
-    This endpoint returns price data in pages to improve performance with large datasets.
-    """
-    try:
-        # Convert start and end to UTC
-        start_utc = start.astimezone(pytz.utc)
-        end_utc = end.astimezone(pytz.utc)
-
-        if end_utc <= start_utc:
-            raise HTTPException(status_code=400, detail="End time must be after start time")
-
-        # Fetch paginated historic price data
-        price_data, total_count = await get_historic_price(
-            app,
-            token=token,
-            start_time=start_utc,
-            end_time=end_utc,
-            page=page,
-            page_size=page_size
-        )
-        
-        # Calculate pagination metadata
-        total_pages = (total_count + page_size - 1) // page_size if page_size > 0 else 1
-        has_next = page < total_pages
-        has_previous = page > 1
-        
-        return {
-            "data": price_data,
-            "total": total_count,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": total_pages,
-            "has_next": has_next,
-            "has_previous": has_previous
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching historic price data for {token}: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching historic price data: {e}")
-
-@app.get("/candlestick/{token}", response_model=List[CandlestickData])
-async def read_candlestick(
-    token: str,
-    start: datetime = Query(..., description="Start time (ISO 8601 format)"),
-    end: datetime = Query(..., description="End time (ISO 8601 format)"),
-    granularity: int = Query(..., description="Candlestick interval in seconds"),
-    include_book: bool = Query(False, description="Include order book data in response")
-):
-    """
-    Retrieve candlestick data for a specific symbol within a given time range and granularity.
-    Optionally includes order book data for each candlestick.
-    """
-    try:
-        # Convert start and end to UTC
-        start_utc = start.astimezone(pytz.utc)
-        end_utc = end.astimezone(pytz.utc)
-
-        if end_utc <= start_utc:
-            raise HTTPException(status_code=400, detail="End time must be greater than start time.")
-        if granularity <= 0:
-            raise HTTPException(status_code=400, detail="Granularity must be a positive integer.")
-        data = await get_candlestick_data(app, token, start_utc, end_utc, granularity, include_book)
-
-        if not data:
-             raise HTTPException(status_code=404, detail=f"No data found for {token} between {start_utc} and {end_utc}")
-        return data
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=f"Invalid date format: {ve}")
-
-
-@app.get("/latest_price/{token}", response_model=LatestPriceData)
-async def read_latest_price(token: str):
-    """
-    Retrieve the latest index price for a specific token.
-    Includes order book data if available.
-    """
-    price_data = await get_latest_price(app, token)
-    if price_data is None:
-        raise HTTPException(status_code=404, detail=f"No data found for token {token}")
-    return price_data
-
-@app.get("/transformed_order_book/{token}", response_model=TransformedOrderBookData)
-async def read_transformed_order_book(token: str):
-    """
-    Retrieve the transformed order book for a specific token.
-    """
-    transformed_order_book = await get_transformed_order_book(app, token)
-    if transformed_order_book is None:
-        raise HTTPException(status_code=404, detail=f"No data found for token {token}")
-    return transformed_order_book
-
-@app.get("/latest_transformed_order_book_point/{token}", response_model=TransformedOrderBookDataPoint)
-async def read_latest_transformed_order_book_point(token: str):
-    """
-    Retrieve the latest transformed order book point for a specific token.
-    """
-    transformed_order_book_point = await get_latest_transformed_order_book_point(app, token)
-    if transformed_order_book_point is None:
-        raise HTTPException(status_code=404, detail=f"No data found for token {token}")
-    return transformed_order_book_point
-
 @app.get("/health")
 async def health_check():
     """
@@ -490,103 +293,9 @@ async def health_check():
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=503, detail={"status": "unhealthy", "database": "disconnected", "error": str(e)})
 
-# --- Retrieval Service Endpoints ---
-from fastapi import APIRouter
 
-retrieval_router = APIRouter(prefix="/retrieval")
-
-@retrieval_router.get("/forecast")
-async def forecast(symbol: str = "BTC", k: int = 5):
-    """Proxy to retrieval service with robust timeout and error handling."""
-    import httpx
-    import os
-    retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://localhost:8000")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{retrieval_url}/forecast?symbol={symbol}&k={k}")
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"Error proxying to retrieval service: {e}")
-        raise HTTPException(
-            status_code=502,
-            detail=f"Retrieval service error: {str(e)}"
-        )
-
+# --- Include Routers ---
+app.include_router(market_router)
 app.include_router(retrieval_router)
-
-# --- Service Orchestrator Endpoints ---
-from cryptotrading.util.orchestrator import ServiceOrchestrator
-from pydantic import BaseModel
-from typing import Dict
-
-orchestrator = ServiceOrchestrator()
-
-services_router = APIRouter(prefix="/services")
-
-class ConfigUpdatePayload(BaseModel):
-    config: Dict[str, str]
-
-@services_router.get("")
-async def get_services():
-    return orchestrator.get_services_status()
-
-@services_router.post("/{name}/start")
-async def start_service_endpoint(name: str):
-    result = orchestrator.start_service(name)
-    if result.get("status") == "error":
-        raise HTTPException(status_code=400, detail=result.get("message"))
-    return result
-
-@services_router.post("/{name}/stop")
-async def stop_service_endpoint(name: str):
-    result = orchestrator.stop_service(name)
-    if result.get("status") == "error":
-        raise HTTPException(status_code=400, detail=result.get("message"))
-    return result
-
-@services_router.post("/{name}/restart")
-async def restart_service_endpoint(name: str):
-    result = orchestrator.restart_service(name)
-    if result.get("status") == "error":
-        raise HTTPException(status_code=400, detail=result.get("message"))
-    return result
-
-@services_router.get("/{name}/logs")
-async def get_service_logs_endpoint(name: str, limit: int = 100):
-    logs = orchestrator.get_service_logs(name, limit)
-    return {"logs": logs}
-
-@services_router.post("/{name}/config")
-async def update_service_config_endpoint(name: str, payload: ConfigUpdatePayload):
-    result = orchestrator.update_service_config(name, payload.config)
-    if result.get("status") == "error":
-        raise HTTPException(status_code=400, detail=result.get("message"))
-    return result
-
 app.include_router(services_router)
-
-@app.websocket("/ws/services/status")
-async def websocket_services_status(websocket: WebSocket):
-    await websocket.accept()
-    try:
-        while True:
-            status_data = orchestrator.get_services_status()
-            await websocket.send_json({
-                "type": "services_status",
-                "data": status_data
-            })
-            await asyncio.sleep(1.5)
-    except WebSocketDisconnect:
-        logger.debug("Services status WebSocket disconnected")
-    except Exception as e:
-        logger.error(f"Services status WebSocket error: {e}")
-
-# Add this helper function to handle JSON serialization
-def json_serial(obj):
-    """JSON serializer for objects not serializable by default json code"""
-    if isinstance(obj, (datetime, dt.date)):
-        return obj.isoformat()
-    if hasattr(obj, 'dict'):
-        return obj.dict()
-    raise TypeError(f"Type {type(obj)} not serializable")
+app.include_router(services_ws_router)
