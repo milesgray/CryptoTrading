@@ -4,7 +4,7 @@ import { format, subDays } from 'date-fns';
 import _ from 'lodash';
 import anychart from 'anychart';
 
-const ChartLoading = ({token}) => {
+const ChartLoading = ({ token }) => {
   return (
     <div className="container mx-auto p-4">
       <h2 className="text-2xl font-bold mb-4">Candlestick Chart for {token}</h2>
@@ -35,7 +35,7 @@ const CandlestickChart = ({ token }) => {
   const updateInterval = useRef(null);
   const chartData = useRef([]);
   const chartInitializing = useRef(false);
-  
+
   // Update frequency in milliseconds (5 seconds by default)
   const UPDATE_FREQUENCY = 5000;
 
@@ -44,25 +44,25 @@ const CandlestickChart = ({ token }) => {
   const isMounted = useRef(true);
 
   // Initialize the data table
-  
-  
+
+
   // Handle live price updates from WebSocket
   useEffect(() => {
     if (!isLiveUpdating || !token) return;
 
     const handlePriceUpdate = (priceData) => {
       if (!isMounted.current || !priceData || priceData.price === undefined) return;
-      
+
       // Only process updates if historical data has been loaded
       if (!historicalDataLoaded) {
         console.log('Historical data not loaded yet, ignoring price update');
         return;
       }
-      
+
       console.log('Received price update:', priceData);
       const now = new Date(priceData.timestamp || Date.now());
       setLatestPrice(priceData.price);
-      
+
       // If we don't have a data table yet, initialize it with minimal setup
       if (!dataTable.current) {
         console.log('No data table, creating minimal one for live updates...');
@@ -79,7 +79,7 @@ const CandlestickChart = ({ token }) => {
               value: 'close'
             })
           };
-          
+
           if (!chart.current && chartContainer.current && !chartInitializing.current) {
             if (chartContainer.current.offsetWidth === 0 || chartContainer.current.offsetHeight === 0) {
               return;
@@ -93,7 +93,7 @@ const CandlestickChart = ({ token }) => {
                 const plot = stockChart.plot(0);
                 plot.yGrid(true).xGrid(true);
                 plot.yMinorGrid(true).xMinorGrid(true);
-                
+
                 const candlestickSeries = plot.candlestick(mapping);
                 candlestickSeries.name(token + ' Price');
                 candlestickSeries.risingStroke('#0f9d58');
@@ -101,11 +101,11 @@ const CandlestickChart = ({ token }) => {
                 candlestickSeries.fallingStroke('#db4437');
                 candlestickSeries.fallingFill('#db4437');
                 candlestickSeries.pointWidth('90%');
-                
+
                 stockChart.title(`${token} Price Chart (Live)`);
                 stockChart.container(chartContainer.current);
                 stockChart.draw();
-                
+
                 chart.current = stockChart;
                 chartInitializing.current = false;
               } catch (err) {
@@ -124,10 +124,10 @@ const CandlestickChart = ({ token }) => {
         // Aggregate ticks into the current granularity time bucket
         const bucketSizeMs = (granularity || 3600) * 1000;
         const bucketStartMs = Math.floor(now.getTime() / bucketSizeMs) * bucketSizeMs;
-        
+
         let activePoint = null;
         const lastIdx = chartData.current.length - 1;
-        
+
         if (lastIdx >= 0 && chartData.current[lastIdx].x === bucketStartMs) {
           // Update the current active candle
           const lastPoint = chartData.current[lastIdx];
@@ -166,9 +166,9 @@ const CandlestickChart = ({ token }) => {
             close: Number(activePoint.close),
             volume: Number(activePoint.volume || 0)
           };
-          
+
           table.addData([objectData]);
-          
+
           // Redraw the chart to show the live candle growing/shrinking
           if (chart.current && typeof chart.current.draw === 'function') {
             chart.current.draw();
@@ -194,7 +194,7 @@ const CandlestickChart = ({ token }) => {
     // and we have a valid token
     if (token) {
       connectWebSocket();
-      
+
       // Set up the price update handler
       const unsubscribe = webSocketService.onPriceUpdate(handlePriceUpdate);
 
@@ -210,7 +210,7 @@ const CandlestickChart = ({ token }) => {
   // Clean up on unmount
   useEffect(() => {
     isMounted.current = true;
-    
+
     return () => {
       isMounted.current = false;
       webSocketService.disconnect();
@@ -235,22 +235,22 @@ const CandlestickChart = ({ token }) => {
       console.log('fetchData: Component not mounted, returning');
       return;
     }
-    
+
     // Skip if no token
     if (!token) {
       console.log('fetchData: No token, skipping');
       return;
     }
-    
+
     console.log('Starting data fetch...');
     setLoading(true);
     setError(null);
-    
+
     try {
       console.log('Fetching candlestick data...', { token, startDate, endDate, granularity });
       const data = await getCandlestickData(token, startDate, endDate, granularity);
       console.log('Received data from API:', data ? `Array(${data.length})` : 'null');
-      
+
       if (!data || !Array.isArray(data) || data.length === 0) {
         console.warn('No data received or empty array from API');
         const errorMsg = "No historical data available. Chart will show live updates only.";
@@ -260,9 +260,9 @@ const CandlestickChart = ({ token }) => {
         setIsLiveUpdating(true);
         return;
       }
-      
+
       console.log(`Received ${data.length} data points`);
-      
+
       // Format data for the chart
       const mappedData = data.map(item => ({
         x: new Date(item.timestamp).getTime(),
@@ -275,7 +275,7 @@ const CandlestickChart = ({ token }) => {
 
       // Store the data for later use
       chartData.current = mappedData;
-      
+
       // Mark historical data as loaded and enable live updates
       setHistoricalDataLoaded(true);
       setIsLiveUpdating(true);
@@ -315,18 +315,18 @@ const CandlestickChart = ({ token }) => {
     }
 
     console.log('Loading AnyStock...');
-    
+
     // Load AnyStock dynamically
     import('anychart').then((anychart) => {
       console.log('AnyStock loaded, initializing chart...');
-      
+
       try {
         // Create stock chart
         const stockChart = anychart.stock();
-        
+
         // Create data table
         const table = anychart.data.table('x');
-        
+
         // Ensure data is in the correct format
         const formattedData = data && data.length > 0 ? data.map(item => ({
           x: item.x, // Data is already in milliseconds from fetchData
@@ -336,12 +336,12 @@ const CandlestickChart = ({ token }) => {
           close: Number(item.close) || 0,
           volume: Number(item.volume) || 0
         })) : [];
-        
+
         console.log('Adding data to table:', formattedData.length, 'points');
         if (formattedData.length > 0) {
           table.addData(formattedData);
         }
-        
+
         // Mapping for candlestick series
         const mapping = table.mapAs({
           x: 'x',
@@ -351,79 +351,79 @@ const CandlestickChart = ({ token }) => {
           close: 'close',
           value: 'close'
         });
-        
+
         // Store both table and mapping for consistency
         dataTable.current = {
           table: table,
           mapping: mapping
         };
-        
+
         // Create first plot with candlestick series
         const plot = stockChart.plot(0);
         plot.yGrid(true).xGrid(true);
         plot.yMinorGrid(true).xMinorGrid(true);
-        
+
         // Create candlestick series
         const candlestickSeries = plot.candlestick(mapping);
         candlestickSeries.name(token + ' Price');
-        
+
         // Customize the appearance of candlesticks
         candlestickSeries.risingStroke('#0f9d58');
         candlestickSeries.risingFill('#0f9d58');
         candlestickSeries.fallingStroke('#db4437');
         candlestickSeries.fallingFill('#db4437');
-        
+
         // Make candlesticks touch each other by setting point width
         candlestickSeries.pointWidth('90%'); // Use 90% of available space
-        
 
-        
+
+
         // Set chart title
         stockChart.title(`${token} Price Chart${isLiveUpdating ? ' (Live)' : ''}`);
-        
+
         // Create second plot for volume if available and we have data
         if (formattedData.length > 0 && formattedData.some(item => item.volume > 0)) {
           const volumeMapping = table.mapAs({
             x: 'x',
             value: 'volume'
           });
-          
+
           const volumePlot = stockChart.plot(1);
           volumePlot.height('30%');
           volumePlot.yAxis().title('Volume');
           // Use a callback function instead of format string to avoid any split issues
-          volumePlot.yAxis().labels().format(function() {
+          volumePlot.yAxis().labels().format(function () {
             const val = this.value;
             if (val >= 1e9) return (val / 1e9).toFixed(1) + 'B';
             if (val >= 1e6) return (val / 1e6).toFixed(1) + 'M';
             if (val >= 1e3) return (val / 1e3).toFixed(1) + 'K';
             return val;
           });
-          
+
           const volumeSeries = volumePlot.column(volumeMapping);
           volumeSeries.name('Volume');
           volumeSeries.zIndex(100);
-          
+
           // Use solid colors instead of ordinalColor scale if it crashed
           volumeSeries.risingFill('#0f9d58');
           volumeSeries.risingStroke('#0f9d58');
           volumeSeries.fallingFill('#db4437');
           volumeSeries.fallingStroke('#db4437');
-          
+
           // Add scroller
           const scrollerSeries = stockChart.scroller().candlestick(mapping);
           scrollerSeries.pointWidth('90%');
         }
-        
+
         // Draw the chart
         console.log('Drawing chart...');
         stockChart.container(chartContainer.current);
         stockChart.draw();
-        
+
         // Save chart reference for cleanup
         chart.current = stockChart;
         console.log('Chart rendered successfully');
-        
+
       } catch (error) {
         console.error('Error rendering chart:', error);
         setError(`Failed to render chart: ${error.message}`);
@@ -438,7 +438,7 @@ const CandlestickChart = ({ token }) => {
   // Initialize the chart with WebSocket data
   const initializeChart = useCallback(() => {
     if (!isLiveUpdating || !token || !dataTable.current || !chart.current) return;
-    
+
     // Set the chart title to indicate live status
     chart.current.title(`${token} Price Chart (Live)`);
   }, [token, isLiveUpdating]);
@@ -461,11 +461,11 @@ const CandlestickChart = ({ token }) => {
   // Handle live updates toggle
   useEffect(() => {
     if (!isMounted.current) return;
-    
+
     if (isLiveUpdating && token) {
       // Initialize the chart for live updates
       initializeChart();
-      
+
       // Connect to WebSocket if not already connected
       if (!webSocketService.socket || webSocketService.socket.readyState !== WebSocket.OPEN) {
         webSocketService.connect(token).catch(error => {
@@ -483,7 +483,7 @@ const CandlestickChart = ({ token }) => {
         }
       }
     }
-    
+
     // Cleanup function
     return () => {
       // We don't disconnect the WebSocket here as it might be used by other components
@@ -506,7 +506,7 @@ const CandlestickChart = ({ token }) => {
   const toggleLiveUpdates = () => {
     const newState = !isLiveUpdating;
     setIsLiveUpdating(newState);
-    
+
     if (newState) {
       // If enabling live updates, ensure we're connected
       if (token) {
@@ -526,10 +526,9 @@ const CandlestickChart = ({ token }) => {
     return <div>Error: {error}</div>;
   }
 
-  
+
   return (
     <div className="container mx-auto p-4">
-      <h2 className="text-2xl font-bold mb-4">Candlestick Chart for {token}</h2>
       {error && (
         <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded" role="alert">
           <p className="font-bold">Error</p>
@@ -537,7 +536,7 @@ const CandlestickChart = ({ token }) => {
         </div>
       )}
       {loading ? (
-         <ChartLoading token={token} />
+        <ChartLoading token={token} />
       ) : (
         <div className="flex flex-wrap gap-4 mb-4">
           <div>
@@ -578,9 +577,8 @@ const CandlestickChart = ({ token }) => {
           <div className="flex items-end">
             <button
               onClick={toggleLiveUpdates}
-              className={`px-4 py-2 rounded-md text-white font-medium ${
-                isLiveUpdating ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
-              }`}
+              className={`px-4 py-2 rounded-md text-white font-medium ${isLiveUpdating ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
+                }`}
             >
               {isLiveUpdating ? 'Pause Live Updates' : 'Enable Live Updates'}
             </button>
@@ -593,10 +591,10 @@ const CandlestickChart = ({ token }) => {
             <h3 className="text-lg font-semibold">{token} Price: ${latestPrice.toFixed(2)}</h3>
           </div>
         )}
-        <div 
-          ref={chartContainer} 
-          className="w-full bg-gray-100 border border-gray-300 rounded p-2" 
-          style={{ 
+        <div
+          ref={chartContainer}
+          className="w-full bg-gray-100 border border-gray-300 rounded p-2"
+          style={{
             minHeight: '600px',
             height: '600px',
             position: 'relative'
