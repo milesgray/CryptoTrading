@@ -36,12 +36,17 @@
 - [x] Fix training loop evaluation bugs and implement dynamic evaluation modes in `forecast.py` and `movement.py`.
 - [x] Write and run training pipeline integration tests verifying deep learning training pipelines end-to-end.
 
+### Phase 6: Order Book Analytics & Multi-Exchange Metrics (Completed ✅)
+- [x] Fix bid/ask filter logic bug in `validate_feeds` in `book.py`.
+- [x] Add detailed mathematical docstrings to the Rollbit index price calculation in `formula.py`.
+- [x] Implement multi-exchange order book meta-statistics (price dispersion, HHI concentration, global arbitrage spreads).
+- [x] Write and verify comprehensive unit tests in `tests/test_order_book_analytics.py`.
+
 ## Sprint Progress
 
-### Current Goal: Deep Learning Training Pipeline & RAFT Support
-- [x] Modify timeseries dataset and dataloaders to return absolute sample indices.
-- [x] Resolve Python 3 relative/absolute import pathways and case-sensitivity issues in the deep learning submodules.
-- [x] Refactor `ForecastExp` and `MovementExp` to support RAFT pre-computation and index-based forward signatures.
-- [x] Make model evaluation modes dynamic based on the dataset split flag.
-- [x] Fix movement training loop bug that incorrectly called `self.test` instead of `self.vali`.
-- [x] Develop and execute training pipeline integration tests verifying 100% success.
+### Current Goal: Order Book Analytics & Multi-Exchange Metrics
+- [x] Fix bid/ask filter logic bug in `validate_feeds` in `book.py`.
+- [x] Add detailed mathematical docstrings to the Rollbit index price calculation in `formula.py`.
+- [x] Implement multi-exchange order book meta-statistics (price dispersion, HHI concentration, global arbitrage spreads).
+- [x] Write and verify comprehensive unit tests in `tests/test_order_book_analytics.py`.
+- [x] Update Memory Bank and walkthrough documentation.

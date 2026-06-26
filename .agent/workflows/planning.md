@@ -2,7 +2,6 @@
 description: Generate a detailed plan for a proposed change
 ---
 
-
 ## Phase 1: Detailed Planning
 
 ### 1.1 Create Initial Plan
@@ -91,6 +90,6 @@ Present decision points one at a time:
 
 ---
 
-run /replan
+call /plan-critic
 
-produce finalized `.ai-context/plans/[feature-slug]-plan.md` 
+produce finalized `.ai-context/plans/[feature-slug]-plan.md`

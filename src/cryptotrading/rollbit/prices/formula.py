@@ -21,33 +21,46 @@ def calculate_index_price(
     """
     Calculates the Rollbit index price based on a list of order books from different exchanges.
 
+    Mathematical Formulation & Steps:
+    1. Filter out stale feeds (assumed done upstream).
+    2. Remove crossed feeds where `best_bid > best_ask` and calculate mid-prices:
+       `mid_price = (best_bid + best_ask) / 2`
+    3. Filter out outlier feeds whose mid-prices deviate by more than 10% from the median mid-price:
+       `abs(mid_price - median_mid_price) <= 0.1 * median_mid_price`
+    4. Ensure at least `min_valid_feeds` (default 6) are active.
+    5. Aggregate remaining feeds into a composite order book. Individual order sizes are capped at 
+       $1,000,000 to limit the influence of single massive orders:
+       `size = min(raw_size, 1000000.0)`
+    6. Define marginal buying and selling price functions:
+       - `P_buy(s)`: The price at the level where the cumulative bid size first reaches or exceeds `s`.
+       - `P_sell(s)`: The price at the level where the cumulative ask size first reaches or exceeds `s`.
+       - `P_mid(s) = (P_buy(s) + P_sell(s)) / 2`
+    7. Compute cumulative bid and ask size arrays. Let `v_i` be the sorted union of these cumulative sizes.
+    8. Define maximum size `V` as `min(sum(bid_sizes), sum(ask_sizes))`.
+    9. Calculate the scaling factor `L = 1 / V`.
+    10. Compute exponential weights at each threshold `v_i` where `v_i <= V`:
+        `w_i = L * exp(-L * v_i)`
+    11. Sum the weighted marginal mid-prices and divide by total weights:
+        `Index Price = sum(P_mid(v_i) * w_i) / sum(w_i)`
+
     Args:
-        order_books: A list of dictionaries, where each dictionary represents an
-                     exchange's order book.  Each dictionary has two keys:
-                     'bids' (list of [price, size] tuples, sorted best to worst)
-                     'asks' (list of [price, size] tuples, sorted best to worst).
-                     Prices should be floats, and sizes should be floats representing
-                     the quantity in USD.
+        order_books: A list of dictionaries representing exchange order books. Each dict has keys:
+                     'bids': list of (price, size) tuples, sorted descending.
+                     'asks': list of (price, size) tuples, sorted ascending.
+                     Sizes represent quantities in USD.
+        min_valid_feeds: Minimum required valid feeds to output a price.
+        status: StatusManager for progress and metric logging.
+        return_book: If True, returns a dictionary containing the index price, total composite size, 
+                     and the composite order book itself.
+        verbose: Enable warning logging.
 
     Returns:
-        The calculated Rollbit index price as a float.  Returns None if
-        there are not enough valid price feeds (< 6).
+       If return_book is False: tuple (index_price, total_size) or None.
+       If return_book is True: dict with keys 'price', 'size', and 'book' or None.
 
     Raises:
-        TypeError: If input is not a list of dicts or if the internal data structure of
-            orderbooks is invalid.
-        ValueError:  If price or size in any order book is not a positive number.
-
-    Example:
-       order_books = [
-            {'bids': [(100.0, 1000.0), (99.0, 500.0)], 'asks': [(101.0, 1000.0), (102.0, 500.0)]},
-            {'bids': [(99.5, 2000.0), (98.5, 1000.0)], 'asks': [(101.5, 2000.0), (102.5, 1000.0)]},
-            {'bids': [(100.2, 1500.0), (99.2, 750.0)], 'asks': [(100.8, 1500.0), (101.8, 750.0)]},
-            {'bids': [(99.8, 1200.0), (98.8, 600.0)], 'asks': [(101.2, 1200.0), (102.2, 600.0)]},
-            {'bids': [(100.5, 1800.0), (99.5, 900.0)], 'asks': [(100.5, 1800.0), (101.5, 900.0)]},
-            {'bids': [(99.7, 1100.0), (98.7, 550.0)], 'asks': [(101.3, 1100.0), (102.3, 550.0)]},
-        ]
-        index_price = calculate_index_price(order_books)
+        TypeError: If order_books format or types are incorrect.
+        ValueError: If price or size is not positive.
     """
     try:
         # Input type validation

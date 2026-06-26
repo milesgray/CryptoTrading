@@ -2,7 +2,6 @@
 description: Act as a critic for the recent output or plan
 ---
 
-
 ---
 
 # Evidence-Based Critique
@@ -10,8 +9,8 @@ description: Act as a critic for the recent output or plan
 ## 1. Search for Validation
 Conduct web searches to validate planning decisions:
 
-**Search 1**: `[feature-type] best practices [tech-stack] 2024`
-- Example: "real-time notifications React best practices 2024"
+**Search 1**: `[feature-type] best practices [tech-stack] 2026`
+- Example: "real-time notifications React best practices 2026"
 - Capture: Recommended architectural patterns, performance tips
 
 **Search 2**: `[feature-type] common pitfalls [tech-stack]`
@@ -51,3 +50,5 @@ Update `.ai-context/plans/[feature-slug]-plan.md` section 7:
 - **Evidence**: [Link to search results justifying deviation]
 - **Risk Mitigation**: [How we handle the deviation safely]
 ```
+
+call /replan

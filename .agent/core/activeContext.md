@@ -1,23 +1,24 @@
-# Active Context: Forecasting Training Pipeline & RAFT Support
+# Active Context: Order Book Analytics & Multi-Exchange Metrics
 
 ## Quick Reference
-- **Feature**: Forecasting Training Pipeline, Index-Aware Dataloaders, and RAFT Model Support
-- **Branch**: `main` (Merged from `feature/forecast-training-pipeline`)
-- **Status**: Merged & Completed ✅
+- **Feature**: Order Book Validation Correction & Multi-Exchange Meta-Statistics
+- **Branch**: `main`
+- **Status**: Completed ✅
 
 ## Executive Summary
-Implement and integrate the training side of the timeseries forecasting engine in the `CryptoTrading` quantitative trading framework. Resolve package-level import pathways, implement index-aware timeseries datasets to yield absolute sample indices, and extend the training experiment runners to support the shape-similarity Retrieval-Augmented Forecasting Transformer (RAFT) model. Verify the entire pipeline with a comprehensive integration test suite.
+Verified all order book analytics, fixed bid/ask filter bugs in the feed validator, added detailed mathematical docstrings to the Rollbit pricing formulation, and introduced a new cross-exchange metrics calculator to track price dispersion, concentration (HHI), and global arbitrage opportunities. Wrote a comprehensive test suite to ensure correctness under all edge cases.
 
 ## Key Accomplishments
-- **Index-Aware Timeseries Dataset**: Updated `DataFramePriceForecastDataset` to yield 5-tuples containing absolute sample indices, enabling retrieval-augmented models to index their historical search databases correctly.
-- **Package Import Resolutions**: Resolved all Python 3 relative/absolute import crashes and case-sensitive naming mismatches across the `cryptotrading.predict` submodules.
-- **Flexible Experiment Runners**: Extended `ForecastExp` and `MovementExp` to support the custom training steps required by RAFT (pre-computation database generation and index-based forward signatures).
-- **Dynamic Mode Selection**: Resolved an indexing out-of-bounds error during validation and testing loops by dynamically determining the RAFT forward pass mode (`'train'`, `'valid'`, `'test'`) based on the dataset's `set_type` attribute.
-- **Resilient Movement Training**: Corrected a training loop bug in `MovementExp` where `self.test` was incorrectly called instead of `self.vali` at epoch ends.
-- **Comprehensive Verification**: Developed and ran a robust test suite (`tests/test_training_pipeline.py`) verifying index-aware dataloaders, standard model training updates, and RAFT shape-similarity retrieval training. The full repository test suite passes with 100% success (8 passed).
+- **Feed Validator Correction**: Corrected a swapped filters logic bug in `validate_feeds` in `book.py` where bid/ask filters were inverted for highest bid and lowest ask.
+- **Rollbit Pricing Documentation**: Added mathematical derivations and operational docstrings detailing the 11-step composite price index calculation.
+- **Multi-Exchange Metrics Module**: Implemented `metrics.py` calculating:
+  - **Price Dispersion**: Standard deviation of exchange mid-prices.
+  - **Global Arbitrage**: Crossed-book detections across exchanges (identifying buy/sell pairs and spreads).
+  - **Liquidity Concentration (HHI)**: Herfindahl-Hirschman Index of order book depth.
+  - **Index Deviation**: Mean absolute deviation and standard deviation of each feed from the calculated index price.
+- **Comprehensive Unit Tests**: Developed `tests/test_order_book_analytics.py` verifying standard operations, crossed book filtering, outlier filtering, metrics, and feed validator fixes. All tests pass successfully (13 passed total).
 
 ## Next Objectives
-- Implement historical database compression and retention policies on TimescaleDB.
-- Benchmark training throughput and retrieval speed under simulated high-frequency workloads.
-- Run database performance and latency load tests under simulated high-frequency updates.
-- Integrate pgvector HNSW index queries into the forecasting logic.
+- Integrate cross-exchange metrics into the main database storing pipeline.
+- Hook metrics into the frontend dashboard for real-time visualization.
+- Configure alerts when arbitrage opportunities rise above a profitable threshold.

@@ -109,10 +109,7 @@ class OrderBookManager:
         return self.valid_books
 
     async def update(self, composite_order_book, verbose: bool = False):
-        self.composite_order_book = composite_order_book
-        composite_order_book_df = order_book_to_df(
-            composite_order_book['bids'], 
-            composite_order_book['asks'])        
+        self.composite_order_book = composite_order_book      
         await self.data.store_composite_order_book_data(
             self.symbol, 
             composite_order_book, 
