@@ -81,7 +81,7 @@ def test_multi_exchange_metrics():
     order_books = [
         {
             'exchange': 'binance',
-            'bids': [(100.0, 1000.0)],
+            'bids': [(100.0, 1000.0), (10.0, 5000.0)],  # 10.0 is way out of the money (> 1% threshold)
             'asks': [(101.0, 1000.0)]
         },
         {
@@ -107,7 +107,7 @@ def test_multi_exchange_metrics():
     # Average spread: (1.0 + 1.0 + 1.0) / 3 = 1.0
     assert metrics['average_bid_ask_spread'] == 1.0
     
-    # Check HHI (depths: binance=2000, coinbase=4000, kraken=3000 -> total=9000)
+    # Check HHI (depths: binance=2000 [5000 is ignored], coinbase=4000, kraken=3000 -> total=9000)
     # Shares: binance=22.22%, coinbase=44.44%, kraken=33.33%
     # HHI: 22.22^2 + 44.44^2 + 33.33^2 ≈ 493.8 + 1975.3 + 1111.1 = 3580.2
     assert 3500.0 < metrics['liquidity_concentration_hhi'] < 3600.0
@@ -126,13 +126,15 @@ def test_multi_exchange_arbitrage():
         }
     ]
     
-    metrics = calculate_multi_exchange_metrics(order_books)
-    assert metrics['max_arbitrage_spread'] == 3.0
+    metrics = calculate_multi_exchange_metrics(order_books, fee_rate=0.0015)
+    assert math.isclose(metrics['max_arbitrage_spread'], 2.6985, rel_tol=1e-5)
     assert len(metrics['arbitrage_opportunities']) == 1
     opp = metrics['arbitrage_opportunities'][0]
     assert opp['buy_exchange'] == 'exchange_B'
     assert opp['sell_exchange'] == 'exchange_A'
-    assert opp['spread'] == 3.0
+    assert math.isclose(opp['raw_spread'], 3.0, rel_tol=1e-5)
+    assert math.isclose(opp['spread'], 2.6985, rel_tol=1e-5)
+    assert math.isclose(opp['fee_cost'], 0.3015, rel_tol=1e-5)
     assert opp['buy_price'] == 99.0
     assert opp['sell_price'] == 102.0
 

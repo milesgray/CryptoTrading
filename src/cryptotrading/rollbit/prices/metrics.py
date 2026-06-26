@@ -9,7 +9,9 @@ from typing import List, Dict, Tuple, Optional
 
 def calculate_multi_exchange_metrics(
     order_books: List[Dict],
-    index_price: Optional[float] = None
+    index_price: Optional[float] = None,
+    fee_rate: float = 0.0015,
+    hhi_threshold_pct: float = 0.01
 ) -> Dict[str, any]:
     """
     Calculate cross-exchange meta-statistics from a list of active order books.
@@ -21,14 +23,17 @@ def calculate_multi_exchange_metrics(
                      - 'bids': list of (price, size) tuples
                      - 'asks': list of (price, size) tuples
         index_price: The calculated composite index price. If provided, calculates deviation metrics.
+        fee_rate: The trading fee rate applied to both legs of the arbitrage trade (default 0.15% / 0.0015).
+        hhi_threshold_pct: Percentage threshold from mid-price to define the order depth used for
+                           calculating HHI concentration (default 1% / 0.01).
 
     Returns:
         A dictionary containing calculated metrics:
         - 'price_dispersion': Standard deviation of mid-prices across exchanges.
         - 'average_bid_ask_spread': Average spread of all exchanges.
-        - 'max_arbitrage_spread': Maximum crossed-book spread across exchanges (bid_A - ask_B > 0).
-        - 'arbitrage_opportunities': List of potential cross-exchange arbitrage trades.
-        - 'liquidity_concentration_hhi': Herfindahl-Hirschman Index of order book depth (0 to 10000).
+        - 'max_arbitrage_spread': Maximum net crossed-book spread across exchanges (net_spread > 0).
+        - 'arbitrage_opportunities': List of potential cross-exchange arbitrage trades (net of fees).
+        - 'liquidity_concentration_hhi': Herfindahl-Hirschman Index of order book depth within threshold (0 to 10000).
         - 'index_deviation_std': Std dev of deviations of exchange mid-prices from the index price.
         - 'index_deviation_mad': Mean absolute deviation of exchange mid-prices from the index price.
     """
@@ -65,7 +70,11 @@ def calculate_multi_exchange_metrics(
 
             mid = (best_bid + best_ask) / 2.0
             spread = best_ask - best_bid
-            total_depth = sum(b[1] for b in bids) + sum(a[1] for a in asks)
+            
+            # Calculate depth within the percentage threshold of the mid price
+            near_bid_depth = sum(size for price, size in bids if (mid - price) / mid <= hhi_threshold_pct)
+            near_ask_depth = sum(size for price, size in asks if (price - mid) / mid <= hhi_threshold_pct)
+            threshold_depth = near_bid_depth + near_ask_depth
 
             valid_books.append({
                 'exchange': exchange,
@@ -73,12 +82,12 @@ def calculate_multi_exchange_metrics(
                 'best_ask': best_ask,
                 'mid': mid,
                 'spread': spread,
-                'total_depth': total_depth
+                'threshold_depth': threshold_depth
             })
 
             mid_prices.append(mid)
             spreads.append(spread)
-            depths.append(total_depth)
+            depths.append(threshold_depth)
             exchanges.append(exchange)
 
     n = len(valid_books)
@@ -93,35 +102,41 @@ def calculate_multi_exchange_metrics(
     # 2. Average Bid-Ask Spread
     metrics['average_bid_ask_spread'] = sum(spreads) / n
 
-    # 3. Global Arbitrage Spread (Cross-Exchange Crossed Books)
-    max_arb = 0.0
+    # 3. Global Arbitrage Spread (Cross-Exchange Crossed Books Net of Fees)
+    max_net_arb = 0.0
     arb_opps = []
     for i in range(n):
         for j in range(n):
             if i == j:
                 continue
-            # If exchange i's bid is higher than exchange j's ask, it is a cross-exchange arbitrage
+            # If exchange i's bid is higher than exchange j's ask, check for arbitrage
             bid_i = valid_books[i]['best_bid']
             ask_j = valid_books[j]['best_ask']
             if bid_i > ask_j:
-                spread_diff = bid_i - ask_j
-                if spread_diff > max_arb:
-                    max_arb = spread_diff
-                arb_opps.append({
-                    'buy_exchange': valid_books[j]['exchange'],
-                    'sell_exchange': valid_books[i]['exchange'],
-                    'spread': spread_diff,
-                    'buy_price': ask_j,
-                    'sell_price': bid_i
-                })
+                raw_spread = bid_i - ask_j
+                fee_cost = (ask_j * fee_rate) + (bid_i * fee_rate)
+                net_spread = raw_spread - fee_cost
+                
+                # Only include as opportunity if it is profitable net of fees
+                if net_spread > 0:
+                    if net_spread > max_net_arb:
+                        max_net_arb = net_spread
+                    arb_opps.append({
+                        'buy_exchange': valid_books[j]['exchange'],
+                        'sell_exchange': valid_books[i]['exchange'],
+                        'raw_spread': raw_spread,
+                        'spread': net_spread,  # Represent profitable net spread
+                        'fee_cost': fee_cost,
+                        'buy_price': ask_j,
+                        'sell_price': bid_i
+                    })
     
-    # Sort arbitrage opportunities by spread descending
+    # Sort arbitrage opportunities by net spread descending
     arb_opps.sort(key=lambda x: x['spread'], reverse=True)
-    metrics['max_arbitrage_spread'] = max_arb
+    metrics['max_arbitrage_spread'] = max_net_arb
     metrics['arbitrage_opportunities'] = arb_opps
 
-    # 4. Liquidity Concentration Herfindahl-Hirschman Index (HHI)
-    # HHI is calculated by summing the squares of the percentage market share of each firm.
+    # 4. Liquidity Concentration Herfindahl-Hirschman Index (HHI) within threshold
     total_market_depth = sum(depths)
     if total_market_depth > 0:
         hhi = 0.0
