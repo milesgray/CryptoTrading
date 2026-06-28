@@ -74,7 +74,7 @@ def pull_ohlcv_data(
             since = cex_x[0][0] - dt_ms
             i = i + 1
             if verbose:
-                bar.set_postfix({"since": since})
+                bar.set_postfix({"since": dt.datetime.fromtimestamp(since / 1000, tz=dt.timezone.utc)})
                 bar.update(1)
         except Exception as e:
             if verbose: 
