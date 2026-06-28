@@ -70,8 +70,8 @@ def pull_ohlcv_data(
             
             results.append([(xi[4], dt.datetime.fromtimestamp(xi[0] / 1000, tz=dt.timezone.utc)) for xi in cex_x if xi[0]/1000 > min_uts])
 
-            dt = cex_x[-1][0] - cex_x[0][0]
-            since = cex_x[0][0] - dt
+            dt_ms = cex_x[-1][0] - cex_x[0][0]
+            since = cex_x[0][0] - dt_ms
             i = i + 1
             if verbose:
                 bar.set_postfix({"since": since})

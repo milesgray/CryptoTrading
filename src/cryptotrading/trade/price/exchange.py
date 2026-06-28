@@ -31,6 +31,23 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+TIMEFRAME_MS = {
+    '1s': 1_000,
+    '1m': 60_000,
+    '3m': 180_000,
+    '5m': 300_000,
+    '15m': 900_000,
+    '30m': 1_800_000,
+    '1h': 3_600_000,
+    '2h': 7_200_000,
+    '4h': 14_400_000,
+    '6h': 21_600_000,
+    '8h': 28_800_000,
+    '12h': 43_200_000,
+    '1d': 86_400_000,
+    '3d': 259_200_000,
+    '1w': 604_800_000,
+}
 
 def _run_async(coro):
     """Run an async coroutine synchronously, handling running event loops."""
@@ -188,23 +205,7 @@ class ExchangePriceClient:
     """
     
     # Map common timeframes to milliseconds
-    TIMEFRAME_MS = {
-        '1s': 1_000,
-        '1m': 60_000,
-        '3m': 180_000,
-        '5m': 300_000,
-        '15m': 900_000,
-        '30m': 1_800_000,
-        '1h': 3_600_000,
-        '2h': 7_200_000,
-        '4h': 14_400_000,
-        '6h': 21_600_000,
-        '8h': 28_800_000,
-        '12h': 43_200_000,
-        '1d': 86_400_000,
-        '3d': 259_200_000,
-        '1w': 604_800_000,
-    }
+    
     
     # Exchanges that support 1s candles natively
     EXCHANGES_WITH_1S_CANDLES = {'binance', 'binanceusdm', 'binancecoinm'}
@@ -784,7 +785,7 @@ class ExchangePriceClient:
         """Fetch historical prices for a specific time range from the exchange."""
         since_ms = int(start_time.timestamp() * 1000)
         end_ms = int(end_time.timestamp() * 1000)
-        timeframe_ms = self.TIMEFRAME_MS.get(self.timeframe, 1_000)
+        timeframe_ms = TIMEFRAME_MS.get(self.timeframe, 1_000)
         
         all_prices = []
         total_seconds = int((end_time - start_time).total_seconds())
@@ -937,7 +938,7 @@ class ExchangePriceClient:
                 if db_max.tzinfo is None:
                     db_max = db_max.replace(tzinfo=dt.timezone.utc)
                     
-                timeframe_ms = self.TIMEFRAME_MS.get(self.timeframe, 1_000)
+                timeframe_ms = TIMEFRAME_MS.get(self.timeframe, 1_000)
                 timeframe_delta = dt.timedelta(milliseconds=timeframe_ms)
                 
                 # Fetch left missing range
