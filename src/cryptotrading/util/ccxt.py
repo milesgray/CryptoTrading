@@ -81,8 +81,8 @@ def pull_ohlcv_data(
             if verbose: 
                 logger.error(f"Error fetching data: {e}", exc_info=True)
             # only increment i on data success
-            if isinstance(e, ccxt.base.errors.DDoSProtection):
-                time.sleep(5)
+            if "Too many requests" in str(e):
+                time.sleep(2)
             else:
                 i = i + 1
 
