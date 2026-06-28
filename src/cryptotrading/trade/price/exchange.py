@@ -800,6 +800,7 @@ class ExchangePriceClient:
             leave=False
         )
         
+        accumulated_update = 0
         while since_ms < end_ms:
             if (cancellation_event and cancellation_event.is_set()) or self._cancel_download.is_set():
                 self.status.add_log('WARNING', f'Download for {token} was cancelled.')
@@ -809,7 +810,10 @@ class ExchangePriceClient:
             prices = self._fetch_tick_data(token, since_ms, batch_limit)
             if not prices:
                 # If no data returned, advance to the end to break
-                progress_bar.update(int((end_ms - since_ms) / 1000))
+                step = int((end_ms - since_ms) / 1000)
+                if accumulated_update + step > total_seconds:
+                    step = total_seconds - accumulated_update
+                progress_bar.update(step)
                 break
                 
             all_prices.extend(prices)
@@ -819,7 +823,11 @@ class ExchangePriceClient:
             next_ms = int(last_ts.timestamp() * 1000) + timeframe_ms
             
             advanced_seconds = int((next_ms - since_ms) / 1000)
-            progress_bar.update(max(0, advanced_seconds))
+            step = max(0, advanced_seconds)
+            if accumulated_update + step > total_seconds:
+                step = total_seconds - accumulated_update
+            progress_bar.update(step)
+            accumulated_update += step
             
             since_ms = next_ms
             time.sleep(self.exchange.rateLimit / 1000)
@@ -898,6 +906,8 @@ class ExchangePriceClient:
                 except Exception as e:
                     self.status.add_log('WARNING', f'Failed to query database cache: {e}')
                     use_db = False
+                    db_count = 0
+                    db_min, db_max = None, None
                     
             if not use_db:
                 # Use file cache
@@ -932,10 +942,10 @@ class ExchangePriceClient:
                 
                 # Fetch left missing range
                 if db_min > start_time + timeframe_delta:
-                    left_prices = self._fetch_range_from_exchange(token, start_time, db_min, page_size, cancellation_event)
+                    left_prices = self._fetch_range_from_exchange(token, start_time, db_min - timeframe_delta, page_size, cancellation_event)
                 # Fetch right missing range
                 if db_max < end_time - timeframe_delta:
-                    right_prices = self._fetch_range_from_exchange(token, db_max, end_time, page_size, cancellation_event)
+                    right_prices = self._fetch_range_from_exchange(token, db_max + timeframe_delta, end_time, page_size, cancellation_event)
                     
             # Save any new prices to cache
             new_prices = left_prices + right_prices
