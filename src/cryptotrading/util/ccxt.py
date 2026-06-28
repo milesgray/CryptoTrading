@@ -1,5 +1,6 @@
 #@title utils
 # helper functions: time
+import time
 import logging
 import datetime as dt
 from pathlib import Path
@@ -80,6 +81,10 @@ def pull_ohlcv_data(
             if verbose: 
                 logger.error(f"Error fetching data: {e}", exc_info=True)
             # only increment i on data success
+            if isinstance(e, ccxt.base.errors.DDoSProtection):
+                time.sleep(5)
+            else:
+                i = i + 1
 
     return results
 
