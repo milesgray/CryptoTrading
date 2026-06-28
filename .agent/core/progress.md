@@ -50,10 +50,17 @@
 - [x] Resolve circular imports by shifting dependencies to request/websocket contexts.
 - [x] Instantiate a unified global `websocket_manager` singleton in `websocket.py`.
 
+### Phase 8: Historical Price Ingestion Optimization & Caching (Completed ✅)
+- [x] Optimize CCXT historical price pulling by reusing active connections.
+- [x] Implement a dual-layer caching system (PostgreSQL TimescaleDB + local JSON file fallback).
+- [x] Support time-based progress bar and download cancellation/resumption.
+- [x] Implement smart active symbol matching to automatically map tokens to available trading pairs.
+- [x] Build and verify unit tests in `tests/test_exchange.py`.
+
 ## Sprint Progress
 
-### Current Goal: FastAPI Serve Service Router Split
-- [x] Extract endpoints from monolithic serving app to router submodules.
-- [x] Instantiate unified WebSocket ConnectionManager singleton.
-- [x] Update memory bank, active context, and README documentation.
-- [x] Verify local tests and run live Docker compose queries.
+### Current Goal: Historical Price Ingestion Caching & Robustness
+- [x] Implement connection reuse and caching layers.
+- [x] Implement cancellation and smart active symbol matching.
+- [x] Verify cache hits, cancellation, and different timeframe spans (e.g. `5m`).
+- [x] Run unit tests and update memory bank.

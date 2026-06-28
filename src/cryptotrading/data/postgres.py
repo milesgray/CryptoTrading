@@ -58,7 +58,15 @@ async def init_pool(**overrides) -> Pool:
     global _pool
     
     if _pool is not None:
-        return _pool
+        if hasattr(_pool, '_loop') and not _pool._loop.is_closed():
+            return _pool
+        else:
+            try:
+                # Attempt to close the stale pool
+                await _pool.close()
+            except Exception:
+                pass
+            _pool = None
     
     # Merge default params with overrides
     params = {**POSTGRES_PARAMS, **overrides}

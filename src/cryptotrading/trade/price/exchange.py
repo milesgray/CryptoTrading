@@ -13,6 +13,10 @@ import numpy as np
 import logging
 import tqdm
 from typing import List, Optional, Tuple, Dict
+import json
+import asyncio
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 from cryptotrading.util.ccxt import pull_ohlcv_data
 
@@ -26,6 +30,130 @@ except ImportError:
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _run_async(coro):
+    """Run an async coroutine synchronously, handling running event loops."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, coro)
+            return future.result()
+    else:
+        return asyncio.run(coro)
+
+
+def _get_file_cache_path(exchange_id: str, symbol: str, timeframe: str) -> Path:
+    symbol_safe = symbol.replace('/', '_')
+    return Path(f".cache/historical_prices/{exchange_id}/{symbol_safe}_{timeframe}.json")
+
+
+def _load_from_file_cache(exchange_id: str, symbol: str, timeframe: str, start_time: dt.datetime, end_time: dt.datetime) -> list:
+    path = _get_file_cache_path(exchange_id, symbol, timeframe)
+    if not path.exists():
+        return []
+    try:
+        with open(path, 'r') as f:
+            data = json.load(f)
+        prices = []
+        for ts_str, price in data:
+            ts = dt.datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+            if start_time <= ts <= end_time:
+                prices.append((price, ts))
+        return prices
+    except Exception as e:
+        logger.warning(f"Failed to load from file cache: {e}")
+        return []
+
+
+def _save_to_file_cache(exchange_id: str, symbol: str, timeframe: str, new_prices: list):
+    path = _get_file_cache_path(exchange_id, symbol, timeframe)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    
+    existing = []
+    if path.exists():
+        try:
+            with open(path, 'r') as f:
+                existing = json.load(f)
+        except Exception:
+            existing = []
+            
+    seen = {item[0]: item[1] for item in existing}
+    for price, ts in new_prices:
+        if isinstance(ts, dt.datetime):
+            ts_str = ts.isoformat()
+        else:
+            ts_str = str(ts)
+        seen[ts_str] = price
+        
+    sorted_items = sorted(seen.items(), key=lambda x: x[0])
+    
+    try:
+        with open(path, 'w') as f:
+            json.dump(sorted_items, f)
+    except Exception as e:
+        logger.warning(f"Failed to save to file cache: {e}")
+
+
+async def _save_prices_to_db(symbol: str, exchange: str, prices: list):
+    from cryptotrading.data.postgres import get_connection, init_pool
+    await init_pool()
+    
+    records = []
+    for price, ts in prices:
+        if isinstance(ts, str):
+            dt_obj = dt.datetime.fromisoformat(ts.replace('Z', '+00:00'))
+        elif isinstance(ts, (int, float)):
+            dt_obj = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc)
+        else:
+            dt_obj = ts
+            
+        if dt_obj.tzinfo is None:
+            dt_obj = dt_obj.replace(tzinfo=dt.timezone.utc)
+            
+        records.append((
+            dt_obj,
+            symbol,
+            exchange,
+            float(price), # open
+            float(price), # high
+            float(price), # low
+            float(price), # close
+            0.0,          # volume
+            '{}'          # metadata
+        ))
+        
+    async with get_connection() as conn:
+        await conn.execute('''
+            CREATE TEMP TABLE temp_price_data (
+                time TIMESTAMPTZ,
+                symbol TEXT,
+                exchange TEXT,
+                open DOUBLE PRECISION,
+                high DOUBLE PRECISION,
+                low DOUBLE PRECISION,
+                close DOUBLE PRECISION,
+                volume DOUBLE PRECISION,
+                metadata JSONB
+            ) ON COMMIT DROP;
+        ''')
+        
+        await conn.copy_records_to_table(
+            'temp_price_data',
+            records=records,
+            columns=['time', 'symbol', 'exchange', 'open', 'high', 'low', 'close', 'volume', 'metadata']
+        )
+        
+        await conn.execute('''
+            INSERT INTO price_data (time, symbol, exchange, open, high, low, close, volume, metadata)
+            SELECT time, symbol, exchange, open, high, low, close, volume, metadata
+            FROM temp_price_data
+            ON CONFLICT (time, symbol, exchange) DO NOTHING;
+        ''')
 
 
 class ExchangePriceClient:
@@ -149,6 +277,7 @@ class ExchangePriceClient:
         self.loop = None
         self.thread = None
         self._stop_event = threading.Event()
+        self._cancel_download = threading.Event()
         
         # Status tracking
         self.status = PriceClientStatus()
@@ -175,8 +304,45 @@ class ExchangePriceClient:
             return False
 
     def _symbol_for_token(self, token: str) -> str:
-        """Get the exchange symbol for a token."""
-        return self.symbols.get(token, f"{token}/{self.quote_currency}")
+        """Get the exchange symbol for a token, with smart fallback."""
+        if '/' in token:
+            return token
+            
+        symbol = self.symbols.get(token)
+        
+        # If markets are loaded, verify or find the best matching symbol
+        if self._markets_loaded and self.exchange.markets:
+            if symbol and symbol in self.exchange.markets:
+                market = self.exchange.markets[symbol]
+                if market.get('active', True):
+                    return symbol
+                
+            # Search the markets for the best active pair for this token
+            candidates = []
+            for market_symbol, market in self.exchange.markets.items():
+                if not market.get('active', True):
+                    continue
+                parts = market_symbol.split('/')
+                if len(parts) == 2 and parts[0] == token:
+                    candidates.append(market_symbol)
+                    
+            if candidates:
+                # Prefer USDT, then USDC, then USD, then others
+                preference = ['USDT', 'USDC', 'USD']
+                for pref in preference:
+                    for cand in candidates:
+                        if cand.endswith('/' + pref) or cand.split('/')[1] == pref:
+                            self.symbols[token] = cand
+                            return cand
+                # If no preferred quote currency, return the first candidate
+                self.symbols[token] = candidates[0]
+                return candidates[0]
+                
+        # Fallback to default
+        if not symbol:
+            symbol = f"{token}/{self.quote_currency}"
+            self.symbols[token] = symbol
+        return symbol
 
     def _update_historical_cache(self, token: str, new_prices: List[Tuple[float, str]]):
         """
@@ -398,6 +564,11 @@ class ExchangePriceClient:
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=5)
 
+    def cancel_historical_download(self):
+        """Cancel any active historical price downloads."""
+        self._cancel_download.set()
+        self.status.add_log('INFO', 'Historical price download cancellation requested')
+
     def get_predicted_prices(self, token: str) -> Optional[np.ndarray]:
         """Get predicted prices for a token (returns current price for compatibility)."""
         if token in self.current_prices and self.current_prices[token] is not None:
@@ -452,15 +623,23 @@ class ExchangePriceClient:
             List of (close_price, timestamp_iso) tuples
         """
         self._ensure_markets_loaded()
+        symbol = self._symbol_for_token(token)
         
         try:
-            results = pull_ohlcv_data(token, n=1, span="1s", min_uts=since/1000, exchange=self.exchange_id)
-
-            results = results[:limit]
+            ohlcv = self.exchange.fetch_ohlcv(symbol, self.timeframe, since=since, limit=limit)
+            if not ohlcv:
+                return []
+            
+            results = []
+            for candle in ohlcv:
+                ts_ms = candle[0]
+                close_price = float(candle[4])
+                ts_dt = dt.datetime.fromtimestamp(ts_ms / 1000, tz=dt.timezone.utc)
+                results.append((close_price, ts_dt.isoformat()))
             return results
         except ccxt.RateLimitExceeded:
             self.status.add_log('WARNING', 'Rate limit hit, waiting...')
-            time.sleep(self.exchange.rateLimit / 1000)
+            time.sleep(self.exchange.rateLimit / 1000 * 2)
             return self._fetch_ohlcv(token, since, limit)
             
         except Exception as e:
@@ -594,12 +773,67 @@ class ExchangePriceClient:
         # Otherwise use standard OHLCV for the requested timeframe
         return self._fetch_ohlcv(token, since, limit)
 
+    def _fetch_range_from_exchange(
+        self,
+        token: str,
+        start_time: dt.datetime,
+        end_time: dt.datetime,
+        page_size: int = 1000,
+        cancellation_event: Optional[threading.Event] = None
+    ) -> List[Tuple[float, str]]:
+        """Fetch historical prices for a specific time range from the exchange."""
+        since_ms = int(start_time.timestamp() * 1000)
+        end_ms = int(end_time.timestamp() * 1000)
+        timeframe_ms = self.TIMEFRAME_MS.get(self.timeframe, 1_000)
+        
+        all_prices = []
+        total_seconds = int((end_time - start_time).total_seconds())
+        if total_seconds <= 0:
+            return []
+            
+        progress_bar = tqdm.tqdm(
+            total=total_seconds,
+            desc=f"Loading {token} from {self.exchange_id}",
+            unit="s",
+            ncols=100,
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
+            leave=False
+        )
+        
+        while since_ms < end_ms:
+            if (cancellation_event and cancellation_event.is_set()) or self._cancel_download.is_set():
+                self.status.add_log('WARNING', f'Download for {token} was cancelled.')
+                break
+                
+            batch_limit = page_size
+            prices = self._fetch_tick_data(token, since_ms, batch_limit)
+            if not prices:
+                # If no data returned, advance to the end to break
+                progress_bar.update(int((end_ms - since_ms) / 1000))
+                break
+                
+            all_prices.extend(prices)
+            
+            last_ts_str = prices[-1][1]
+            last_ts = dt.datetime.fromisoformat(last_ts_str.replace('Z', '+00:00'))
+            next_ms = int(last_ts.timestamp() * 1000) + timeframe_ms
+            
+            advanced_seconds = int((next_ms - since_ms) / 1000)
+            progress_bar.update(max(0, advanced_seconds))
+            
+            since_ms = next_ms
+            time.sleep(self.exchange.rateLimit / 1000)
+            
+        progress_bar.close()
+        return all_prices
+
     def load_historical_prices(
         self,
         token: str,
         days: int = 5,
         page_size: int = 1000,
-        max_prices: Optional[int] = None
+        max_prices: Optional[int] = None,
+        cancellation_event: Optional[threading.Event] = None
     ) -> Optional[np.ndarray]:
         """
         Get historical tick prices for a token at ~1s resolution.
@@ -614,108 +848,163 @@ class ExchangePriceClient:
             days: Number of days of historical data to fetch (default: 5)
             page_size: Number of ticks per request (default: 1000)
             max_prices: Maximum number of tick prices to return
+            cancellation_event: Optional threading.Event to cancel download
             
         Returns:
             np.ndarray of (price, timestamp) tuples at ~1s resolution, or None on error
         """
+        self._ensure_markets_loaded()
+        symbol = self._symbol_for_token(token)
         try:
             end_time = dt.datetime.now(dt.timezone.utc)
             start_time = end_time - dt.timedelta(days=days)
             
-            # Check cache first
-            cached_data = self._get_cached_prices(token, start_time, end_time)
-            if cached_data is not None and len(cached_data) > 0:
-                if max_prices is None or len(cached_data) >= max_prices:
-                    result = cached_data[-max_prices:] if max_prices else cached_data
-                    self.status.add_log('INFO',
-                        f'Returning {len(result)} cached tick prices for {token}')
-                    return np.array([
-                        (p, ts.timestamp()) for p, ts in result
-                    ])
+            # Reset cancellation event for this run
+            self._cancel_download.clear()
             
-            # Log fetch method being used
-            if self.timeframe == '1s':
-                if self._supports_1s_candles():
-                    method = "1s candles"
-                else:
-                    method = "trade aggregation"
-            else:
-                method = f"{self.timeframe} candles"
+            # Check database availability
+            use_db = False
+            try:
+                from cryptotrading.data.postgres import get_connection, init_pool
+                async def test_db():
+                    await init_pool()
+                    async with get_connection() as conn:
+                        await conn.execute('SELECT 1')
+                _run_async(test_db())
+                use_db = True
+            except Exception as e:
+                self.status.add_log('WARNING', f'Database not available, using file cache: {e}')
+                use_db = False
                 
-            self.status.add_log('INFO',
-                f'Fetching {token} tick data from {self.exchange_id} via {method}...')
+            db_count = 0
+            db_min, db_max = None, None
+            cached_prices = []
             
-            # Calculate expected number of ticks
-            timeframe_ms = self.TIMEFRAME_MS.get(self.timeframe, 1_000)
-            total_ms = int((end_time - start_time).total_seconds() * 1000)
-            expected_ticks = total_ms // timeframe_ms
-            
-            if max_prices:
-                expected_ticks = min(expected_ticks, max_prices)
-            
-            all_prices = []
-            since_ms = int(start_time.timestamp() * 1000)
-            end_ms = int(end_time.timestamp() * 1000)
-            
-            # Progress bar
-            progress_bar = tqdm.tqdm(
-                total=expected_ticks,
-                desc=f"Loading {token} ticks from {self.exchange_id}",
-                unit=" ticks",
-                ncols=100,
-                bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
-                leave=False
-            )
-            
-            while since_ms < end_ms:
-                # Respect max_prices limit
-                if max_prices and len(all_prices) >= max_prices:
-                    break
-                
-                batch_limit = min(page_size, max_prices - len(all_prices) if max_prices else page_size)
-                
-                # Use tick-aware fetching
-                prices = self._fetch_tick_data(token, since_ms, batch_limit)
-                
-                if not prices:
-                    break
+            if use_db:
+                try:
+                    async def get_db_range():
+                        async with get_connection() as conn:
+                            row = await conn.fetchrow('''
+                                SELECT MIN(time) as min_t, MAX(time) as max_t, COUNT(*) as cnt
+                                FROM price_data
+                                WHERE symbol = $1 AND exchange = $2 AND time >= $3 AND time <= $4
+                            ''', symbol, f"{self.exchange_id}_{self.timeframe}", start_time, end_time)
+                            return row
+                    db_range = _run_async(get_db_range())
+                    if db_range and db_range['cnt'] > 0:
+                        db_min = db_range['min_t']
+                        db_max = db_range['max_t']
+                        db_count = db_range['cnt']
+                except Exception as e:
+                    self.status.add_log('WARNING', f'Failed to query database cache: {e}')
+                    use_db = False
                     
-                all_prices.extend(prices)
-                progress_bar.update(len(prices))
+            if not use_db:
+                # Use file cache
+                cached_prices = _load_from_file_cache(self.exchange_id, symbol, self.timeframe, start_time, end_time)
+                if cached_prices:
+                    db_min = min(ts for p, ts in cached_prices)
+                    db_max = max(ts for p, ts in cached_prices)
+                    db_count = len(cached_prices)
+                    
+            # Log cache status
+            if db_count > 0:
+                self.status.add_log('INFO', f'Cache contains {db_count} prices for {symbol} ({db_min} to {db_max})')
+            else:
+                self.status.add_log('INFO', f'No cached data found for {symbol}')
                 
-                # Move to next batch
-                last_ts_str = prices[-1][1]
-                last_ts = dt.datetime.fromisoformat(last_ts_str.replace('Z', '+00:00'))
-                since_ms = int(last_ts.timestamp() * 1000) + timeframe_ms
+            # Fetch missing ranges
+            left_prices = []
+            right_prices = []
+            
+            if db_count == 0:
+                # Fetch entire range
+                right_prices = self._fetch_range_from_exchange(token, start_time, end_time, page_size, cancellation_event)
+            else:
+                # Ensure timezone-aware comparisons
+                if db_min.tzinfo is None:
+                    db_min = db_min.replace(tzinfo=dt.timezone.utc)
+                if db_max.tzinfo is None:
+                    db_max = db_max.replace(tzinfo=dt.timezone.utc)
+                    
+                timeframe_ms = self.TIMEFRAME_MS.get(self.timeframe, 1_000)
+                timeframe_delta = dt.timedelta(milliseconds=timeframe_ms)
                 
-                # Rate limiting
-                time.sleep(self.exchange.rateLimit / 1000)
-            
-            progress_bar.close()
-            
-            if not all_prices:
+                # Fetch left missing range
+                if db_min > start_time + timeframe_delta:
+                    left_prices = self._fetch_range_from_exchange(token, start_time, db_min, page_size, cancellation_event)
+                # Fetch right missing range
+                if db_max < end_time - timeframe_delta:
+                    right_prices = self._fetch_range_from_exchange(token, db_max, end_time, page_size, cancellation_event)
+                    
+            # Save any new prices to cache
+            new_prices = left_prices + right_prices
+            if new_prices:
+                if use_db:
+                    try:
+                        _run_async(_save_prices_to_db(symbol, f"{self.exchange_id}_{self.timeframe}", new_prices))
+                    except Exception as e:
+                        self.status.add_log('WARNING', f'Failed to save new prices to db: {e}')
+                else:
+                    _save_to_file_cache(self.exchange_id, symbol, self.timeframe, new_prices)
+                    
+            # Load final consolidated prices from cache
+            final_prices = []
+            if use_db:
+                try:
+                    async def retrieve_all():
+                        async with get_connection() as conn:
+                            rows = await conn.fetch('''
+                                SELECT time, close
+                                FROM price_data
+                                WHERE symbol = $1 AND exchange = $2 AND time >= $3 AND time <= $4
+                                ORDER BY time ASC
+                            ''', symbol, f"{self.exchange_id}_{self.timeframe}", start_time, end_time)
+                            return [(row['close'], row['time']) for row in rows]
+                    final_prices = _run_async(retrieve_all())
+                except Exception as e:
+                    self.status.add_log('WARNING', f'Failed to retrieve prices from db: {e}')
+                    
+            if not final_prices:
+                # Fallback to file cache or what was just fetched
+                final_prices = _load_from_file_cache(self.exchange_id, symbol, self.timeframe, start_time, end_time)
+                if not final_prices:
+                    # In-memory fallback if caching failed completely
+                    final_prices = []
+                    # Add left
+                    for p, ts_str in left_prices:
+                        final_prices.append((p, dt.datetime.fromisoformat(ts_str.replace('Z', '+00:00'))))
+                    # Add cached (if any)
+                    if cached_prices:
+                        final_prices.extend(cached_prices)
+                    # Add right
+                    for p, ts_str in right_prices:
+                        final_prices.append((p, dt.datetime.fromisoformat(ts_str.replace('Z', '+00:00'))))
+                    # Sort by timestamp
+                    final_prices.sort(key=lambda x: x[1])
+                    
+            if not final_prices:
                 self.status.add_log('WARNING', f'No price data found for {token}')
                 return None
-            
-            # Update cache
-            self._update_historical_cache(token, all_prices)
+                
+            # Update in-memory cache
+            cache_input = [(price, ts.isoformat()) for price, ts in final_prices]
+            self._update_historical_cache(token, cache_input)
             
             # Apply max_prices limit
-            if max_prices and len(all_prices) > max_prices:
-                all_prices = all_prices[-max_prices:]
-            
+            if max_prices and len(final_prices) > max_prices:
+                final_prices = final_prices[-max_prices:]
+                
             self.status.add_log('INFO',
-                f'Loaded {len(all_prices)} tick prices for {token} '
-                f'(from {all_prices[0][1]} to {all_prices[-1][1]})')
-            
+                f'Loaded {len(final_prices)} tick prices for {token} '
+                f'(from {final_prices[0][1]} to {final_prices[-1][1]})')
+                
             # Convert to numpy array with float timestamps
             result = np.array([
-                (float(p[0]), dt.datetime.fromisoformat(p[1].replace('Z', '+00:00')).timestamp())
-                for p in all_prices
+                (float(p), ts.timestamp())
+                for p, ts in final_prices
             ])
-            
             return result
-            
         except Exception as e:
             error_msg = f"Error fetching tick data for {token}: {e}"
             self.status.last_error = error_msg
