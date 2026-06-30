@@ -93,10 +93,12 @@ This file serves as the master index for the CryptoTrading memory system, provid
 
 ### plans/
 - **postgres-migration-plan.md**: `.agent/plans/postgres-migration-plan.md` (SHA256: `d00b64c8210c531f7a9c09eea0a732900ab7b5b98eeef9c1efae0cb88180c316`, Size: 3725 bytes)
+- **specretf-plan.md**: `.agent/plans/specretf-plan.md`
 
 ### task-logs/
 - **task-log_2026-06-22-05-56_postgres-migration.md**: `.agent/task-logs/task-log_2026-06-22-05-56_postgres-migration.md`
 - **task-log_2026-06-22-16-30_poetry-to-uv-migration.md**: `.agent/task-logs/task-log_2026-06-22-16-30_poetry-to-uv-migration.md`
+- **task-log_2026-06-29-15-00_specretf-forecaster.md**: `.agent/task-logs/task-log_2026-06-29-15-00_specretf-forecaster.md`
 
 ## Memory System Status
 

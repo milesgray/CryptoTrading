@@ -1,17 +1,24 @@
-# Active Context: Historical Price Pull Optimization & Caching
+# Active Context: SpecReTFForecaster Implementation & Scaling
 
 ## Quick Reference
-- **Feature**: CCXT Historical Price Pull Caching, Cancellation, and Smart Symbol Matching
-- **Branch**: `feat/optimize-historical-price-pull`
-- **Status**: Completed ✅
+- **Feature**: SpecReTFForecaster Integration & Scaling
+- **Branch**: `feature/specretf-forecaster`
+- **Status**: Completed & Integrated ✅
 
 ## Executive Summary
-Optimized the historical price pulling mechanism in `ExchangePriceClient` (`src/cryptotrading/trade/price/exchange.py`) to reuse CCXT connections, added a dual-layer caching system (PostgreSQL TimescaleDB + local JSON file fallback), implemented download cancellation and resumption support, and added smart active symbol matching. These changes resulted in a 1,200x speedup on cache hits and robust, error-free operations when dealing with deactivated pairs or closed event loops.
+Implemented the SpecReTF (Spectral Retrieval-Augmented Time Series Forecasting) framework and wired it directly into the retrieval microservice. To prevent huge leaps/jumps in the predicted futures, we adjusted the path alignment logic to scale retrieved future segments by the ratio of the mean of the recent query prices to the mean of the candidate's historical prices.
 
-## Key Accomplishments
-- **Connection Reuse**: Optimized connection usage in `_fetch_ohlcv` by calling `self.exchange.fetch_ohlcv` directly, avoiding duplicate connection instantiation.
-- **Dual-Layer Caching**: Implemented a caching system that queries existing data, identifies gaps, fetches only missing intervals, and saves them. Stored database records using `f"{self.exchange_id}_{self.timeframe}"` to prevent primary key conflicts across different spans, and saved file caches as `{symbol}_{timeframe}.json`.
-- **Cancellation & Resumption**: Added support for cancellation via `threading.Event` to safely terminate downloads mid-loop and resume them later from the cached ranges.
-- **Smart Active Symbol Matching**: Configured `_symbol_for_token` to load exchange markets first and dynamically select the best active pair (preferring `USDT`, then `USDC`, then `USD`) if the default pair is inactive or unsupported.
-- **Robust Event Loop Handling**: Fixed `init_pool()` in `postgres.py` to recreate the connection pool if its associated event loop is closed.
-- **Validation**: Added a complete suite of unit tests in `tests/test_exchange.py` covering symbol matching, cache hits, cache misses, and cancellation. All tests passed.
+## Key Files Created/Modified
+- [forecaster.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/forecaster.py): Implemented the new `SpecReTFForecaster` class with mean-to-mean scaling.
+- [main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/main.py): Wired `SpecReTFForecaster` into the FastAPI application endpoint.
+- [test_specretf.py](file:///home/miles/Development/notebooks/CryptoTrading/tests/test_specretf.py): Added unit tests verifying the STFT, similarity metrics, and forecasting pipeline.
+
+## Critical Implementation Details
+1. **Frequency Similarity**: Jensen-Shannon Divergence on normalized amplitude spectra, combined with cosine of amplitude-weighted mean phase difference.
+2. **Recency Bias**: Exponential moving average weighting across frames.
+3. **Model Fusion**: Weighted fusion of retrieved futures and direct query predictions.
+4. **Z-Score Normalization**: Removes DC offset from sequences to prevent absolute price levels from dominating the spectral similarity.
+5. **Mean-Based Scaling**: Uses `mean_query / mean_hist` to align retrieved future paths, preventing price scale mismatches and discontinuous jumps at the forecast boundary.
+
+## Next Steps
+- Verify the real-time visualization on the Vite React frontend.
