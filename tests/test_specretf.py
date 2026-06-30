@@ -88,8 +88,6 @@ def test_specretf_forecaster_end_to_end_heuristic():
     
     result = forecaster.forecast(query_prices, query_order_book, k=2)
     
-    print("\nDEBUG RESULT:", result)
-    
     assert "retrieved" in result
     assert "prediction" in result
     assert "consensus_path" in result
@@ -142,3 +140,14 @@ def test_specretf_forecaster_weighted_mode():
     # Consensus path should be 1.1 * 0.9 = 0.99 * y_retrieval
     # Expected return should match this path
     assert len(result["consensus_path"]) == H
+
+def test_specretf_forecaster_empty_prices():
+    """Verify that forecasting with an empty prices array raises a ValueError."""
+    encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+    forecaster = SpecReTFForecaster(encoder_service)
+    
+    empty_prices = np.array([])
+    query_order_book = {"bids": [[108.0, 5.0]], "asks": [[109.0, 5.0]]}
+    
+    with pytest.raises(ValueError, match="prices array must not be empty"):
+        forecaster.forecast(empty_prices, query_order_book)

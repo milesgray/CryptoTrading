@@ -138,6 +138,7 @@ class SpecReTFForecaster:
         frame_size: int = 16,
         hop_size: int = 4,
         alpha: float = 0.2,
+        horizon: int = 60,
         w_retrieval: np.ndarray = None,
         w_direct: np.ndarray = None,
         w_final: np.ndarray = None,
@@ -149,6 +150,7 @@ class SpecReTFForecaster:
         self.frame_size = frame_size
         self.hop_size = hop_size
         self.alpha = alpha
+        self.horizon = horizon
         
         # Linear projection parameters (optional, for pre-trained model loading)
         self.w_retrieval = w_retrieval
@@ -249,10 +251,15 @@ class SpecReTFForecaster:
             frame_scores.append(s_w)
             
         # Recency-weighted aggregation
+        raw_weights = [self.alpha * ((1.0 - self.alpha) ** (W - 1 - w)) for w in range(W)]
+        total_weight = sum(raw_weights)
+        
         similarity = 0.0
-        for w in range(W):
-            weight = self.alpha * ((1.0 - self.alpha) ** (W - 1 - w))
-            similarity += weight * frame_scores[w]
+        if total_weight > 1e-12:
+            for w in range(W):
+                similarity += (raw_weights[w] / total_weight) * frame_scores[w]
+        else:
+            similarity = float(np.mean(frame_scores)) if len(frame_scores) > 0 else 0.0
             
         return similarity
 
@@ -263,25 +270,33 @@ class SpecReTFForecaster:
         k: int = 5
     ) -> Dict[str, Any]:
         """Forecast future prices using the SpecReTF frequency-aware retrieval-augmented approach."""
+        if len(prices) == 0:
+            raise ValueError("prices array must not be empty")
+
         # 1. Retrieve a larger candidate pool from the vector index
         pool_size = max(k * 4, 20)
         try:
             retrieved = self.encoder_service.retrieve_segments(prices, order_book, k=pool_size)
-        except Exception:
+        except RuntimeError:
+            # Index not yet built
+            retrieved = []
+        except Exception as e:
+            import logging
+            logging.getLogger("retrieval_service").error(f"Error retrieving segments: {e}", exc_info=True)
             retrieved = []
 
         query_last_price = float(prices[-1])
-        horizon = 60
 
         if not retrieved:
             # Fallback if index is empty
-            mock_future = [query_last_price * (1.0 + 0.0002 * i + np.random.normal(0, 0.001)) for i in range(1, horizon + 1)]
+            mock_future = [query_last_price * (1.0 + 0.0002 * i + np.random.normal(0, 0.001)) for i in range(1, self.horizon + 1)]
+            expected_return = ((mock_future[-1] - query_last_price) / query_last_price) * 100
             return {
                 "retrieved": [],
                 "prediction": mock_future[-1],
                 "consensus_path": mock_future,
-                "expected_return": 1.2,
-                "direction": "BULLISH"
+                "expected_return": expected_return,
+                "direction": "BULLISH" if expected_return >= 0 else "BEARISH"
             }
 
         # Compute query STFT
@@ -295,7 +310,7 @@ class SpecReTFForecaster:
             if hist_prices is None:
                 hist_prices = seg.get("prices", prices.tolist())
                 last_hist = hist_prices[-1]
-                future_prices = [last_hist * (1.0 + 0.0001 * i + np.random.normal(0, 0.0008)) for i in range(1, horizon + 1)]
+                future_prices = [last_hist * (1.0 + 0.0001 * i + np.random.normal(0, 0.0008)) for i in range(1, self.horizon + 1)]
                 
             h_arr = np.array(hist_prices, dtype=np.float32)
             f_arr = np.array(future_prices, dtype=np.float32)
@@ -313,10 +328,10 @@ class SpecReTFForecaster:
                 scale_factor = mean_query / mean_hist if mean_hist > 1e-8 else 1.0
                 aligned_path = f_arr * scale_factor
             else:
-                aligned_path = np.array([query_last_price] * horizon)
+                aligned_path = np.array([query_last_price] * self.horizon)
                 
-            start_p = float(f_arr[0]) if len(f_arr) > 0 else 1.0
-            end_p = float(f_arr[-1]) if len(f_arr) > 0 else 1.0
+            start_p = float(aligned_path[0]) if len(aligned_path) > 0 else query_last_price
+            end_p = float(aligned_path[-1]) if len(aligned_path) > 0 else query_last_price
             pct_return = float(((end_p - start_p) / start_p) * 100)
             
             seg_copy = {
