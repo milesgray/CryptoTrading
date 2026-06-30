@@ -2,7 +2,7 @@ import datetime
 import logging
 from fastapi import FastAPI, HTTPException
 from encoder import RetrievalServiceEncoder
-from forecaster import RetrievalForecaster
+from forecaster import SpecReTFForecaster
 import numpy as np
 from typing import Dict, Any
 
@@ -16,7 +16,7 @@ app = FastAPI()
 
 # Initialize encoder and forecaster
 encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
-forecaster = RetrievalForecaster(encoder_service)
+forecaster = SpecReTFForecaster(encoder_service, frame_size=16, hop_size=4)
 
 @app.on_event("startup")
 async def startup_event():
