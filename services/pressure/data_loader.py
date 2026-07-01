@@ -13,7 +13,7 @@ import numpy as np
 
 from cryptotrading.data.factory import get_order_book_adapter, get_price_adapter
 from cryptotrading.data.models import OrderBookSnapshot
-from pressure_features import OrderBookFeaturizer
+from .pressure_features import OrderBookFeaturizer
 
 logger = logging.getLogger(__name__)
 

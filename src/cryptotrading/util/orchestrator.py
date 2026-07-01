@@ -5,11 +5,14 @@ import signal
 import socket
 import subprocess
 import threading
+import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 # Resolve project root path
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if PROJECT_ROOT == Path("/"):
+    PROJECT_ROOT = Path("/app")
 LOGS_DIR = PROJECT_ROOT / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
@@ -18,6 +21,96 @@ try:
     CLK_TCK = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
 except Exception:
     CLK_TCK = 100
+
+DOCKER_SOCKET = "/var/run/docker.sock"
+DOCKER_SERVICE_MAP = {
+    "price": "record"
+}
+
+def _query_docker_api(path: str, method: str = "GET", data: Any = None) -> Any:
+    """Query the Docker API over Unix socket using curl."""
+    if not os.path.exists(DOCKER_SOCKET):
+        return None
+    
+    cmd = ["curl", "-s", "-X", method, "--unix-socket", DOCKER_SOCKET]
+    if data is not None:
+        cmd.extend(["-H", "Content-Type: application/json", "-d", json.dumps(data)])
+    cmd.append(f"http://localhost{path}")
+    
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5.0)
+        if res.returncode == 0:
+            if not res.stdout.strip():
+                return {}
+            try:
+                return json.loads(res.stdout)
+            except json.JSONDecodeError:
+                return res.stdout
+    except Exception:
+        pass
+    return None
+
+def _query_docker_logs(container_id: str, limit: int = 100) -> List[str]:
+    """Fetch and demux docker logs from UNIX socket using curl."""
+    if not os.path.exists(DOCKER_SOCKET):
+        return []
+    
+    cmd = ["curl", "-s", "--unix-socket", DOCKER_SOCKET, f"http://localhost/containers/{container_id}/logs?stdout=1&stderr=1&tail={limit}"]
+    try:
+        res = subprocess.run(cmd, capture_output=True, timeout=5.0)
+        if res.returncode == 0:
+            raw_bytes = res.stdout
+            lines = []
+            idx = 0
+            n = len(raw_bytes)
+            while idx + 8 <= n:
+                header = raw_bytes[idx:idx+8]
+                stream_type = header[0]
+                size = int.from_bytes(header[4:8], byteorder='big')
+                idx += 8
+                if idx + size <= n:
+                    frame_data = raw_bytes[idx:idx+size]
+                    line = frame_data.decode('utf-8', errors='ignore')
+                    for l in line.splitlines():
+                        lines.append(l)
+                idx += size
+            if not lines and raw_bytes:
+                return raw_bytes.decode('utf-8', errors='ignore').splitlines()
+            return lines
+    except Exception as e:
+        return [f"[Orchestrator Error] Failed to read docker logs: {str(e)}"]
+    return []
+
+def _get_docker_stats(container_id: str) -> Dict[str, float]:
+    """Fetch container CPU and Memory metrics."""
+    metrics = {"cpu": 0.0, "memory": 0.0}
+    stats = _query_docker_api(f"/containers/{container_id}/stats?stream=false")
+    if not stats or not isinstance(stats, dict):
+        return metrics
+    
+    # Memory usage
+    mem_stats = stats.get("memory_stats", {})
+    if mem_stats:
+        usage = mem_stats.get("usage", 0)
+        inactive_file = mem_stats.get("stats", {}).get("inactive_file", 0)
+        working_set = max(0, usage - inactive_file)
+        metrics["memory"] = round(working_set / (1024 * 1024), 2)
+    
+    # CPU usage
+    cpu_stats = stats.get("cpu_stats", {})
+    precpu_stats = stats.get("precpu_stats", {})
+    if cpu_stats and precpu_stats:
+        cpu_usage = cpu_stats.get("cpu_usage", {})
+        precpu_usage = precpu_stats.get("cpu_usage", {})
+        
+        cpu_delta = cpu_usage.get("total_usage", 0) - precpu_usage.get("total_usage", 0)
+        system_delta = cpu_stats.get("system_cpu_usage", 0) - precpu_stats.get("system_cpu_usage", 0)
+        online_cpus = cpu_stats.get("online_cpus", 1)
+        
+        if system_delta > 0 and cpu_delta > 0:
+            metrics["cpu"] = round((cpu_delta / system_delta) * online_cpus * 100.0, 1)
+            
+    return metrics
 
 class ServiceConfig:
     def __init__(self, name: str, display_name: str, description: str, script_path: str, default_port: Optional[int] = None, env_overrides: Optional[Dict[str, str]] = None):
@@ -36,6 +129,7 @@ class ServiceProcess:
         self.stop_time: Optional[float] = None
         self.status = "STOPPED"  # STOPPED, RUNNING, ERROR, FINISHED
         self.last_error: Optional[str] = None
+        self.pid_override: Optional[int] = None
         
         # CPU tracking state
         self.last_cpu_time = 0.0
@@ -46,6 +140,8 @@ class ServiceProcess:
         if self.config.name == "serve":
             import os
             return os.getpid()
+        if self.pid_override is not None:
+            return self.pid_override
         return self.process.pid if self.process else None
 
     @property
@@ -175,20 +271,45 @@ class ServiceOrchestrator:
         """Periodically checks if running child processes have terminated."""
         while True:
             try:
+                docker_active = os.path.exists(DOCKER_SOCKET)
+                docker_containers = {}
+                if docker_active:
+                    containers = _query_docker_api("/containers/json?all=1")
+                    if isinstance(containers, list):
+                        for c in containers:
+                            labels = c.get("Labels", {})
+                            svc_name = labels.get("com.docker.compose.service")
+                            if svc_name:
+                                docker_containers[svc_name] = c
+
                 for name, s_proc in self.services.items():
                     if name == "serve":
                         continue
                     
-                    if s_proc.status == "RUNNING" and s_proc.process:
-                        poll_result = s_proc.process.poll()
-                        if poll_result is not None:
-                            # Process terminated
-                            s_proc.stop_time = time.time()
-                            if poll_result == 0:
-                                s_proc.status = "FINISHED"
-                            else:
-                                s_proc.status = "ERROR"
-                                s_proc.last_error = f"Process exited with non-zero code: {poll_result}"
+                    docker_svc_name = DOCKER_SERVICE_MAP.get(name, name)
+                    if docker_active and docker_svc_name in docker_containers:
+                        c = docker_containers[docker_svc_name]
+                        state = c.get("State", "")
+                        if state == "running":
+                            s_proc.status = "RUNNING"
+                            try:
+                                s_proc.pid_override = int(c.get("Id", "")[:8], 16)
+                            except Exception:
+                                s_proc.pid_override = 9999
+                        else:
+                            s_proc.status = "STOPPED"
+                            s_proc.pid_override = None
+                    else:
+                        if s_proc.status == "RUNNING" and s_proc.process:
+                            poll_result = s_proc.process.poll()
+                            if poll_result is not None:
+                                # Process terminated
+                                s_proc.stop_time = time.time()
+                                if poll_result == 0:
+                                    s_proc.status = "FINISHED"
+                                else:
+                                    s_proc.status = "ERROR"
+                                    s_proc.last_error = f"Process exited with non-zero code: {poll_result}"
             except Exception:
                 pass
             time.sleep(1.0)
@@ -255,14 +376,50 @@ class ServiceOrchestrator:
     def get_services_status(self) -> List[Dict[str, Any]]:
         """Return status and resources for all 10 services."""
         result = []
+        
+        docker_active = os.path.exists(DOCKER_SOCKET)
+        docker_containers = {}
+        if docker_active:
+            containers = _query_docker_api("/containers/json?all=true")
+            if isinstance(containers, list):
+                for c in containers:
+                    labels = c.get("Labels", {})
+                    svc_name = labels.get("com.docker.compose.service")
+                    if svc_name:
+                        docker_containers[svc_name] = c
+            else:
+                docker_active = False
+
         for name, s_proc in self.services.items():
             metrics = {"cpu": 0.0, "memory": 0.0}
+            docker_svc_name = DOCKER_SERVICE_MAP.get(name, name)
+            
             if name == "serve":
                 # Measures the current FastAPI server process
                 metrics = self._get_process_metrics(os.getpid(), s_proc)
-            elif s_proc.status == "RUNNING" and s_proc.pid:
-                metrics = self._get_process_metrics(s_proc.pid, s_proc)
-                
+            elif docker_active and docker_svc_name in docker_containers:
+                c = docker_containers[docker_svc_name]
+                state = c.get("State", "")
+                if state == "running":
+                    s_proc.status = "RUNNING"
+                    created_time = c.get("Created", 0)
+                    if created_time:
+                        s_proc.start_time = float(created_time)
+                    try:
+                        s_proc.pid_override = int(c.get("Id", "")[:8], 16)
+                    except Exception:
+                        s_proc.pid_override = 9999
+                    # Query stats
+                    metrics = _get_docker_stats(c.get("Id"))
+                else:
+                    s_proc.status = "STOPPED"
+                    s_proc.start_time = None
+                    s_proc.pid_override = None
+            else:
+                # Local subprocess mode fallback
+                if s_proc.status == "RUNNING" and s_proc.pid:
+                    metrics = self._get_process_metrics(s_proc.pid, s_proc)
+                    
             result.append(s_proc.to_dict(metrics))
         return result
 
@@ -277,6 +434,33 @@ class ServiceOrchestrator:
         
         if s_proc.status == "RUNNING":
             return {"status": "already_running", "message": f"Service {name} is already running."}
+
+        # Check Docker mode
+        docker_active = os.path.exists(DOCKER_SOCKET)
+        docker_svc_name = DOCKER_SERVICE_MAP.get(name, name)
+        if docker_active:
+            containers = _query_docker_api("/containers/json?all=true")
+            if isinstance(containers, list):
+                target_container = None
+                for c in containers:
+                    labels = c.get("Labels", {})
+                    if labels.get("com.docker.compose.service") == docker_svc_name:
+                        target_container = c
+                        break
+                
+                if target_container:
+                    c_id = target_container.get("Id")
+                    # Start container via API
+                    _query_docker_api(f"/containers/{c_id}/start", method="POST")
+                    s_proc.status = "RUNNING"
+                    try:
+                        s_proc.pid_override = int(c_id[:8], 16)
+                    except Exception:
+                        s_proc.pid_override = 9999
+                    s_proc.start_time = time.time()
+                    s_proc.stop_time = None
+                    s_proc.last_error = None
+                    return {"status": "success", "message": f"Service {name} (Docker) started successfully.", "pid": s_proc.pid_override}
 
         # Check if default port is occupied
         if s_proc.config.default_port and self._is_port_in_use(s_proc.config.default_port):
@@ -359,6 +543,28 @@ class ServiceOrchestrator:
         if name == "serve":
             return {"status": "error", "message": "API Serving Gateway cannot be stopped via dashboard."}
         
+        # Check Docker mode
+        docker_active = os.path.exists(DOCKER_SOCKET)
+        docker_svc_name = DOCKER_SERVICE_MAP.get(name, name)
+        if docker_active:
+            containers = _query_docker_api("/containers/json?all=true")
+            if isinstance(containers, list):
+                target_container = None
+                for c in containers:
+                    labels = c.get("Labels", {})
+                    if labels.get("com.docker.compose.service") == docker_svc_name:
+                        target_container = c
+                        break
+                
+                if target_container:
+                    c_id = target_container.get("Id")
+                    # Stop container via API
+                    _query_docker_api(f"/containers/{c_id}/stop", method="POST")
+                    s_proc.status = "STOPPED"
+                    s_proc.pid_override = None
+                    s_proc.stop_time = time.time()
+                    return {"status": "success", "message": f"Service {name} (Docker) stopped successfully."}
+
         if s_proc.status != "RUNNING" or not s_proc.process:
             return {"status": "not_running", "message": f"Service {name} is not currently running."}
 
@@ -415,7 +621,24 @@ class ServiceOrchestrator:
         }
 
     def get_service_logs(self, name: str, limit: int = 100) -> List[str]:
-        """Read the last N lines of a service's log file."""
+        """Read the last N lines of a service's log file or docker container logs."""
+        docker_active = os.path.exists(DOCKER_SOCKET)
+        docker_svc_name = DOCKER_SERVICE_MAP.get(name, name)
+        
+        if docker_active:
+            containers = _query_docker_api("/containers/json?all=true")
+            if isinstance(containers, list):
+                target_container = None
+                for c in containers:
+                    labels = c.get("Labels", {})
+                    if labels.get("com.docker.compose.service") == docker_svc_name:
+                        target_container = c
+                        break
+                
+                if target_container:
+                    c_id = target_container.get("Id")
+                    return _query_docker_logs(c_id, limit)
+
         log_file_path = LOGS_DIR / f"{name}.log"
         
         # If running price logger locally, there is also record_output.log in src/ or logs/

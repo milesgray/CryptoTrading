@@ -28,12 +28,14 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 # External dependencies
+import nest_asyncio
 import twikit
 from textblob import TextBlob
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from pydantic import BaseModel, field_validator
 
 from cryptotrading.data.models import TweetDataPoint, TweetSentiment
+from cryptotrading.data.factory import get_twitter_adapter
 
 # Map TweetData to TweetDataPoint
 TweetData = TweetDataPoint
@@ -131,7 +133,7 @@ class CryptoSentimentAnalyzer:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     try:
-                        import nest_asyncio
+                        
                         nest_asyncio.apply()
                     except ImportError:
                         pass
@@ -146,7 +148,7 @@ class CryptoSentimentAnalyzer:
         self.twitter_client = twikit.Client('en-US')
         
         # Database adapter setup
-        from cryptotrading.data.factory import get_twitter_adapter
+        
         self.db_adapter = get_twitter_adapter()
         self._run_async(self.db_adapter.initialize())
         
@@ -188,17 +190,6 @@ class CryptoSentimentAnalyzer:
             logger.addHandler(handler)
         
         return logger
-
-    def _setup_twitter_account(self) -> Account:
-        cookies = json.loads(os.getenv("TWITTER_COOKIES"))
-        account = Account(cookies=cookies)        
-        
-        return account
-
-    def _setup_twitter_scraper(self) -> Scraper:
-        cookies = json.loads(os.getenv("TWITTER_COOKIES"))
-        scraper = Scraper(cookies)
-        return scraper
     
     def preprocess_text(self, text: str) -> str:
         """Clean and preprocess tweet text"""

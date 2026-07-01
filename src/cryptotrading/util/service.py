@@ -23,17 +23,16 @@ logging.basicConfig(
 )
 
 
-class PriceSystemService:
+class Service:
     _instance = None
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(PriceSystemService, cls).__new__(cls)
+            cls._instance = super(Service, cls).__new__(cls)
             cls._instance._initialize()
         return cls._instance
 
     def _initialize(self):
-        self.price_system = PriceSystem(symbols=SYMBOLS)
         self.status = StatusManager('price_system_service')
         self.status.running = True
         self.status.start_time = time.time()
