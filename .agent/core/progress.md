@@ -62,9 +62,14 @@
 - [x] Build dual-pathway forecasting pipeline (retrieval consensus + direct query path) with heuristic and model-weighted fusion.
 - [x] Verify mathematical correctness and trend identification using unit tests in `tests/test_specretf.py`.
 
+### Phase 10: WebSocket Stream Unification (Completed ✅)
+- [x] Enhance `WebSocketService` with subscription tracking and automatic connection lifecycle sync.
+- [x] Implement automatic HTTP polling fallback for connection dropouts and handshake delays.
+- [x] Clean up component-specific manual disconnections to allow shared pricing connection states.
+
 ## Sprint Progress
 
-### Current Goal: SpecReTFForecaster Implementation
-- [x] Implement frequency-aware similarity metrics (JSD + amplitude-weighted phase coherence).
-- [x] Implement the forecasting and fusion pipeline.
-- [x] Verify all unit tests pass successfully.
+### Current Goal: WebSocket Stream Unification
+- [x] implement reference-counted WebSocket service.
+- [x] Integrate HTTP polling fallback within the service.
+- [x] Clean up App, CandlestickChart, and OrderBookPanel.

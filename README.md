@@ -1,58 +1,117 @@
-# CryptoTrading Dashboard & Forecasting Engine
+# Crypto Trading Kubernetes Deployment
 
-A real-time cryptocurrency trading dashboard and predictive engine utilizing timeseries database indexing and retrieval-augmented forecasting.
+This repository contains Kubernetes manifests to deploy the Crypto Trading application. The deployment includes TimescaleDB, MongoDB, Portainer, and various microservices.
 
-## Core Architecture
-The system is composed of five microservices coordinated via Docker Compose:
-1. **TimescaleDB**: Time-series optimized PostgreSQL database with the `pgvector` extension for historical pattern search.
-2. **Serve (FastAPI)**: High-performance ASGI gateway managing REST API endpoints and real-time WebSockets.
-3. **Retrieval**: Core ML forecasting service that encodes, indexes, and queries historical price sequences using vector search.
-4. **Record**: Ingestion daemon that polls Spot/Derivative exchanges (via CCXT) and records high-frequency price feeds and order book depth.
-5. **Frontend**: Vite-based React application rendering canvas-based candlestick charts, order book heatmaps, and pattern-matching projections.
+## Prerequisites
 
----
+- Kubernetes cluster (Minikube, EKS, GKE, AKS, etc.)
+- `kubectl` configured to access your cluster
+- Docker (for building images)
 
-## Getting Started
+## Deployment Steps
 
-### 1. Configuration (`.env`)
-Copy `.env.example` to `.env` and customize your settings. Key configurations include:
+1. **Build Docker Images**
+   ```bash
+   docker build -t crypto-trading-serve:latest -f Dockerfile.serve .
+   docker build -t crypto-trading-retrieval:latest -f Dockerfile.retrieval .
+   docker build -t crypto-trading-record:latest -f Dockerfile.record .
+   docker build -t crypto-trading-frontend:latest -f Dockerfile.frontend .
+   docker build -t crypto-trading-embed:latest -f services/embed/Dockerfile .
+   docker build -t crypto-trading-jepa:latest -f services/jepa/Dockerfile .
+   docker build -t crypto-trading-pressure:latest -f services/pressure/Dockerfile .
+   docker build -t crypto-trading-predict:latest -f services/predict/Dockerfile .
+   docker build -t crypto-trading-sentiment:latest -f services/sentiment/Dockerfile .
+   docker build -t crypto-trading-train:latest -f services/train/Dockerfile .
+   ```
 
-```env
-# Exposed Host Ports
-TIMESCALEDB_PORT=5432
-SERVE_PORT=8362
-RETRIEVAL_PORT=8000
-RECORD_PORT=8300
-FRONTEND_PORT=8080
+2. **Apply Kubernetes Manifests**
+   ```bash
+   kubectl apply -f k8s/namespace.yaml
+   kubectl apply -f k8s/configmap.yaml
+   kubectl apply -f k8s/pvc-pgdata.yaml
+   kubectl apply -f k8s/pvc-mongo-data.yaml
+   kubectl apply -f k8s/pvc-portainer-data.yaml
+   kubectl apply -f k8s/timescaledb-deployment.yaml
+   kubectl apply -f k8s/timescaledb-service.yaml
+   kubectl apply -f k8s/mongo-deployment.yaml
+   kubectl apply -f k8s/mongo-service.yaml
+   kubectl apply -f k8s/portainer-deployment.yaml
+   kubectl apply -f k8s/portainer-service.yaml
+   kubectl apply -f k8s/serve-deployment.yaml
+   kubectl apply -f k8s/serve-service.yaml
+   kubectl apply -f k8s/retrieval-deployment.yaml
+   kubectl apply -f k8s/retrieval-service.yaml
+   kubectl apply -f k8s/record-deployment.yaml
+   kubectl apply -f k8s/record-service.yaml
+   kubectl apply -f k8s/frontend-deployment.yaml
+   kubectl apply -f k8s/frontend-service.yaml
+   kubectl apply -f k8s/embed-deployment.yaml
+   kubectl apply -f k8s/embed-service.yaml
+   kubectl apply -f k8s/jepa-deployment.yaml
+   kubectl apply -f k8s/jepa-service.yaml
+   kubectl apply -f k8s/pressure-deployment.yaml
+   kubectl apply -f k8s/pressure-service.yaml
+   kubectl apply -f k8s/predict-deployment.yaml
+   kubectl apply -f k8s/predict-service.yaml
+   kubectl apply -f k8s/sentiment-deployment.yaml
+   kubectl apply -f k8s/sentiment-service.yaml
+   kubectl apply -f k8s/train-deployment.yaml
+   kubectl apply -f k8s/train-service.yaml
+   kubectl apply -f k8s/ingress.yaml
+   ```
 
-# Database Configuration
-POSTGRES_DB=crypto_trading
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_URI=postgresql://postgres:postgres@timescaledb:5432/crypto_trading
+3. **Verify Deployment**
+   ```bash
+   kubectl get pods -n crypto-trading
+   kubectl get services -n crypto-trading
+   ```
 
-# Price Ingestion Settings
-MIN_VALID_FEEDS=2
-```
+## Accessing Services
 
-### 2. Run with Docker Compose
-Start all microservices in the background:
+- **Portainer**: Accessible at `http://localhost:9000`
+- **Frontend**: Accessible at `http://localhost:8080`
+- **Serve API**: Accessible at `http://localhost:8362`
+
+## Cleanup
+
+To remove the deployment:
 ```bash
-docker compose up -d
+kubectl delete -f k8s/ingress.yaml
+kubectl delete -f k8s/train-service.yaml
+kubectl delete -f k8s/train-deployment.yaml
+kubectl delete -f k8s/sentiment-service.yaml
+kubectl delete -f k8s/sentiment-deployment.yaml
+kubectl delete -f k8s/predict-service.yaml
+kubectl delete -f k8s/predict-deployment.yaml
+kubectl delete -f k8s/pressure-service.yaml
+kubectl delete -f k8s/pressure-deployment.yaml
+kubectl delete -f k8s/jepa-service.yaml
+kubectl delete -f k8s/jepa-deployment.yaml
+kubectl delete -f k8s/embed-service.yaml
+kubectl delete -f k8s/embed-deployment.yaml
+kubectl delete -f k8s/frontend-service.yaml
+kubectl delete -f k8s/frontend-deployment.yaml
+kubectl delete -f k8s/record-service.yaml
+kubectl delete -f k8s/record-deployment.yaml
+kubectl delete -f k8s/retrieval-service.yaml
+kubectl delete -f k8s/retrieval-deployment.yaml
+kubectl delete -f k8s/serve-service.yaml
+kubectl delete -f k8s/serve-deployment.yaml
+kubectl delete -f k8s/portainer-service.yaml
+kubectl delete -f k8s/portainer-deployment.yaml
+kubectl delete -f k8s/mongo-service.yaml
+kubectl delete -f k8s/mongo-deployment.yaml
+kubectl delete -f k8s/timescaledb-service.yaml
+kubectl delete -f k8s/timescaledb-deployment.yaml
+kubectl delete -f k8s/pvc-portainer-data.yaml
+kubectl delete -f k8s/pvc-mongo-data.yaml
+kubectl delete -f k8s/pvc-pgdata.yaml
+kubectl delete -f k8s/configmap.yaml
+kubectl delete -f k8s/namespace.yaml
 ```
 
-To rebuild the services (e.g. after code changes):
-```bash
-docker compose up -d --build
-```
+## Notes
 
-Access the dashboard in your browser at `http://localhost:8080/`.
-
----
-
-## Features
-* **Live Candlestick Chart**: Real-time canvas rendering of price movements with smooth time-bucket tick aggregation.
-* **Order Book Panel**: Live bidding/asking order depth and spread visualization.
-* **Pattern Matching & Retrieval Forecast**: A dedicated panel that queries the vector database for the top-$k$ historical cycles matching the current price momentum and order book shape.
-* **Next Candle Color Predictor**: High-impact indicator that averages the active forecasted paths to predict the direction of the immediate next candle (GREEN/RED) with a consensus confidence bar.
-* **Forecasting Settings & Toggles**: Interactive sliders/dropdowns in the UI to configure $k$, segment length, retrieval frequency, and order book weighting on the fly.
+- Ensure Docker images are built and available in your local registry or set `imagePullPolicy: Never` in the deployments.
+- Adjust resource limits and requests in the deployments as needed for your cluster.
+- For production, consider adding TLS certificates and proper domain names for the Ingress.

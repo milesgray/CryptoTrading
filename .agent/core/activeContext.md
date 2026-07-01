@@ -1,24 +1,18 @@
-# Active Context: SpecReTFForecaster Implementation & Scaling
+# Active Context: WebSocket Stream Unification & Fallback
 
 ## Quick Reference
-- **Feature**: SpecReTFForecaster Integration & Scaling
-- **Branch**: `feature/specretf-forecaster`
+- **Feature**: WebSocket-First streaming with automatic HTTP fallback
+- **Branch**: `feature/websocket-unification`
 - **Status**: Completed & Integrated ✅
 
 ## Executive Summary
-Implemented the SpecReTF (Spectral Retrieval-Augmented Time Series Forecasting) framework and wired it directly into the retrieval microservice. To prevent huge leaps/jumps in the predicted futures, we adjusted the path alignment logic to scale retrieved future segments by the ratio of the mean of the recent query prices to the mean of the candidate's historical prices.
+Consolidated how the Vite React frontend retrieves live token price data. The App and subcomponents now leverage a unified, reference-counted WebSocket service (`webSocketService`). The connection is established dynamically when subscribers are active and falls back automatically to HTTP polling (`getLatestPrice`) during connection failures, reconnect phases, or server downtime.
 
 ## Key Files Created/Modified
-- [forecaster.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/forecaster.py): Implemented the new `SpecReTFForecaster` class with mean-to-mean scaling.
-- [main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/main.py): Wired `SpecReTFForecaster` into the FastAPI application endpoint.
-- [test_specretf.py](file:///home/miles/Development/notebooks/CryptoTrading/tests/test_specretf.py): Added unit tests verifying the STFT, similarity metrics, and forecasting pipeline.
-
-## Critical Implementation Details
-1. **Frequency Similarity**: Jensen-Shannon Divergence on normalized amplitude spectra, combined with cosine of amplitude-weighted mean phase difference.
-2. **Recency Bias**: Exponential moving average weighting across frames.
-3. **Model Fusion**: Weighted fusion of retrieved futures and direct query predictions.
-4. **Z-Score Normalization**: Removes DC offset from sequences to prevent absolute price levels from dominating the spectral similarity.
-5. **Mean-Based Scaling**: Uses `mean_query / mean_hist` to align retrieved future paths, preventing price scale mismatches and discontinuous jumps at the forecast boundary.
+- [api.js](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/services/api.js): Implemented reference counting subscriber tracker and HTTP fallback polling mechanism within `WebSocketService`.
+- [App.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/App.jsx): Wired global Navbar info and selected token state to `webSocketService.onPriceUpdate` and eliminated duplicate HTTP polling.
+- [CandlestickChart.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/CandlestickChart.jsx): Cleaned up manual socket disconnections.
+- [OrderBookPanel.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/OrderBookPanel.jsx): Structured proper useEffect callbacks cleanup for the shared stream.
 
 ## Next Steps
-- Verify the real-time visualization on the Vite React frontend.
+- Verify frontend live updates with a running local instance.
