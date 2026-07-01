@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: retrieval
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: retrieval
+  template:
+    metadata:
+      labels:
+        app: retrieval
+    spec:
+      containers:
+        - name: retrieval
+          image: ghcr.io/milesgray/crypto-trading/retrieval:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: crypto-trading-config
+          ports:
+            - containerPort: 8000

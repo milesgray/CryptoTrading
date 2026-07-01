@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: train
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: train
+  template:
+    metadata:
+      labels:
+        app: train
+    spec:
+      containers:
+        - name: train
+          image: ghcr.io/milesgray/crypto-trading/train:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: crypto-trading-config

@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: serve
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: serve
+  template:
+    metadata:
+      labels:
+        app: serve
+    spec:
+      containers:
+        - name: serve
+          image: ghcr.io/milesgray/crypto-trading/serve:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: crypto-trading-config
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock

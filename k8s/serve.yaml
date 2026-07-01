@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: serve
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: serve
+  template:
+    metadata:
+      labels:
+        app: serve
+    spec:
+      containers:
+        - name: serve
+          image: crypto-trading-serve:latest
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: crypto-trading-config
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: serve
+  namespace: crypto-trading
+spec:
+  selector:
+    app: serve
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000

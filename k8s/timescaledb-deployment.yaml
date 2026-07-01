@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: timescaledb
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: timescaledb
+  template:
+    metadata:
+      labels:
+        app: timescaledb
+    spec:
+      containers:
+        - name: timescaledb
+          image: timescale/timescaledb:latest-pg15
+          envFrom:
+            - configMapRef:
+                name: crypto-trading-config
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: pgdata

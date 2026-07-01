@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: record
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: record
+  template:
+    metadata:
+      labels:
+        app: record
+    spec:
+      containers:
+        - name: record
+          image: crypto-trading-record:latest
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: crypto-trading-config
+          ports:
+            - containerPort: 8300
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: record
+  namespace: crypto-trading
+spec:
+  selector:
+    app: record
+  ports:
+    - protocol: TCP
+      port: 8300
+      targetPort: 8300

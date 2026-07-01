@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: embed
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: embed
+  template:
+    metadata:
+      labels:
+        app: embed
+    spec:
+      containers:
+        - name: embed
+          image: crypto-trading-embed:latest
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: crypto-trading-config
+          ports:
+            - containerPort: 8301
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: embed
+  namespace: crypto-trading
+spec:
+  selector:
+    app: embed
+  ports:
+    - protocol: TCP
+      port: 8301
+      targetPort: 8301

@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: crypto-trading-ingress
+  namespace: crypto-trading
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+    - host: crypto-trading.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 8080
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: serve
+                port:
+                  number: 8000

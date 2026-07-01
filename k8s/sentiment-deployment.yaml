@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentiment
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sentiment
+  template:
+    metadata:
+      labels:
+        app: sentiment
+    spec:
+      containers:
+        - name: sentiment
+          image: ghcr.io/milesgray/crypto-trading/sentiment:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: crypto-trading-config
+          env:
+            - name: MONGODB_URI
+              value: "mongodb://mongo:27017/crypto_sentiment"

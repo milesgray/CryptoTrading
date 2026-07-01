@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jepa
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jepa
+  template:
+    metadata:
+      labels:
+        app: jepa
+    spec:
+      containers:
+        - name: jepa
+          image: ghcr.io/milesgray/crypto-trading/jepa:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: crypto-trading-config

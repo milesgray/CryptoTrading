@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: record
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: record
+  template:
+    metadata:
+      labels:
+        app: record
+    spec:
+      containers:
+        - name: record
+          image: ghcr.io/milesgray/crypto-trading/record:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: crypto-trading-config
+          ports:
+            - containerPort: 8300

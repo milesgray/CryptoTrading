@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:7.0
+          env:
+            - name: MONGO_INITDB_DATABASE
+              value: "crypto_sentiment"
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+      volumes:
+        - name: mongo-data
+          persistentVolumeClaim:
+            claimName: mongo-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: crypto-trading
+spec:
+  selector:
+    app: mongo
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 27017

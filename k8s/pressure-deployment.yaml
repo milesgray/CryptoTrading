@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pressure
+  namespace: crypto-trading
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pressure
+  template:
+    metadata:
+      labels:
+        app: pressure
+    spec:
+      containers:
+        - name: pressure
+          image: ghcr.io/milesgray/crypto-trading/pressure:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: crypto-trading-config
