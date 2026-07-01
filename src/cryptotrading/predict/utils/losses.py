@@ -31,6 +31,56 @@ def divide_no_nan(a, b):
     return result
 
 
+def RSE(ypred, ytrue):
+    rse = np.sqrt(np.square(ypred - ytrue).sum()) / \
+          np.sqrt(np.square(ytrue - ytrue.mean()).sum())
+    return rse
+
+
+def quantile_loss(ytrue, ypred, qs):
+    '''
+    Quantile loss version 2
+    Args:
+    ytrue (batch_size, output_horizon)
+    ypred (batch_size, output_horizon, num_quantiles)
+    '''
+    L = np.zeros_like(ytrue)
+    for i, q in enumerate(qs):
+        yq = ypred[:, :, i]
+        diff = yq - ytrue
+        L += np.max(q * diff, (q - 1) * diff)
+    return L.mean()
+
+def SMAPE(ytrue, ypred):
+    ytrue = np.array(ytrue).ravel()
+    ypred = np.array(ypred).ravel() + 1e-4
+    mean_y = (ytrue + ypred) / 2.
+    return np.mean(np.abs((ytrue - ypred) \
+                          / mean_y))
+
+
+def MAPE(ytrue, ypred):
+    ytrue = np.array(ytrue).ravel() + 1e-4
+    ypred = np.array(ypred).ravel()
+    return np.mean(np.abs((ytrue - ypred) \
+                          / ytrue))
+
+
+class WMAPELoss(nn.Module):
+    def __init__(self):
+        super(WMAPELoss, self).__init__()
+
+    def forward(self, pred, true, weights=None):
+        if weights is None:
+            weights = t.ones_like(pred)
+
+        numerator = t.sum(t.abs(pred - true) * weights)
+        denominator = t.sum(t.abs(true) * weights)
+
+        wmape = numerator / (denominator)  # 添加一个小的常数，避免分母为0
+
+        return wmape
+
 class mape_loss(nn.Module):
     def __init__(self):
         super(mape_loss, self).__init__()
@@ -273,3 +323,39 @@ class PSLoss(nn.Module):
         loss = alpha * corr_loss + beta * var_loss + gamma * mean_loss
         
         return loss
+
+
+
+def gaussian_likelihood_loss(z, mu, sigma):
+    '''
+    Gaussian Liklihood Loss
+    Args:
+    z (tensor): true observations, shape (num_ts, num_periods)
+    mu (tensor): mean, shape (num_ts, num_periods)
+    sigma (tensor): standard deviation, shape (num_ts, num_periods)
+    likelihood:
+    (2 pi sigma^2)^(-1/2) exp(-(z - mu)^2 / (2 sigma^2))
+    log likelihood:
+    -1/2 * (log (2 pi) + 2 * log (sigma)) - (z - mu)^2 / (2 sigma^2)
+    '''
+    negative_likelihood = t.log(sigma + 1) + (z - mu) ** 2 / (2 * sigma ** 2) + 6
+    return negative_likelihood.mean()
+
+
+def negative_binomial_loss(ytrue, mu, alpha):
+    '''
+    Negative Binomial Sample
+    Args:
+    ytrue (array like)
+    mu (array like)
+    alpha (array like)
+    maximuze log l_{nb} = log Gamma(z + 1/alpha) - log Gamma(z + 1) - log Gamma(1 / alpha)
+                - 1 / alpha * log (1 + alpha * mu) + z * log (alpha * mu / (1 + alpha * mu))
+    minimize loss = - log l_{nb}
+    Note: torch.lgamma: log Gamma function
+    '''
+    batch_size, seq_len = ytrue.size()
+    likelihood = t.lgamma(ytrue + 1. / alpha) - t.lgamma(ytrue + 1) - t.lgamma(1. / alpha) \
+                 - 1. / alpha * t.log(1 + alpha * mu) \
+                 + ytrue * t.log(alpha * mu / (1 + alpha * mu))
+    return - likelihood.mean()

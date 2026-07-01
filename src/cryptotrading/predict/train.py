@@ -101,6 +101,10 @@ def train_model(model, df, epochs=30, batch_size=64, learning_rate=0.001):
     Returns:
         Trained model and scalers
     """
+    # Choose device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+    
     # Prepare data
     X, y, scaler = prepare_time_series_data(df)
     
@@ -142,9 +146,12 @@ def train_model(model, df, epochs=30, batch_size=64, learning_rate=0.001):
         train_total = 0
         
         for batch_X, batch_y in train_loader:
+            batch_X = batch_X.to(device)
+            batch_y = batch_y.to(device)
+            
             # Forward pass
             # Generate noise levels for diffusion training (curriculum learning)
-            noise_level = torch.rand(batch_X.shape[0]) * (1.0 - epoch / epochs)
+            noise_level = (torch.rand(batch_X.shape[0]) * (1.0 - epoch / epochs)).to(device)
             
             predictions, confidence = model(batch_X, noise_level)
             predictions = predictions[:, -1]  # Get prediction for the last timestep
@@ -176,6 +183,8 @@ def train_model(model, df, epochs=30, batch_size=64, learning_rate=0.001):
         
         with torch.no_grad():
             for batch_X, batch_y in val_loader:
+                batch_X = batch_X.to(device)
+                batch_y = batch_y.to(device)
                 predictions, confidence = model(batch_X)
                 predictions = predictions[:, -1]  # Get prediction for the last timestep
                 
@@ -215,6 +224,8 @@ def train_model(model, df, epochs=30, batch_size=64, learning_rate=0.001):
     
     with torch.no_grad():
         for batch_X, batch_y in test_loader:
+            batch_X = batch_X.to(device)
+            batch_y = batch_y.to(device)
             predictions, confidence = model(batch_X)
             predictions = predictions[:, -1]  # Get prediction for the last timestep
             confidence = confidence[:, -1]
@@ -225,9 +236,9 @@ def train_model(model, df, epochs=30, batch_size=64, learning_rate=0.001):
             test_total += batch_y.size(0)
             
             # Store predictions and targets
-            test_predictions.append(predicted_classes.numpy())
-            test_confidences.append(confidence.numpy())
-            test_targets.append(batch_y.numpy())
+            test_predictions.append(predicted_classes.cpu().numpy())
+            test_confidences.append(confidence.cpu().numpy())
+            test_targets.append(batch_y.cpu().numpy())
     
     test_predictions = np.concatenate(test_predictions)
     test_confidences = np.concatenate(test_confidences)
@@ -279,6 +290,10 @@ def predict_next_movement(model, df, scaler, window_size=20):
     
     # Convert to PyTorch tensor
     X = torch.FloatTensor(features).unsqueeze(0)  # Add batch dimension
+    
+    # Choose device matching model
+    device = next(model.parameters()).device
+    X = X.to(device)
     
     # Make prediction
     model.eval()
@@ -343,20 +358,21 @@ if __name__ == "__main__":
     })
 
     model = get_model(dotdict({
-        "input_dim": 1,
+        "input_dim": 4,
         "window_size": 20,
         "seq_len": 20,
         "d_model": 128,
         "num_layers": 4,
-        "enc_in": 1,
-        "dec_in": 1,
+        "enc_in": 4,
+        "dec_in": 4,
         "enc_out": 1,
         "dec_out": 1,
+        "c_out": 1,
         "model": "WAVESTATE"
     }))
     
     # Train model
-    model, scaler, test_predictions, test_confidences, test_targets = train_model(model, df, epochs=20)
+    model, scaler, test_predictions, test_confidences, test_targets = train_model(model, df, epochs=5)
     
     # Predict next movement
     prediction, confidence = predict_next_movement(model, df, scaler)

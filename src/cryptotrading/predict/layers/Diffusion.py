@@ -15,7 +15,7 @@ class DiffusionBlock(nn.Module):
         
     def forward(self, x, noise_level):
         # Noise level conditioning
-        noise_embed = self.noise_embed(noise_level.unsqueeze(-1))
+        noise_embed = self.noise_embed(noise_level.unsqueeze(-1)).unsqueeze(1)
         x = self.norm1(x + noise_embed)
         
         # Feed-forward with residual connection

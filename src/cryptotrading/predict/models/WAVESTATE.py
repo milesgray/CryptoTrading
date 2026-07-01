@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 
-from ..layers.WaveletTransform import WaveletTransformLayer
-from ..layers.AdaptiveKernel import AdaptiveKernelLayer
-from ..layers.StateSpace import StateSpaceLayer
-from ..layers.Diffusion import DiffusionBlock
-from ..layers.SelfAttention import SelfAttention
+from cryptotrading.predict.layers.WaveletTransform import WaveletTransformLayer
+from cryptotrading.predict.layers.AdaptiveKernel import AdaptiveKernelLayer
+from cryptotrading.predict.layers.StateSpace import StateSpaceLayer
+from cryptotrading.predict.layers.Diffusion import DiffusionBlock
+from cryptotrading.predict.layers.SelfAttention import SelfAttention
 
 
 class WAVESTATE(nn.Module):

@@ -1,6 +1,6 @@
 from cryptotrading.predict.data import data_provider
 from .base import BaseExp
-from cryptotrading.predict.utils.tools import EarlyStopping, adjust_learning_rate, visual
+from cryptotrading.predict.utils.train import EarlyStopping, adjust_learning_rate, visual
 from cryptotrading.predict.utils.metrics import metric
 import torch
 import torch.nn as nn
@@ -170,7 +170,6 @@ class ForecastExp(BaseExp):
 
         # Run pre-computation phase for retrieval-augmented models like RAFT
         if hasattr(self.model, 'prepare_dataset'):
-            print("Pre-computing retrieval vectors for RAFT model...")
             self.model.prepare_dataset(train_data, vali_data, test_data)
 
         path = os.path.join(self.args.checkpoints, setting)
@@ -229,30 +228,32 @@ class ForecastExp(BaseExp):
                             loss = criterion(outputs, batch_y)
                             total_loss = loss + loss_IB
                     else:
-                        outputs, loss_IB, _ = self._run_model_forward(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        if self.args.ib_loss_enabled:
+                            outputs, loss_IB, _ = self._run_model_forward(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                        else:
+                            outputs, _, _ = self._run_model_forward(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                            loss_IB = torch.tensor(0.0).to(self.device)
                         f_dim = -1 if self.args.features == 'MS' else 0
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
                         batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                         loss = criterion(outputs, batch_y)
-
-                        if self.args.ps_loss_mode == 'mean':
-                            losses_ps = torch.tensor([self.model.ps_loss(outputs[:,:,i].unsqueeze(-1), batch_y[:,:,i].unsqueeze(-1)) 
-                                       for i in range(outputs.shape[-1])])
-                            loss_ps = losses_ps.mean()
-                        elif self.args.ps_loss_mode == 'sum':
-                            losses_ps = torch.tensor([self.model.ps_loss(outputs[:,:,i].unsqueeze(-1), batch_y[:,:,i].unsqueeze(-1)) 
-                                       for i in range(outputs.shape[-1])])
-                            loss_ps = losses_ps.sum()
-                        elif self.args.ps_loss_mode == 'last':
-                            loss_ps = self.model.ps_loss(outputs[:,:,-1].unsqueeze(-1),
-                                                         batch_y[:,:,-1].unsqueeze(-1))                    
-
-                        if self.args.ps_loss_mode in ['mean', 'sum', 'last']:
-                            total_loss = loss + loss_IB + loss_ps
-                        elif self.args.ib_loss_enabled:
+                        if hasattr(self.model, 'ps_loss'):
+                            if self.args.ps_loss_mode == 'mean':
+                                losses_ps = torch.tensor([self.model.ps_loss(outputs[:,:,i].unsqueeze(-1), batch_y[:,:,i].unsqueeze(-1)) 
+                                           for i in range(outputs.shape[-1])])
+                                loss_ps = losses_ps.mean()
+                            elif self.args.ps_loss_mode == 'sum':
+                                losses_ps = torch.tensor([self.model.ps_loss(outputs[:,:,i].unsqueeze(-1), batch_y[:,:,i].unsqueeze(-1)) 
+                                           for i in range(outputs.shape[-1])])
+                                loss_ps = losses_ps.sum()
+                            elif self.args.ps_loss_mode == 'last':
+                                loss_ps = self.model.ps_loss(outputs[:,:,-1].unsqueeze(-1),
+                                                             batch_y[:,:,-1].unsqueeze(-1))    
+                            else:
+                                loss_ps = 0.0
+                            total_loss = loss+ loss_ps
+                        if self.args.ib_loss_enabled:
                             total_loss = loss + loss_IB
-                        else:
-                            total_loss = loss
 
                 train_loss.append(loss.item())
                 metrics["loss"] = loss.item()

@@ -1,11 +1,8 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from cryptotrading.predict.utils.masking import TriangularCausalMask, ProbMask
 from cryptotrading.predict.layers.Transformer_EncDec import Decoder, DecoderLayer, Encoder, EncoderLayer, ConvLayer
-from cryptotrading.predict.layers.SelfAttention import FullAttention, ProbAttention, AttentionLayer
+from cryptotrading.predict.layers.SelfAttention import ProbAttention, AttentionLayer
 from cryptotrading.predict.layers.Embed import DataEmbedding,DataEmbedding_wo_pos,DataEmbedding_wo_temp,DataEmbedding_wo_pos_temp
-import numpy as np
 
 
 class Informer(nn.Module):
