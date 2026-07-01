@@ -77,7 +77,7 @@ class WMAPELoss(nn.Module):
         numerator = t.sum(t.abs(pred - true) * weights)
         denominator = t.sum(t.abs(true) * weights)
 
-        wmape = numerator / (denominator)  # 添加一个小的常数，避免分母为0
+        wmape = numerator / (denominator)
 
         return wmape
 
