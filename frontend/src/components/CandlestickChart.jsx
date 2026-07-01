@@ -202,7 +202,6 @@ const CandlestickChart = ({ token }) => {
       return () => {
         console.log('Cleaning up WebSocket connection');
         unsubscribe();
-        webSocketService.disconnect();
       };
     }
   }, [token, isLiveUpdating, granularity, historicalDataLoaded]);
@@ -213,7 +212,6 @@ const CandlestickChart = ({ token }) => {
 
     return () => {
       isMounted.current = false;
-      webSocketService.disconnect();
       if (updateInterval.current) {
         clearInterval(updateInterval.current);
         updateInterval.current = null;
@@ -512,9 +510,6 @@ const CandlestickChart = ({ token }) => {
       if (token) {
         webSocketService.connect(token);
       }
-    } else {
-      // If disabling live updates, disconnect
-      webSocketService.disconnect();
     }
   };
 

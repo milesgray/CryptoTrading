@@ -19,12 +19,74 @@ class WebSocketService {
       price: [],
       orderBook: []
     };
+    this.fallbackInterval = null;
+  }
+
+  getSubscriberCount() {
+    return this.callbacks.price.length + this.callbacks.orderBook.length;
+  }
+
+  startFallbackPolling() {
+    if (this.fallbackInterval) return;
+    console.log('[WebSocket] Starting HTTP fallback polling for token:', this.token);
+    
+    const poll = async () => {
+      if (!this.token) return;
+      try {
+        const priceData = await getLatestPrice(this.token);
+        if (priceData) {
+          console.log('[WebSocket Fallback] Polled price:', priceData);
+          
+          this.callbacks.price.forEach(callback => {
+            try {
+              callback(priceData);
+            } catch (err) {
+              console.error('[WebSocket Fallback] Error in price callback:', err);
+            }
+          });
+
+          if (priceData.order_book && this.callbacks.orderBook.length > 0) {
+            this.callbacks.orderBook.forEach(callback => {
+              try {
+                callback(priceData.order_book);
+              } catch (err) {
+                console.error('[WebSocket Fallback] Error in order book callback:', err);
+              }
+            });
+          }
+        }
+      } catch (error) {
+        console.error('[WebSocket Fallback] Polling failed:', error);
+      }
+    };
+
+    poll();
+    this.fallbackInterval = setInterval(poll, 5000);
+  }
+
+  stopFallbackPolling() {
+    if (this.fallbackInterval) {
+      console.log('[WebSocket] Stopping HTTP fallback polling');
+      clearInterval(this.fallbackInterval);
+      this.fallbackInterval = null;
+    }
   }
 
   async connect(token) {
-    // If we already have a valid connection, don't reconnect
+    if (this.token && this.token !== token) {
+      console.log(`[WebSocket] Token changed from ${this.token} to ${token}, reconnecting...`);
+      this.disconnect(true);
+    }
+    
+    this.token = token;
+
+    // Start fallback polling immediately so we have data while connecting/reconnecting
+    this.startFallbackPolling();
+
+    // If we already have a valid connection, stop fallback and return
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       console.log('[WebSocket] Already connected');
+      this.stopFallbackPolling();
       return true;
     }
 
@@ -37,28 +99,24 @@ class WebSocketService {
     // If we have a socket in closing state, wait for it to close
     if (this.socket) {
       if (this.socket.readyState === WebSocket.CONNECTING) {
-        // If connecting, wait a bit and try again
-        if (this.socket && this.socket.readyState === WebSocket.CONNECTING) {
-          console.log('[WebSocket] Connection in progress, waiting...');
-          return new Promise((resolve) => {
-            const checkConnection = () => {
-              if (this.socket.readyState === WebSocket.OPEN) {
-                resolve();
-              } else if (this.socket.readyState === WebSocket.CONNECTING) {
-                setTimeout(checkConnection, 100);
-              } else {
-                // Connection failed or closed, try again
-                this.socket = null;
-                this.connect(token).then(resolve).catch(console.error);
-              }
-            };
-            setTimeout(checkConnection, 100);
-          });
-        }
+        console.log('[WebSocket] Connection in progress, waiting...');
+        return new Promise((resolve) => {
+          const checkConnection = () => {
+            if (this.socket.readyState === WebSocket.OPEN) {
+              this.stopFallbackPolling();
+              resolve();
+            } else if (this.socket.readyState === WebSocket.CONNECTING) {
+              setTimeout(checkConnection, 100);
+            } else {
+              this.socket = null;
+              this.connect(token).then(resolve).catch(console.error);
+            }
+          };
+          setTimeout(checkConnection, 100);
+        });
       }
     }
 
-    this.token = token;
     this.isConnecting = true;
     
     // Clear any existing reconnection timeout
@@ -93,6 +151,7 @@ class WebSocketService {
           console.log('[WebSocket] Connected');
           this.isConnecting = false;
           this.reconnectAttempts = 0;
+          this.stopFallbackPolling(); // Successfully connected! Stop fallback HTTP polling.
           this.startKeepAlive();
           resolve();
         };
@@ -104,6 +163,9 @@ class WebSocketService {
           console.error(errorMsg);
           this.isConnecting = false;
           this.stopKeepAlive();
+          
+          // Make sure fallback polling is active
+          this.startFallbackPolling();
           
           // If we have a socket, close it
           if (this.socket) {
@@ -122,6 +184,9 @@ class WebSocketService {
           clearTimeout(connectionTimeout);
           console.log(`[WebSocket] Disconnected: ${event.code} ${event.reason || 'No reason provided'}`);
           this.isConnecting = false;
+          
+          // Start fallback HTTP polling on disconnect
+          this.startFallbackPolling();
           
           // Stop keep-alive ping
           this.stopKeepAlive();
@@ -178,17 +243,14 @@ class WebSocketService {
             console.log('[WebSocket] Received message:', data);
             
             if (data.type === 'price_update' && this.callbacks.price.length > 0) {
-              // The backend sends price data directly in the message
               const priceData = data.data || data;
               console.log('[WebSocket] Processing price update:', priceData);
               
               this.callbacks.price.forEach(callback => {
                 try {
-                  // The callback expects a price value directly
                   if (priceData.price !== undefined) {
                     callback(priceData);
                   } else if (priceData.close !== undefined) {
-                    // If we get a candlestick, use the close price
                     callback({ price: priceData.close });
                   }
                 } catch (err) {
@@ -204,7 +266,6 @@ class WebSocketService {
                 }
               });
             } else if (data.type === 'pong') {
-              // Handle pong message (keep-alive response)
               this.lastPong = Date.now();
               return;
             }
@@ -214,19 +275,19 @@ class WebSocketService {
         };
       } catch (error) {
         console.error('Error creating WebSocket:', error);
-        this.disconnect();
+        this.disconnect(true);
         this.attemptReconnect();
       }
     });
   }
 
-  disconnect() {
+  disconnect(preserveCallbacks = false) {
     console.log('[WebSocket] Disconnecting...');
     this.stopKeepAlive();
+    this.stopFallbackPolling();
     
     if (this.socket) {
       try {
-        // Close with normal status code
         this.socket.close(1000, 'User disconnected');
       } catch (err) {
         console.error('[WebSocket] Error during disconnect:', err);
@@ -237,15 +298,15 @@ class WebSocketService {
     
     this.isConnecting = false;
     
-    // Clear any pending reconnection attempts
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
     
-    // Clear callbacks to prevent memory leaks
-    this.callbacks.price = [];
-    this.callbacks.orderBook = [];
+    if (!preserveCallbacks) {
+      this.callbacks.price = [];
+      this.callbacks.orderBook = [];
+    }
     
     console.log('[WebSocket] Disconnected');
   }
@@ -255,19 +316,15 @@ class WebSocketService {
     this.stopKeepAlive();
     this.lastPong = Date.now();
     
-    // Send ping every 25 seconds (server should close connection after 30s of inactivity)
     this.keepAliveInterval = setInterval(() => {
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
         try {
-          // Check if we've received a pong recently
           const timeSinceLastPong = Date.now() - this.lastPong;
-          if (timeSinceLastPong > 60000) { // 60 seconds without a pong
+          if (timeSinceLastPong > 60000) {
             console.warn('[WebSocket] No pong received recently, reconnecting...');
             this.socket.close(4000, 'No pong received');
             return;
           }
-          
-          // Send ping
           this.socket.send(JSON.stringify({ type: 'ping' }));
         } catch (err) {
           console.error('[WebSocket] Error sending ping:', err);
@@ -286,17 +343,15 @@ class WebSocketService {
   async attemptReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('[WebSocket] Max reconnection attempts reached');
-      // Reset attempts after a while to allow recovery
       setTimeout(() => {
         this.reconnectAttempts = 0;
-      }, 60000); // Reset after 1 minute
+      }, 60000);
       return;
     }
     
-    // Exponential backoff with jitter
     const delay = Math.min(
       this.reconnectDelay * Math.pow(2, this.reconnectAttempts) + 
-      Math.random() * 1000, // Add jitter
+      Math.random() * 1000,
       this.maxReconnectDelay
     );
     
@@ -308,7 +363,6 @@ class WebSocketService {
         this.reconnectAttempts++;
         this.connect(this.token).catch(error => {
           console.error('[WebSocket] Reconnection failed:', error);
-          // Schedule next reconnection attempt
           this.attemptReconnect();
         });
       }
@@ -318,30 +372,42 @@ class WebSocketService {
   onPriceUpdate(callback) {
     if (typeof callback !== 'function') {
       console.error('[WebSocket] onPriceUpdate requires a function as callback');
-      return () => {}; // Return empty cleanup function
+      return () => {};
     }
     
     console.log('[WebSocket] Adding price update callback');
     this.callbacks.price.push(callback);
     
-    // Return cleanup function
+    if (this.token) {
+      this.connect(this.token);
+    }
+    
     return () => {
       this.callbacks.price = this.callbacks.price.filter(cb => cb !== callback);
+      if (this.getSubscriberCount() === 0) {
+        this.disconnect();
+      }
     };
   }
 
   onOrderBookUpdate(callback) {
     if (typeof callback !== 'function') {
       console.error('[WebSocket] onOrderBookUpdate requires a function as callback');
-      return () => {}; // Return empty cleanup function
+      return () => {};
     }
     
     console.log('[WebSocket] Adding order book update callback');
     this.callbacks.orderBook.push(callback);
     
-    // Return cleanup function
+    if (this.token) {
+      this.connect(this.token);
+    }
+    
     return () => {
       this.callbacks.orderBook = this.callbacks.orderBook.filter(cb => cb !== callback);
+      if (this.getSubscriberCount() === 0) {
+        this.disconnect();
+      }
     };
   }
 }
@@ -472,6 +538,76 @@ export const updateServiceConfig = async (name, config) => {
     return response.data;
   } catch (error) {
     console.error(`Error updating config for service ${name}:`, error);
+    throw error;
+  }
+};
+
+export const getFeedsStatus = async (token) => {
+  try {
+    const response = await api.get(`/feeds/${token}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching feeds for ${token}:`, error);
+    throw error;
+  }
+};
+
+export const getBookPressure = async (token) => {
+  try {
+    const response = await api.get(`/pressure/${token}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching book pressure for ${token}:`, error);
+    throw error;
+  }
+};
+
+export const searchSimilarSetups = async (prices, symbol = "BTC") => {
+  try {
+    const response = await api.post('/retrieval/search', { prices, symbol });
+    return response.data;
+  } catch (error) {
+    console.error(`Error searching setups:`, error);
+    throw error;
+  }
+};
+
+export const getSentimentData = async (token) => {
+  try {
+    const response = await api.get(`/retrieval/sentiment/${token}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching sentiment for ${token}:`, error);
+    throw error;
+  }
+};
+
+export const getJepaRegime = async (token) => {
+  try {
+    const response = await api.get(`/retrieval/jepa/regime/${token}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching JEPA regime for ${token}:`, error);
+    throw error;
+  }
+};
+
+export const getTradeLedger = async () => {
+  try {
+    const response = await api.get('/trade/ledger');
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching trade ledger:`, error);
+    throw error;
+  }
+};
+
+export const executeTrade = async (order) => {
+  try {
+    const response = await api.post('/trade/order', order);
+    return response.data;
+  } catch (error) {
+    console.error(`Error executing trade:`, error);
     throw error;
   }
 };

@@ -1,5 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
+import {
+  getFeedsStatus,
+  getBookPressure,
+  searchSimilarSetups,
+  getSentimentData,
+  getJepaRegime,
+  getTradeLedger,
+  executeTrade,
+  getLatestPrice
+} from '../services/api';
 
 // ============================================================================
 // 1. Price Ingestion & Recording Panel
@@ -9,35 +19,33 @@ export const PriceIngestionPanel = () => {
     { exchange: 'Binance Spot', symbol: 'BTC/USDT', status: 'ACTIVE', latency: '42ms', price: 63245.5 },
     { exchange: 'Coinbase Spot', symbol: 'BTC/USD', status: 'ACTIVE', latency: '68ms', price: 63248.2 },
     { exchange: 'OKX Swap', symbol: 'BTC/USDT-SWAP', status: 'ACTIVE', latency: '52ms', price: 63243.0 },
-    { exchange: 'Bybit Linear', symbol: 'BTC/USDT', status: 'ACTIVE', latency: '55ms', price: 63244.8 },
-    { exchange: 'Bitmex Inverse', symbol: 'BTC/USD', status: 'STALE', latency: '820ms', price: 63238.0 },
-    { exchange: 'Deribit Option', symbol: 'BTC-USD-PERP', status: 'ACTIVE', latency: '72ms', price: 63246.1 }
+    { exchange: 'Bybit Linear', symbol: 'BTC/USDT', status: 'ACTIVE', latency: '55ms', price: 63244.8 }
   ]);
   const [indexPrice, setIndexPrice] = useState(63244.92);
   const [tickCount, setTickCount] = useState(0);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      // Mock price updates
-      setFeeds(prev => prev.map(f => {
-        if (f.status === 'STALE' && Math.random() < 0.1) {
-          return { ...f, status: 'ACTIVE', latency: '95ms', price: indexPrice + (Math.random() - 0.5) * 15 };
+    const fetchData = async () => {
+      try {
+        const feedsData = await getFeedsStatus("BTC");
+        if (feedsData && feedsData.length > 0) {
+          setFeeds(feedsData);
         }
-        if (f.status === 'ACTIVE' && Math.random() < 0.05) {
-          return { ...f, status: 'STALE', latency: '1200ms' };
+        
+        const priceData = await getLatestPrice("BTC");
+        if (priceData && priceData.price) {
+          setIndexPrice(priceData.price);
         }
-        if (f.status === 'ACTIVE') {
-          return { ...f, price: f.price + (Math.random() - 0.5) * 10, latency: `${Math.floor(Math.random() * 40 + 30)}ms` };
-        }
-        return f;
-      }));
+        setTickCount(t => t + 1);
+      } catch (err) {
+        console.error("Error fetching price/feeds data:", err);
+      }
+    };
 
-      // Calculate composite price index
-      setIndexPrice(prev => prev + (Math.random() - 0.5) * 4);
-      setTickCount(t => t + 1);
-    }, 800);
+    fetchData();
+    const interval = setInterval(fetchData, 1500);
     return () => clearInterval(interval);
-  }, [indexPrice]);
+  }, []);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 bg-slate-900/30 p-6 rounded-2xl border border-slate-800 backdrop-blur-md">
@@ -148,19 +156,16 @@ export const EmbeddingMatcherPanel = () => {
     return () => chart.dispose();
   }, [shape]);
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     setSearching(true);
-    setTimeout(() => {
-      // Mock pgvector retrieval results
-      const mockSetups = [
-        { id: 1042, similarity: 0.942, direction: 1, profit: 4.85, leverage: 10, duration: 15, symbol: 'BTC' },
-        { id: 3120, similarity: 0.891, direction: 1, profit: 3.20, leverage: 8, duration: 25, symbol: 'BTC' },
-        { id: 894, similarity: 0.865, direction: -1, profit: -1.42, leverage: 5, duration: 40, symbol: 'BTC' },
-        { id: 4503, similarity: 0.838, direction: 1, profit: 2.10, leverage: 10, duration: 12, symbol: 'BTC' }
-      ];
-      setResults(mockSetups);
+    try {
+      const data = await searchSimilarSetups(shape, "BTC");
+      setResults(data);
+    } catch (err) {
+      console.error("Error searching setups:", err);
+    } finally {
       setSearching(false);
-    }, 600);
+    }
   };
 
   return (
@@ -277,27 +282,21 @@ export const SentimentStreamPanel = () => {
   const [ethIndex, setEthIndex] = useState(54.2);
 
   useEffect(() => {
-    const handleNewTweet = () => {
-      const users = ['@AlphaTrader', '@CryptoWizard', '@BlockNews', '@DefiWhale', '@BitKing'];
-      const phrases = [
-        { text: 'Unbelievable bids piling up on ETH futures. Spot spread narrowing. Bull run in progress! 🔥', score: 0.91 },
-        { text: 'USDT inflows spiking on exchanges. Margin traders expanding leverage. Market is extremely primed.', score: 0.76 },
-        { text: 'Minor liquidation squeeze on BTC shorts. Expected consolidation before next leg down.', score: -0.15 },
-        { text: 'Regulatory FUD creeping back. Macro environment unfavorable. Spot volume dry, reducing positions.', score: -0.55 }
-      ];
-      
-      const newPhrase = phrases[Math.floor(Math.random() * phrases.length)];
-      setTweets(prev => [
-        { user: users[Math.floor(Math.random() * users.length)], ...newPhrase },
-        ...prev.slice(0, 4)
-      ]);
-
-      // Shift indices slightly
-      setBtcIndex(b => Math.max(0, Math.min(100, b + newPhrase.score * 5)));
-      setEthIndex(e => Math.max(0, Math.min(100, e + newPhrase.score * 4)));
+    const fetchData = async () => {
+      try {
+        const data = await getSentimentData("BTC");
+        if (data) {
+          if (data.tweets && data.tweets.length > 0) setTweets(data.tweets);
+          if (data.btcIndex !== undefined) setBtcIndex(data.btcIndex);
+          if (data.ethIndex !== undefined) setEthIndex(data.ethIndex);
+        }
+      } catch (err) {
+        console.error("Error fetching sentiment:", err);
+      }
     };
 
-    const interval = setInterval(handleNewTweet, 6000);
+    fetchData();
+    const interval = setInterval(fetchData, 4000);
     return () => clearInterval(interval);
   }, []);
 
@@ -384,32 +383,22 @@ export const JepaRegimePanel = () => {
   };
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      // Simulate regime transitions
-      const probs = matrix[activeRegime];
-      const rand = Math.random();
-      let cumulative = 0;
-      let nextRegime = activeRegime;
-      
-      for (const [regime, prob] of Object.entries(probs)) {
-        cumulative += prob;
-        if (rand <= cumulative) {
-          nextRegime = regime;
-          break;
+    const fetchData = async () => {
+      try {
+        const data = await getJepaRegime("BTC");
+        if (data) {
+          if (data.regime) setActiveRegime(data.regime);
+          if (data.leverageMultiplier !== undefined) setLeverageMultiplier(data.leverageMultiplier);
         }
+      } catch (err) {
+        console.error("Error fetching JEPA regime:", err);
       }
-      
-      if (nextRegime !== activeRegime) {
-        setActiveRegime(nextRegime);
-        // Adjust leverage ceilings based on regime
-        if (nextRegime === 'BULLISH_HIGH_VOL') setLeverageMultiplier(8.5 + Math.random());
-        else if (nextRegime === 'BULLISH_LOW_VOL') setLeverageMultiplier(10.0 - Math.random());
-        else if (nextRegime === 'BEARISH_HIGH_VOL') setLeverageMultiplier(3.0 + Math.random());
-        else setLeverageMultiplier(5.5 - Math.random());
-      }
-    }, 8000);
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 4000);
     return () => clearInterval(interval);
-  }, [activeRegime]);
+  }, []);
 
   const getRegimeStyle = (regime) => {
     switch (regime) {
@@ -501,12 +490,21 @@ export const OrderBookPressurePanel = () => {
   const [bap, setBap] = useState(55); // Bid-Ask Pressure %
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      // Mock book pressure fluctuations
-      setOfi(prev => Math.max(-10, Math.min(10, prev + (Math.random() - 0.5) * 2)));
-      setCvd(prev => prev + (Math.random() - 0.4) * 300);
-      setBap(prev => Math.max(10, Math.min(90, prev + (Math.random() - 0.5) * 6)));
-    }, 1200);
+    const fetchData = async () => {
+      try {
+        const data = await getBookPressure("BTC");
+        if (data) {
+          if (data.ofi !== undefined) setOfi(data.ofi);
+          if (data.cvd !== undefined) setCvd(data.cvd);
+          if (data.bap !== undefined) setBap(data.bap);
+        }
+      } catch (err) {
+        console.error("Error fetching order book pressure:", err);
+      }
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -771,57 +769,55 @@ export const ModelTrainingConsole = () => {
 // ============================================================================
 export const TradeLedgerPanel = () => {
   const [balance, setBalance] = useState({ usd: 10000.0, btc: 0.0, eth: 0.0 });
-  const [trades, setTrades] = useState([
-    { timestamp: new Date(Date.now() - 3600000).toLocaleTimeString(), side: 'BUY', asset: 'BTC', amount: 0.0820, price: 60975.60, total: 5000.0 },
-    { timestamp: new Date(Date.now() - 1800000).toLocaleTimeString(), side: 'BUY', asset: 'ETH', amount: 0.8571, price: 3500.00, total: 3000.0 }
-  ]);
+  const [trades, setTrades] = useState([]);
   const [manualTrade, setManualTrade] = useState({ asset: 'BTC', side: 'BUY', amount: '' });
-  const [btcPrice] = useState(63244.92);
-  const [ethPrice] = useState(3512.45);
+  const [btcPrice, setBtcPrice] = useState(63244.92);
+  const [ethPrice, setEthPrice] = useState(3512.45);
 
-  const handleExecuteTrade = (e) => {
+  const fetchLedger = async () => {
+    try {
+      const data = await getTradeLedger();
+      if (data) {
+        if (data.balance) setBalance(data.balance);
+        if (data.trades) setTrades(data.trades);
+      }
+      
+      const btcData = await getLatestPrice("BTC");
+      if (btcData && btcData.price) setBtcPrice(btcData.price);
+      
+      const ethData = await getLatestPrice("ETH");
+      if (ethData && ethData.price) setEthPrice(ethData.price);
+    } catch (err) {
+      console.error("Error fetching ledger/prices:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchLedger();
+    const interval = setInterval(fetchLedger, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleExecuteTrade = async (e) => {
     e.preventDefault();
     const amt = parseFloat(manualTrade.amount);
     if (!amt || amt <= 0) return;
 
-    const price = manualTrade.asset === 'BTC' ? btcPrice : ethPrice;
-    const cost = amt * price;
-
-    if (manualTrade.side === 'BUY') {
-      if (cost > balance.usd) {
-        alert('Insufficient USD Cash Balance');
-        return;
-      }
-      setBalance(prev => ({
-        usd: prev.usd - cost,
-        btc: prev.btc + (manualTrade.asset === 'BTC' ? amt : 0),
-        eth: prev.eth + (manualTrade.asset === 'ETH' ? amt : 0)
-      }));
-    } else {
-      const pos = manualTrade.asset === 'BTC' ? balance.btc : balance.eth;
-      if (amt > pos) {
-        alert(`Insufficient ${manualTrade.asset} position to sell`);
-        return;
-      }
-      setBalance(prev => ({
-        usd: prev.usd + cost,
-        btc: prev.btc - (manualTrade.asset === 'BTC' ? amt : 0),
-        eth: prev.eth - (manualTrade.asset === 'ETH' ? amt : 0)
-      }));
-    }
-
-    setTrades(prev => [
-      {
-        timestamp: new Date().toLocaleTimeString(),
-        side: manualTrade.side,
+    try {
+      const res = await executeTrade({
         asset: manualTrade.asset,
-        amount: amt,
-        price: price,
-        total: cost
-      },
-      ...prev
-    ]);
-    setManualTrade({ ...manualTrade, amount: '' });
+        side: manualTrade.side,
+        amount: amt
+      });
+      if (res && res.status === "success") {
+        setBalance(res.balance);
+        setTrades(prev => [res.trade, ...prev]);
+        setManualTrade({ ...manualTrade, amount: '' });
+      }
+    } catch (err) {
+      console.error("Error executing trade:", err);
+      alert(`Trade Execution Failed: ${err.response?.data?.detail || err.message}`);
+    }
   };
 
   const totalValue = balance.usd + (balance.btc * btcPrice) + (balance.eth * ethPrice);

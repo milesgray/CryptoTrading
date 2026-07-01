@@ -6,29 +6,13 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    let cleanupCallback;
+    let cleanupCallback = null;
+    let priceCleanup = null;
 
     const connectWebSocket = async () => {
       try {
         await webSocketService.connect(token);
         setIsConnected(true);
-        
-        cleanupCallback = webSocketService.onOrderBookUpdate((data) => {
-          console.log('Order book update received:', data);
-          setOrderBookData(data);
-        });
-
-        // Also listen for price updates that might contain order book data
-        const priceCleanup = webSocketService.onPriceUpdate((data) => {
-          if (data.order_book) {
-            setOrderBookData(data.order_book);
-          }
-        });
-
-        return () => {
-          if (cleanupCallback) cleanupCallback();
-          if (priceCleanup) priceCleanup();
-        };
       } catch (error) {
         console.error('Failed to connect WebSocket:', error);
         setIsConnected(false);
@@ -37,9 +21,21 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
 
     connectWebSocket();
 
+    cleanupCallback = webSocketService.onOrderBookUpdate((data) => {
+      console.log('Order book update received:', data);
+      setOrderBookData(data);
+    });
+
+    // Also listen for price updates that might contain order book data
+    priceCleanup = webSocketService.onPriceUpdate((data) => {
+      if (data.order_book) {
+        setOrderBookData(data.order_book);
+      }
+    });
+
     return () => {
       if (cleanupCallback) cleanupCallback();
-      webSocketService.disconnect();
+      if (priceCleanup) priceCleanup();
     };
   }, [token]);
 

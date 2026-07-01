@@ -12,7 +12,7 @@ import {
   ModelTrainingConsole,
   TradeLedgerPanel
 } from './components/SpecializedServicePanels';
-import { getLatestPrice } from './services/api';
+import { getLatestPrice, webSocketService } from './services/api';
 
 const App = () => {
   const [selectedToken, setSelectedToken] = useState('BTC');
@@ -21,17 +21,17 @@ const App = () => {
   const [analyticsSubTab, setAnalyticsSubTab] = useState('ingestion');
 
   useEffect(() => {
-    const fetchPrice = async () => {
-      try {
-        const priceData = await getLatestPrice(selectedToken);
-        setLatestPriceData(priceData);
-      } catch (error) {
-        console.error("Failed to fetch latest price:", error);
-      }
+    // Connect to websocket service for the selected token
+    webSocketService.connect(selectedToken);
+    
+    // Subscribe to price updates (websocket with fallback to HTTP polling)
+    const unsubscribe = webSocketService.onPriceUpdate((priceData) => {
+      setLatestPriceData(priceData);
+    });
+    
+    return () => {
+      unsubscribe();
     };
-    fetchPrice();
-    const interval = setInterval(fetchPrice, 5000);
-    return () => clearInterval(interval);
   }, [selectedToken]);
 
   const handleTokenChange = async (event) => {
