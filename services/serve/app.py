@@ -10,16 +10,30 @@ from fastapi.middleware.cors import CORSMiddleware
 from cryptotrading.data.mongo import get_db
 from cryptotrading.data.factory import get_price_adapter, get_order_book_adapter
 from cryptotrading.config import PRICE_COLLECTION_NAME, TRANSFORMED_ORDER_BOOK_COLLECTION_NAME, DB_BACKEND
-from .models import (
-    PriceDataPoint,
-    TransformedOrderBookDataPoint
-)
-from .data import process_order_book_data
-from .websocket import websocket_manager
+try:
+    from .models import (
+        PriceDataPoint,
+        TransformedOrderBookDataPoint
+    )
+    from .data import process_order_book_data
+    from .websocket import websocket_manager
 
-from .routers.market import router as market_router
-from .routers.retrieval import router as retrieval_router
-from .routers.services import router as services_router, ws_router as services_ws_router
+    from .routers.market import router as market_router
+    from .routers.retrieval import router as retrieval_router
+    from .routers.services import router as services_router, ws_router as services_ws_router
+    from .routers.broker import router as broker_router
+except ImportError:
+    from models import (
+        PriceDataPoint,
+        TransformedOrderBookDataPoint
+    )
+    from data import process_order_book_data
+    from websocket import websocket_manager
+
+    from routers.market import router as market_router
+    from routers.retrieval import router as retrieval_router
+    from routers.services import router as services_router, ws_router as services_ws_router
+    from routers.broker import router as broker_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -299,3 +313,4 @@ app.include_router(market_router)
 app.include_router(retrieval_router)
 app.include_router(services_router)
 app.include_router(services_ws_router)
+app.include_router(broker_router)

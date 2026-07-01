@@ -30,9 +30,10 @@ ENV PYTHONPATH=/app
 # Copy the rest of the application files
 COPY ./src/cryptotrading ./cryptotrading/
 COPY ./services/serve .
+COPY ./services /services
 
 # Expose port
 EXPOSE 8000
 
 # Run application
-CMD ["uv", "run", "fastapi", "dev", "app.py", "--host", "0.0.0.0"]
+CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -15,14 +15,24 @@ try:
         TransformedOrderBookData
     )
 except ModuleNotFoundError:
-    from .models import (
-        OrderBookSummaryData, PriceBucket, 
-        PriceOutlier, 
-        CandlestickData, 
-        PriceDataPoint, 
-        TransformedOrderBookDataPoint, 
-        TransformedOrderBookData
-    )
+    try:
+        from .models import (
+            OrderBookSummaryData, PriceBucket, 
+            PriceOutlier, 
+            CandlestickData, 
+            PriceDataPoint, 
+            TransformedOrderBookDataPoint, 
+            TransformedOrderBookData
+        )
+    except ImportError:
+        from models import (
+            OrderBookSummaryData, PriceBucket, 
+            PriceOutlier, 
+            CandlestickData, 
+            PriceDataPoint, 
+            TransformedOrderBookDataPoint, 
+            TransformedOrderBookData
+        )
 from cryptotrading.config import DB_BACKEND
 
 logger = logging.getLogger(__name__)
