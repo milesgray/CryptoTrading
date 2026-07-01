@@ -1,18 +1,16 @@
-# Active Context: WebSocket Stream Unification & Fallback
+# Active Context: Leveraged DP Oracle Optimization & Testing
 
 ## Quick Reference
-- **Feature**: WebSocket-First streaming with automatic HTTP fallback
-- **Branch**: `feature/websocket-unification`
-- **Status**: Completed & Integrated ✅
+- **Feature**: Leveraged DP Oracle Optimization & Safety Hardening
+- **Branch**: `feature/leveraged-oracle-tests-opts`
+- **Status**: Completed & Verified ✅
 
 ## Executive Summary
-Consolidated how the Vite React frontend retrieves live token price data. The App and subcomponents now leverage a unified, reference-counted WebSocket service (`webSocketService`). The connection is established dynamically when subscribers are active and falls back automatically to HTTP polling (`getLatestPrice`) during connection failures, reconnect phases, or server downtime.
+Optimized the core dynamic programming scanning loop in the `LeveragedDPOracle`, fixing a correctness bug in NaN validation guards inside the Numba-compiled kernel, and hardened the query caching mechanism by keeping references to cached contiguous arrays. A comprehensive unit test suite was built from scratch to cover edge cases, compounding behavior, caching, and NaN resilience.
 
 ## Key Files Created/Modified
-- [api.js](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/services/api.js): Implemented reference counting subscriber tracker and HTTP fallback polling mechanism within `WebSocketService`.
-- [App.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/App.jsx): Wired global Navbar info and selected token state to `webSocketService.onPriceUpdate` and eliminated duplicate HTTP polling.
-- [CandlestickChart.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/CandlestickChart.jsx): Cleaned up manual socket disconnections.
-- [OrderBookPanel.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/OrderBookPanel.jsx): Structured proper useEffect callbacks cleanup for the shared stream.
+- [leveraged_dp_oracle.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/trade/oracle/leveraged_dp_oracle.py): Optimized the JIT-compiled dynamic programming kernel (removing divisions, precomputing factors, and incrementally accumulating funding drag), corrected `NaN` price checks with `np.isnan`, and fixed array caching references.
+- [test_leveraged_dp_oracle.py](file:///home/miles/Development/notebooks/CryptoTrading/tests/test_leveraged_dp_oracle.py): Implemented 9 unit tests to verify error handling, flat prices, bullish/bearish trends without compounding, compounding behaviors under high leverage, caching efficiency, NMS suppressions, and NaN price resilience.
 
 ## Next Steps
-- Verify frontend live updates with a running local instance.
+- Incorporate the optimized `LeveragedDPOracle` in service tasks (like SupCon embedding pipelines and training runs).
