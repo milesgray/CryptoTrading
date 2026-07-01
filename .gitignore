@@ -4,3 +4,5 @@ dist
 .ruff-cache
 logs
 *.log
+.cache/
+*kube.conf

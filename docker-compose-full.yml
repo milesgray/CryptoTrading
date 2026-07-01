@@ -65,12 +65,86 @@ services:
         environment:
             - VITE_BACKEND_URL=http://serve:8000
 
+    embed:
+        build:
+            context: .
+            dockerfile: services/embed/Dockerfile
+        ports:
+            - "8301:8301"
+        environment:
+            - DB_BACKEND=${DB_BACKEND:-postgres}
+            - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
+            - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+        depends_on:
+            - timescaledb
+
+    jepa:
+        build:
+            context: .
+            dockerfile: services/jepa/Dockerfile
+        environment:
+            - DB_BACKEND=${DB_BACKEND:-postgres}
+            - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
+            - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+        depends_on:
+            - timescaledb
+
+    pressure:
+        build:
+            context: .
+            dockerfile: services/pressure/Dockerfile
+        environment:
+            - DB_BACKEND=${DB_BACKEND:-postgres}
+            - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
+            - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+        depends_on:
+            - timescaledb
+
     predict:
         build:
             context: .
             dockerfile: services/predict/Dockerfile
         ports:
             - "${PREDICT_PORT:-8388}:8000"
+        environment:
+            - DB_BACKEND=${DB_BACKEND:-postgres}
+            - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
+            - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+        depends_on:
+            - timescaledb
+
+    mongo:
+        image: mongo:7.0
+        container_name: crypto-trading-mongo
+        environment:
+            - MONGO_INITDB_DATABASE=crypto_sentiment
+        ports:
+            - "27017:27017"
+        volumes:
+            - mongo_data:/data/db
+
+    sentiment:
+        build:
+            context: ./services/sentiment
+            dockerfile: Dockerfile
+        environment:
+            - MONGODB_URI=mongodb://mongo:27017/
+            - MONGODB_DATABASE=crypto_sentiment
+            - PYTHONUNBUFFERED=1
+            - TWITTER_BEARER_TOKEN=${TWITTER_BEARER_TOKEN}
+            - TWITTER_API_KEY=${TWITTER_API_KEY}
+            - TWITTER_API_SECRET=${TWITTER_API_SECRET}
+            - TWITTER_ACCESS_TOKEN=${TWITTER_ACCESS_TOKEN}
+            - TWITTER_ACCESS_TOKEN_SECRET=${TWITTER_ACCESS_TOKEN_SECRET}
+        ports:
+            - "8380:8080"
+        depends_on:
+            - mongo
+
+    trade:
+        build:
+            context: .
+            dockerfile: services/trade/Dockerfile
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
@@ -102,4 +176,5 @@ services:
 
 volumes:
     pgdata:
+    mongo_data:
     portainer_data:
