@@ -1,6 +1,6 @@
 from cryptotrading.predict.data import data_provider
 from .base import BaseExp
-from cryptotrading.predict.utils.tools import EarlyStopping, adjust_learning_rate, visual
+from cryptotrading.predict.utils.train import EarlyStopping, adjust_learning_rate, visual
 from cryptotrading.predict.utils.metrics import metric
 from cryptotrading.predict.models import get_model
 import torch
@@ -11,7 +11,7 @@ import time
 import warnings
 import numpy as np
 from tqdm import tqdm
-from cryptotrading.predict.utils.tools import use_amp
+from cryptotrading.predict.utils.train import use_amp
 
 warnings.filterwarnings("ignore")
 
