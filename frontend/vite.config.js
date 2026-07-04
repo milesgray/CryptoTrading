@@ -8,16 +8,24 @@ export default defineConfig(({ mode }) => {
   
   // Resolve backend URL (inside docker network, this will be http://serve:8000)
   const backendUrl = env.VITE_BACKEND_URL || 'http://localhost:8362'
+  const trainUrl = env.VITE_TRAIN_URL || 'http://localhost:8389'
   // Derive WebSocket URL from HTTP URL (e.g. ws://serve:8000 or ws://localhost:8362)
   const backendWsUrl = backendUrl.replace(/^http/, 'ws')
 
   console.log(`[Vite Config] Proxying /api to ${backendUrl}`);
+  console.log(`[Vite Config] Proxying /api/train to ${trainUrl}`);
   console.log(`[Vite Config] Proxying /ws to ${backendWsUrl}`);
 
   return {
     plugins: [react()],
     server: {
       proxy: {
+        '/api/train': {
+          target: trainUrl,
+          changeOrigin: true,
+          secure: false,
+          rewrite: (path) => path.replace(/^\/api\/train/, ''),
+        },
         '/api': {  // Proxy API requests to the FastAPI backend
           target: backendUrl,
           changeOrigin: true,

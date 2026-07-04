@@ -19,4 +19,6 @@ ENV PYTHONPATH=/app
 COPY ./src/cryptotrading ./cryptotrading/
 COPY ./services/train .
 
+EXPOSE 8000
+
 CMD ["uv", "run", "python", "main.py"]

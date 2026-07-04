@@ -73,10 +73,22 @@
 - [x] Caching object-address retention fix to prevent memory reuse misses.
 - [x] Comprehensive unit tests verifying oracle behaviors, compounding, NMS, caching, and NaNs.
 
+### Phase 12: HTTP Enabled Training Service & Frontend (Completed ✅)
+- [x] Convert train service from CLI-driven to FastAPI-based HTTP server.
+- [x] Support asynchronous training background tasks.
+- [x] Add status monitoring, model listing, and weight download endpoints.
+- [x] Integrate multi-axis inference serving endpoint for all `cryptotrading.predict` models.
+- [x] Fix UnboundLocalError bug in forecast experiment trainer loss logic.
+- [x] Configure Vite proxying and environment variable networks for frontend container.
+- [x] Implement Axios service wrappers and update React ModelTrainingConsole.
+- [x] Build live training job queue status tracker, dynamic loss curves, and checkpoint inference tester.
+- [x] Verify successful production asset build using Vite compiler.
+
 ## Sprint Progress
 
-### Current Goal: Leveraged DP Oracle Optimization & Testing
-- [x] Fix Numba kernel correctness on NaN values.
-- [x] Optimize inner loop operations and precompute constants.
-- [x] Stabilize input array cache holding contiguous references.
-- [x] Create comprehensive unit test suite in `tests/test_leveraged_dp_oracle.py`.
+### Current Goal: HTTP Enabled Training Service & Frontend
+- [x] Implement FastAPI endpoints and Pydantic validation schemas.
+- [x] Support asynchronous background training runs.
+- [x] Serve model weight files and predictions/inference.
+- [x] Update frontend proxy config, Axios helper requests, and ModelTrainingConsole components.
+- [x] Verify successful compilation and build of React assets.

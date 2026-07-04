@@ -611,3 +611,53 @@ export const executeTrade = async (order) => {
     throw error;
   }
 };
+
+export const startTrainingTask = async (config) => {
+  try {
+    const response = await api.post('/train/train', config);
+    return response.data;
+  } catch (error) {
+    console.error('Error starting training task:', error);
+    throw error;
+  }
+};
+
+export const getTrainingTasks = async () => {
+  try {
+    const response = await api.get('/train/tasks');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching training tasks:', error);
+    throw error;
+  }
+};
+
+export const getTrainingTaskStatus = async (taskId) => {
+  try {
+    const response = await api.get(`/train/tasks/${taskId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching status for task ${taskId}:`, error);
+    throw error;
+  }
+};
+
+export const getTrainedModels = async () => {
+  try {
+    const response = await api.get('/train/models');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching trained models:', error);
+    throw error;
+  }
+};
+
+export const runModelInference = async (modelId, inputData) => {
+  try {
+    const response = await api.post(`/train/models/${modelId}/predict`, inputData);
+    return response.data;
+  } catch (error) {
+    console.error(`Error running inference on model ${modelId}:`, error);
+    throw error;
+  }
+};

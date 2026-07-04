@@ -1,16 +1,19 @@
-# Active Context: Leveraged DP Oracle Optimization & Testing
+# Active Context: HTTP Enabled Training Service & Frontend Interface
 
 ## Quick Reference
-- **Feature**: Leveraged DP Oracle Optimization & Safety Hardening
-- **Branch**: `feature/leveraged-oracle-tests-opts`
+- **Feature**: HTTP Enabled training service & React frontend interface
+- **Branch**: `feature/http-train-service-frontend`
 - **Status**: Completed & Verified ✅
 
 ## Executive Summary
-Optimized the core dynamic programming scanning loop in the `LeveragedDPOracle`, fixing a correctness bug in NaN validation guards inside the Numba-compiled kernel, and hardened the query caching mechanism by keeping references to cached contiguous arrays. A comprehensive unit test suite was built from scratch to cover edge cases, compounding behavior, caching, and NaN resilience.
+Completed the end-to-end integration of the training service. The backend is now a fully functional FastAPI web server capable of running training tasks in background threads and serving weights/predictions. The React frontend has been connected to the backend via Vite proxying, featuring config inputs, a job queue status tracker, dynamic ECharts loss curve plots, and an interactive checkpoint inference playground.
 
 ## Key Files Created/Modified
-- [leveraged_dp_oracle.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/trade/oracle/leveraged_dp_oracle.py): Optimized the JIT-compiled dynamic programming kernel (removing divisions, precomputing factors, and incrementally accumulating funding drag), corrected `NaN` price checks with `np.isnan`, and fixed array caching references.
-- [test_leveraged_dp_oracle.py](file:///home/miles/Development/notebooks/CryptoTrading/tests/test_leveraged_dp_oracle.py): Implemented 9 unit tests to verify error handling, flat prices, bullish/bearish trends without compounding, compounding behaviors under high leverage, caching efficiency, NMS suppressions, and NaN price resilience.
+- [main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/train/main.py): Rewritten as a FastAPI app with CLI fallback.
+- [docker-compose.yml](file:///home/miles/Development/notebooks/CryptoTrading/docker-compose.yml) & [docker-compose-full.yml](file:///home/miles/Development/notebooks/CryptoTrading/docker-compose-full.yml): Exposed port `8389` and added `VITE_TRAIN_URL` env variable.
+- [vite.config.js](file:///home/miles/Development/notebooks/CryptoTrading/frontend/vite.config.js): Added `/api/train` proxy rule.
+- [api.js](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/services/api.js): Implemented HTTP Axios client requests.
+- [SpecializedServicePanels.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/SpecializedServicePanels.jsx): Connected `ModelTrainingConsole` configuration form, job execution queue, live loss charts, and prediction sandbox to backend endpoints.
 
 ## Next Steps
-- Incorporate the optimized `LeveragedDPOracle` in service tasks (like SupCon embedding pipelines and training runs).
+- Deploy and verify end-to-end in containerized environment.

@@ -237,6 +237,7 @@ class ForecastExp(BaseExp):
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
                         batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                         loss = criterion(outputs, batch_y)
+                        total_loss = loss
                         if hasattr(self.model, 'ps_loss'):
                             if self.args.ps_loss_mode == 'mean':
                                 losses_ps = torch.tensor([self.model.ps_loss(outputs[:,:,i].unsqueeze(-1), batch_y[:,:,i].unsqueeze(-1)) 

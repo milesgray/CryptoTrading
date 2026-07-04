@@ -64,6 +64,7 @@ services:
             - "${FRONTEND_PORT:-8080}:8080"
         environment:
             - VITE_BACKEND_URL=http://serve:8000
+            - VITE_TRAIN_URL=http://train:8000
 
     embed:
         build:
@@ -156,6 +157,8 @@ services:
         build:
             context: .
             dockerfile: services/train/Dockerfile
+        ports:
+            - "${TRAIN_PORT:-8389}:8000"
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
