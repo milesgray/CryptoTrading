@@ -1,11 +1,13 @@
-import os
+"""
+Utilities for training time series models
+"""
+
+import math
 from contextlib import nullcontext
 
-import numpy as np
 import torch
+import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
-import math
 
 plt.switch_backend('agg')
 
@@ -64,7 +66,6 @@ class EarlyStopping:
             print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
         torch.save(model.state_dict(), path + '/' + 'checkpoint.pth')
         self.val_loss_min = val_loss
-
 
 
 def visual(true, preds=None, name='./pic/test.pdf'):

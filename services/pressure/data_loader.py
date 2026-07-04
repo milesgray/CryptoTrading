@@ -13,7 +13,7 @@ import numpy as np
 
 from cryptotrading.data.factory import get_order_book_adapter, get_price_adapter
 from cryptotrading.data.models import OrderBookSnapshot
-from .pressure_features import OrderBookFeaturizer
+from .pressure_features import OrderBookFeaturizer, OrderBookSnapshot as PressureOrderBookSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ class OrderBookDataLoader:
     
     def __init__(
         self,
+        backend: str = "postgres",
         orderbook_adapter: Optional[Any] = None,
         price_adapter: Optional[Any] = None,
         featurizer: Optional[OrderBookFeaturizer] = None,
@@ -82,8 +83,8 @@ class OrderBookDataLoader:
             max_gap_threshold: Maximum gap size before flagging as issue
             quality_threshold: Minimum quality score for acceptable data
         """
-        self.orderbook_adapter = orderbook_adapter or get_order_book_adapter()
-        self.price_adapter = price_adapter or get_price_adapter()
+        self.orderbook_adapter = orderbook_adapter or get_order_book_adapter(backend=backend)
+        self.price_adapter = price_adapter or get_price_adapter(backend=backend)
         self.featurizer = featurizer or OrderBookFeaturizer()
         self.default_token = default_token
         self.expected_interval_seconds = expected_interval_seconds
@@ -315,7 +316,7 @@ class OrderBookDataLoader:
     
     def _convert_to_snapshots(self, raw_data: List[Dict[str, Any]], token: str) -> List[Any]:
         """Convert raw database dicts to OrderBookSnapshot models"""
-        from pressure_features import OrderBookSnapshot as PressureOrderBookSnapshot
+        
         snapshots = []
         for record in raw_data:
             book = record.get("book", {})

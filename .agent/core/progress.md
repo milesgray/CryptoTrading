@@ -67,9 +67,16 @@
 - [x] Implement automatic HTTP polling fallback for connection dropouts and handshake delays.
 - [x] Clean up component-specific manual disconnections to allow shared pricing connection states.
 
+### Phase 11: Leveraged DP Oracle Optimization & Testing (Completed ✅)
+- [x] Correctness validation fixes for NaN and negative price checks in Numba kernel.
+- [x] Mathematical and inner-loop optimizations inside dynamic programming engine.
+- [x] Caching object-address retention fix to prevent memory reuse misses.
+- [x] Comprehensive unit tests verifying oracle behaviors, compounding, NMS, caching, and NaNs.
+
 ## Sprint Progress
 
-### Current Goal: WebSocket Stream Unification
-- [x] implement reference-counted WebSocket service.
-- [x] Integrate HTTP polling fallback within the service.
-- [x] Clean up App, CandlestickChart, and OrderBookPanel.
+### Current Goal: Leveraged DP Oracle Optimization & Testing
+- [x] Fix Numba kernel correctness on NaN values.
+- [x] Optimize inner loop operations and precompute constants.
+- [x] Stabilize input array cache holding contiguous references.
+- [x] Create comprehensive unit test suite in `tests/test_leveraged_dp_oracle.py`.
