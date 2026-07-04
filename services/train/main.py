@@ -234,15 +234,34 @@ def get_task_status(task_id: str):
         return tasks[task_id]
 
 
+PROJECT_ROOT = os.path.abspath(os.getcwd())
+import tempfile
+TEMP_DIR = os.path.abspath(tempfile.gettempdir())
+
+def validate_safe_path(base_dir: str, relative_path: str = None) -> str:
+    abs_base = os.path.abspath(base_dir)
+    # Ensure base_dir is within the project root or system temp directory
+    if not (abs_base.startswith(PROJECT_ROOT) or abs_base.startswith(TEMP_DIR)):
+        raise HTTPException(status_code=400, detail="Access denied: Directory must be within the project root or temp directory.")
+    
+    if relative_path:
+        abs_target = os.path.abspath(os.path.join(abs_base, relative_path))
+        if not (abs_target.startswith(abs_base) or abs_target.startswith(TEMP_DIR)):
+            raise HTTPException(status_code=400, detail="Access denied: Path traversal detected.")
+        return abs_target
+    return abs_base
+
+
 @app.get("/models")
 def list_models(checkpoints_dir: str = "./checkpoints/"):
-    if not os.path.exists(checkpoints_dir):
+    safe_checkpoints_dir = validate_safe_path(checkpoints_dir)
+    if not os.path.exists(safe_checkpoints_dir):
         return []
     
     models = []
-    for root, dirs, files in os.walk(checkpoints_dir):
+    for root, dirs, files in os.walk(safe_checkpoints_dir):
         if "checkpoint.pth" in files:
-            relative_dir = os.path.relpath(root, checkpoints_dir)
+            relative_dir = os.path.relpath(root, safe_checkpoints_dir)
             model_info = {
                 "model_id": relative_dir,
                 "path": root,
@@ -260,37 +279,31 @@ def list_models(checkpoints_dir: str = "./checkpoints/"):
 
 @app.get("/models/{model_id:path}/download")
 def download_model(model_id: str, checkpoints_dir: str = "./checkpoints/"):
-    model_dir = os.path.join(checkpoints_dir, model_id)
-    checkpoint_file = os.path.join(model_dir, "checkpoint.pth")
+    safe_checkpoints_dir = validate_safe_path(checkpoints_dir)
+    checkpoint_file = validate_safe_path(safe_checkpoints_dir, os.path.join(model_id, "checkpoint.pth"))
     if not os.path.exists(checkpoint_file):
-        # Try finding directly
-        if os.path.exists(os.path.join(model_id, "checkpoint.pth")):
-            checkpoint_file = os.path.join(model_id, "checkpoint.pth")
-        else:
-            raise HTTPException(status_code=404, detail=f"Model checkpoint not found for {model_id}")
+        raise HTTPException(status_code=404, detail=f"Model checkpoint not found for {model_id}")
     return FileResponse(checkpoint_file, media_type="application/octet-stream", filename=f"{os.path.basename(model_id)}_checkpoint.pth")
 
 
 @app.post("/models/{model_id:path}/predict")
 def run_model_inference(model_id: str, request: PredictRequest, checkpoints_dir: str = "./checkpoints/"):
-    model_dir = os.path.join(checkpoints_dir, model_id)
+    safe_checkpoints_dir = validate_safe_path(checkpoints_dir)
+    model_dir = validate_safe_path(safe_checkpoints_dir, model_id)
     if not os.path.exists(model_dir):
-        if os.path.exists(model_id):
-            model_dir = model_id
-        else:
-            # Let's search inside checkpoints
-            found = False
-            if os.path.exists(checkpoints_dir):
-                for d in os.listdir(checkpoints_dir):
-                    if d == model_id:
-                        model_dir = os.path.join(checkpoints_dir, d)
-                        found = True
-                        break
-            if not found:
-                raise HTTPException(status_code=404, detail=f"Model directory {model_id} not found.")
+        # Let's search inside checkpoints
+        found = False
+        if os.path.exists(safe_checkpoints_dir):
+            for d in os.listdir(safe_checkpoints_dir):
+                if d == model_id:
+                    model_dir = validate_safe_path(safe_checkpoints_dir, d)
+                    found = True
+                    break
+        if not found:
+            raise HTTPException(status_code=404, detail=f"Model directory {model_id} not found.")
 
-    config_path = os.path.join(model_dir, "config.json")
-    checkpoint_path = os.path.join(model_dir, "checkpoint.pth")
+    config_path = validate_safe_path(model_dir, "config.json")
+    checkpoint_path = validate_safe_path(model_dir, "checkpoint.pth")
     if not os.path.exists(config_path) or not os.path.exists(checkpoint_path):
         raise HTTPException(status_code=400, detail="Model config.json or checkpoint.pth is missing.")
         
@@ -311,6 +324,14 @@ def run_model_inference(model_id: str, request: PredictRequest, checkpoints_dir:
 
     try:
         x_tensor = torch.FloatTensor(request.x)
+        # Shape validations
+        if len(x_tensor.shape) != 3:
+            raise HTTPException(status_code=400, detail=f"Input must have exactly 3 dimensions [batch_size, seq_len, enc_in], got {list(x_tensor.shape)}.")
+        if x_tensor.shape[1] != configs.seq_len:
+            raise HTTPException(status_code=400, detail=f"Input sequence length must match model seq_len ({configs.seq_len}), got {x_tensor.shape[1]}.")
+        if x_tensor.shape[2] != configs.enc_in:
+            raise HTTPException(status_code=400, detail=f"Input feature dimensions must match model enc_in ({configs.enc_in}), got {x_tensor.shape[2]}.")
+
         batch_size = x_tensor.shape[0]
         
         with torch.no_grad():
@@ -333,6 +354,8 @@ def run_model_inference(model_id: str, request: PredictRequest, checkpoints_dir:
                 
             predictions = outputs.cpu().tolist()
             return {"predictions": predictions}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}")
 

@@ -14,7 +14,7 @@ import numpy as np
 import torch
 
 from cryptotrading.predict.models import get_model
-from cryptotrading.predict.utils.tools import dotdict
+from cryptotrading.predict.utils import dotdict
 from cryptotrading.predict.train import train_model, predict_next_movement
 from cryptotrading.data.factory import get_price_adapter
 
