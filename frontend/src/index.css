@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* Fix for unreadable dropdown option text on light/white backgrounds */
 select option {
