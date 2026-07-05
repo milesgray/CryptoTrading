@@ -92,6 +92,11 @@
 - [x] Centralize `trade_setups` schema and index generation in `postgres.py`.
 - [x] Write and run unit tests for all touched components.
 
+### Phase 14: Service Communication & Embed Auto-Population (Completed ✅)
+- [x] Configure `EMBED_SERVICE_URL` in docker-compose configs to resolve container communication.
+- [x] Implement async background task to automatically extract trade setups, generate embeddings, and populate pgvector database at startup.
+- [x] Verify complete container lifespan, communication flows, and test execution.
+
 ## Sprint Progress
  
 - [x] Remove mock results and simulated data states from the frontend.

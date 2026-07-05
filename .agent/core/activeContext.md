@@ -1,33 +1,30 @@
-# Active Context: Polish Embed Service & Move pgvector Store
+# Active Context: Resolve Retrieval-Embed Service Connection & Auto-populate DB
 
 ## Quick Reference
-- **Feature**: Polish Embed Service & Move pgvector Store to main library
-- **Branch**: `feature/polish-embed-service`
-- **Plan File**: `.agent/plans/move-pgvector-store-plan.md`
+- **Feature**: Resolve Retrieval-Embed Service Connection & Auto-populate DB
+- **Branch**: `fix/retrieval-embed-connection`
 - **Status**: Completed & Verified ✅
 
 ## Executive Summary
-Successfully migrated the pgvector database adapter logic out of `services/embed` and into the main `cryptotrading` package under `src/cryptotrading/data/pgvector_store.py`. Integrated the `trade_setups` table and HNSW index creation centrally in `postgres.py`. Wrote and verified comprehensive unit tests.
+Resolved connection failures between the `retrieval` (and `serve`) services and the `embed` service by configuring the correct `EMBED_SERVICE_URL` in the docker compose files. Added an asynchronous background task `auto_populate_db` in `services/embed/server.py` to auto-populate the pgvector database at startup by pulling, DP-labeling, and embedding historical price data when the store is empty.
 
 ## Architecture Overview
-The pgvector database model for trade setups is centralized. The table schemas (including HNSW indices) are integrated into `postgres.py`'s centralized initialization. `TradeEmbeddingDB` links directly to the shared `postgres.py` connection pool.
+The retrieval and serve services resolve the embed service container host correctly. The embed service implements a self-bootstrapping background task at startup that ensures the vector database is fully populated with trade setup embeddings if no setups are present.
 
 ## Tech Stack for This Feature
-- **FastAPI**: Endpoint handler
+- **FastAPI**: Endpoint handler & lifespan events
+- **Docker Compose**: Container orchestration and network resolution
 - **PostgreSQL + pgvector**: Vector and metadata store
 - **asyncpg**: Async database connector
-- **PyTorch**: Contrastive representation encoder
 
 ## Key Files Created/Modified
-- [src/cryptotrading/data/postgres.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/postgres.py): Added `trade_setups` schema and index initialization centrally.
-- [src/cryptotrading/data/pgvector_store.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/pgvector_store.py): Centrally defined pgvector database adapter.
-- [services/embed/database/pgvector_store.py](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/database/pgvector_store.py): Redirected imports to the main package.
-- [tests/test_pgvector_store.py](file:///home/miles/Development/notebooks/CryptoTrading/tests/test_pgvector_store.py): Unit tests for pgvector_store and compatibility.
+- [docker-compose.yml](file:///home/miles/Development/notebooks/CryptoTrading/docker-compose.yml): Configured `EMBED_SERVICE_URL` for `retrieval` and `serve`.
+- [docker-compose-full.yml](file:///home/miles/Development/notebooks/CryptoTrading/docker-compose-full.yml): Configured `EMBED_SERVICE_URL` for `retrieval` and `serve`.
+- [services/embed/server.py](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/server.py): Added the `auto_populate_db` background task at startup.
 
 ## Verification & Validation
-- Verified using `docker compose up -d --build embed` to compile the Docker image and spin up the service.
-- Checked container logs to ensure database connection and schema initialization completed without errors.
-- Verified `/health` endpoint responds with a successful status.
-- Executed unit tests in virtual environment:
-  - `src/.venv/bin/pytest tests/test_embed_service.py` -> **Passed** (1/1)
-  - `src/.venv/bin/pytest tests/test_pgvector_store.py` -> **Passed** (7/7)
+- Verified using `docker compose up -d --build` to compile Docker images and spin up all services.
+- Checked container logs to ensure `retrieval` is connecting to `embed:8301` without connection errors.
+- Verified uvicorn logs in `embed` showing the database auto-population task successfully pulling price data and starting embedding extraction.
+- Executed unit tests:
+  - `uv run pytest tests/...` -> **38 Passed**

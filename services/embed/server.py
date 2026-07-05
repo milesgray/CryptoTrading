@@ -13,6 +13,8 @@ Endpoints:
 import os
 import json
 import numpy as np
+import asyncio
+import asyncpg
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -24,9 +26,10 @@ from pydantic import BaseModel, Field
 import torch
 import logging
 
-from models.encoder import PriceWindowEncoder, normalize_price_window
+from models.encoder import PriceWindowEncoder, normalize_price_window, extract_trade_setups
 from database.numpy_store import NumpyVectorStore
-from database.pgvector_store import TradeEmbeddingDB
+from database.pgvector_store import TradeEmbeddingDB, StoredTradeSetup
+from cryptotrading.trade.oracle import LeveragedDPOracle
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -108,6 +111,190 @@ app.add_middleware(
 
 state = AppState()
 
+
+async def auto_populate_db():
+    """Background task to wait for bootstrapped price data and automatically populate trade setups vector store."""
+    logger.info("Starting auto-population background task...")
+    
+    # Wait for price_data to be populated by the retrieval service
+    retries = 0
+    max_retries = 30
+    prices_found = False
+    
+    # Give the connection/schema initialization a moment
+    await asyncio.sleep(2)
+    
+    while retries < max_retries:
+        if state.store is None:
+            await asyncio.sleep(2)
+            continue
+            
+        if isinstance(state.store, TradeEmbeddingDB):
+            try:
+                stats = await state.store.get_stats()
+                total_setups = stats['total_setups']
+            except Exception as e:
+                logger.warning(f"Error getting stats from store: {e}")
+                total_setups = 0
+        else:
+            total_setups = len(state.store.metadata)
+            
+        if total_setups > 0:
+            logger.info(f"Vector store already contains {total_setups} setups. Skipping auto-population.")
+            return
+            
+        # Check if price_data has entries
+        try:
+            postgres_uri = os.getenv("POSTGRES_URI", "postgresql://postgres:postgres@timescaledb:5432/crypto_trading")
+            conn = await asyncpg.connect(dsn=postgres_uri)
+            count = await conn.fetchval("SELECT COUNT(*) FROM price_data")
+            await conn.close()
+                
+            if count and count >= 120:  # Need at least some window of data
+                logger.info(f"Found {count} price records in database. Starting embedding extraction...")
+                prices_found = True
+                break
+        except Exception as e:
+            logger.warning(f"Error checking price_data count (retry {retries}/{max_retries}): {e}")
+            
+        retries += 1
+        await asyncio.sleep(5)
+        
+    if not prices_found:
+        logger.warning("No price data found in database after waiting. Auto-population aborted.")
+        return
+        
+    # Query price data
+    try:
+        postgres_uri = os.getenv("POSTGRES_URI", "postgresql://postgres:postgres@timescaledb:5432/crypto_trading")
+        conn = await asyncpg.connect(dsn=postgres_uri)
+        rows = await conn.fetch("SELECT symbol, time, close FROM price_data ORDER BY symbol, time ASC")
+        await conn.close()
+            
+        if not rows:
+            logger.warning("No price data fetched.")
+            return
+            
+        # Group by symbol
+        data_by_symbol = {}
+        for r in rows:
+            sym = r['symbol']
+            if sym not in data_by_symbol:
+                data_by_symbol[sym] = {'prices': [], 'timestamps': []}
+            data_by_symbol[sym]['prices'].append(float(r['close']))
+            data_by_symbol[sym]['timestamps'].append(r['time'].timestamp())
+            
+        oracle = LeveragedDPOracle(max_leverage=20.0, transaction_cost=0.001)
+        
+        total_extracted = 0
+        total_inserted = 0
+        
+        for sym, d in data_by_symbol.items():
+            prices = np.array(d['prices'], dtype=np.float64)
+            timestamps = np.array(d['timestamps'], dtype=np.float64)
+            
+            if len(prices) < state.window_size:
+                logger.warning(f"Insufficient price data for {sym} to extract setups (need {state.window_size}, got {len(prices)})")
+                continue
+                
+            logger.info(f"Extracting setups for {sym} ({len(prices)} prices)...")
+            actions, leverages = oracle.compute_oracle_actions(prices)
+            setups = extract_trade_setups(
+                prices=prices,
+                timestamps=timestamps,
+                oracle_actions=actions,
+                oracle_leverages=leverages,
+                window_size=state.window_size
+            )
+            
+            logger.info(f"Extracted {len(setups)} setups for {sym}")
+            if not setups:
+                continue
+                
+            total_extracted += len(setups)
+            
+            # Generate embeddings
+            state.encoder.eval()
+            device = next(state.encoder.parameters()).device
+            
+            embeddings = []
+            batch_size = 256
+            for i in range(0, len(setups), batch_size):
+                batch = setups[i:i + batch_size]
+                windows = np.stack([s.price_window for s in batch])
+                with torch.no_grad():
+                    x = torch.from_numpy(windows).float().to(device)
+                    emb = state.encoder(x).cpu().numpy()
+                embeddings.append(emb)
+            
+            if embeddings:
+                embeddings = np.vstack(embeddings)
+                
+                # Convert to StoredTradeSetup objects
+                stored_setups = []
+                for idx, setup in enumerate(setups):
+                    start_idx = max(0, setup.entry_idx - state.window_size)
+                    end_idx = setup.entry_idx
+                    raw_prices = prices[start_idx:end_idx]
+                    entry_price = float(prices[setup.entry_idx])
+                    exit_idx = min(setup.entry_idx + setup.hold_duration, len(prices) - 1)
+                    exit_price = float(prices[exit_idx])
+                    
+                    target_len = state.window_size
+                    if len(raw_prices) < target_len:
+                        raw_prices = np.pad(raw_prices, (target_len - len(raw_prices), 0), mode='edge')
+                    elif len(raw_prices) > target_len:
+                        raw_prices = raw_prices[-target_len:]
+                        
+                    stored = StoredTradeSetup(
+                        id=None,
+                        embedding=embeddings[idx],
+                        direction=setup.direction,
+                        profit_pct=setup.profit_pct,
+                        leverage=setup.leverage,
+                        hold_duration=setup.hold_duration,
+                        entry_timestamp=float(timestamps[setup.entry_idx]),
+                        entry_price=entry_price,
+                        exit_price=exit_price,
+                        symbol=sym,
+                        timeframe='1m',
+                        window_size=state.window_size,
+                        price_window=raw_prices
+                    )
+                    stored_setups.append(stored)
+                    
+                # Insert into store
+                if isinstance(state.store, TradeEmbeddingDB):
+                    ids = await state.store.insert_batch(stored_setups)
+                    total_inserted += len(ids)
+                else:
+                    price_windows_padded = np.array([s.price_window for s in stored_setups])
+                    from database.numpy_store import StoredTradeSetup as NumpyStoredTradeSetup
+                    numpy_stored_setups = []
+                    for s in stored_setups:
+                        n_s = NumpyStoredTradeSetup(
+                            id=0,
+                            direction=s.direction,
+                            profit_pct=s.profit_pct,
+                            leverage=s.leverage,
+                            hold_duration=s.hold_duration,
+                            entry_timestamp=s.entry_timestamp,
+                            entry_price=s.entry_price,
+                            exit_price=s.exit_price,
+                            symbol=s.symbol,
+                            timeframe=s.timeframe,
+                            window_size=s.window_size
+                        )
+                        numpy_stored_setups.append(n_s)
+                    ids = state.store.add_batch(embeddings, numpy_stored_setups, price_windows_padded)
+                    state.store.save()
+                    total_inserted += len(ids)
+                    
+        logger.info(f"Auto-population complete. Extracted: {total_extracted}, Inserted/Saved: {total_inserted}")
+    except Exception as e:
+        logger.error(f"Error during auto-population background task: {e}", exc_info=True)
+
+
 # ============================================================================
 # Lifecycle Events
 # ============================================================================
@@ -170,6 +357,10 @@ async def startup():
         stats = state.store.get_stats()
     
     logger.info(f"Vector store loaded: {stats}")
+    
+    # Start auto-population task in the background
+    asyncio.create_task(auto_populate_db())
+    
     logger.info("Startup complete!")
 
 
