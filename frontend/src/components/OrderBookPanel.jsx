@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as echarts from 'echarts';
 import { webSocketService } from '../services/api';
 
@@ -50,7 +50,7 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
   };
 
   // 1. Calculate pressure stats and depth curves
-  const getDepthStats = () => {
+  const { bidsDepth, asksDepth, bidPercentage, askPercentage, midpoint, spread } = useMemo(() => {
     if (!displayData || !displayData.bid_buckets || !displayData.ask_buckets) {
       return { bidsDepth: [], asksDepth: [], bidPercentage: 50, askPercentage: 50, midpoint: 0, spread: 0 };
     }
@@ -82,9 +82,7 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
       (sortedBids.length > 0 && sortedAsks.length > 0 ? sortedAsks[0].avg_price - sortedBids[0].avg_price : 0);
 
     return { bidsDepth, asksDepth, bidPercentage, askPercentage, midpoint, spread };
-  };
-
-  const { bidsDepth, asksDepth, bidPercentage, askPercentage, midpoint, spread } = getDepthStats();
+  }, [displayData, latestPriceData]);
 
   // 2. Render and update the ECharts depth chart
   useEffect(() => {
@@ -127,12 +125,12 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
         borderColor: '#1e293b',
         textStyle: { color: '#cbd5e1', fontSize: 11, fontFamily: 'monospace' },
         formatter: (params) => {
-          let html = `<div className="font-bold border-b border-slate-800 pb-1 mb-1 text-[10px] text-slate-400">Price: $${params[0].value[0].toFixed(2)}</div>`;
+          let html = `<div class="font-bold border-b border-slate-800 pb-1 mb-1 text-[10px] text-slate-400">Price: $${params[0].value[0].toFixed(2)}</div>`;
           params.forEach(p => {
             const colorClass = p.seriesName === 'Bids' ? 'text-emerald-400' : 'text-rose-400';
-            html += `<div className="flex justify-between gap-4 text-[10px]">
-              <span className="${colorClass}">${p.seriesName}:</span>
-              <span className="font-bold">${p.value[1].toFixed(4)}</span>
+            html += `<div class="flex justify-between gap-4 text-[10px]">
+              <span class="${colorClass}">${p.seriesName}:</span>
+              <span class="font-bold">${p.value[1].toFixed(4)}</span>
             </div>`;
           });
           return html;
