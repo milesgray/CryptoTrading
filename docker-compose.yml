@@ -40,7 +40,22 @@ services:
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
+            - embed
+            - record
 
+    embed:
+        build:
+            context: .
+            dockerfile: services/embed/Dockerfile
+        ports:
+            - "8301:8301"
+        environment:
+            - DB_BACKEND=${DB_BACKEND:-postgres}
+            - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
+            - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+        depends_on:
+            - timescaledb
+            - record
     record:
         build:
             context: .
@@ -78,6 +93,7 @@ services:
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
+            - record
 
     train:
         build:
@@ -91,6 +107,7 @@ services:
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
+            - record
 
     portainer:
         image: portainer/portainer-ce:latest
