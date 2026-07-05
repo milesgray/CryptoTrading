@@ -89,3 +89,4 @@
 - [x] Remove mock results and simulated data states from the frontend.
 - [x] Fix dropdown and input styling issues (white-on-white text background) globally.
 - [x] Align CandlestickChart and OrderBookPanel components with the global dark theme.
+- [x] Rework Order Book snapshot panel into a cumulative depth chart visualizer.

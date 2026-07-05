@@ -1,18 +1,16 @@
-# Active Context: Remove Mocks & Fix Dropdown/Input Styling
+# Active Context: Rework Order Book Snapshot Panel
 
 ## Quick Reference
-- **Feature**: Remove mock results from frontend & fix dropdown/input styling
-- **Branch**: `feature/remove-mocks-and-styles`
+- **Feature**: Rework Order Book snapshot panel into real-time depth visualization
+- **Branch**: `feature/order-book-rework`
 - **Status**: Completed & Verified ✅
 
 ## Executive Summary
-Successfully removed all hardcoded frontend mock/simulated states from the dashboards in favor of actual data fetching from backend endpoints. Styled inputs, select fields, dropdown options, and date picker controls globally to resolve the white-on-white text readability issues, and migrated CandlestickChart and OrderBookPanel components to a premium dark-theme container format. The production build compiles clean.
+Successfully redesigned the OrderBookPanel component to provide maximum price direction utility. The new visualization features a real-time cumulative depth wall chart built with ECharts (including a vertical midpoint marker), a bidirectional buy/sell pressure meter that alerts on bullish/bearish imbalances, and whale limit wall callouts displaying major support and resistance order sizes. The Vite production build compiles successfully.
 
-## Key Files Created/Modified
-- [index.css](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/index.css): Add global dark-theme styling overrides for select options, inputs, textareas, and browser autofills.
-- [CandlestickChart.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/CandlestickChart.jsx): Update structure/classes from light mode to premium dark mode and style inputs/labels.
-- [OrderBookPanel.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/OrderBookPanel.jsx): Convert layout and colors to dark mode.
-- [RetrievalVisualizer.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/RetrievalVisualizer.jsx): Explicitly style select menus and sliders to use dark mode backgrounds and borders.
-- [SpecializedServicePanels.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/SpecializedServicePanels.jsx): Remove hardcoded placeholder feeds, tweets, and regimes, and initialize as empty/loading states.
+## Key Files to Create/Modify
+- [OrderBookPanel.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/OrderBookPanel.jsx): Reworked with depth walls chart, pressure meter, and whale alerts.
+
+
 
 

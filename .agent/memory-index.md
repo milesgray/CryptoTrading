@@ -96,6 +96,7 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **specretf-plan.md**: `.agent/plans/specretf-plan.md`
 - **retrieval-service-plan.md**: Proposed implementation plan for retrieval service enhancements.
 - **remove-mocks-and-styles-plan.md**: `.agent/plans/remove-mocks-and-styles-plan.md`
+- **order-book-rework-plan.md**: `.agent/plans/order-book-rework-plan.md`
 
 ### task-logs/
 - **task-log_2026-06-22-05-56_postgres-migration.md**: `.agent/task-logs/task-log_2026-06-22-05-56_postgres-migration.md`
@@ -103,13 +104,14 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **task-log_2026-06-29-15-00_specretf-forecaster.md**: `.agent/task-logs/task-log_2026-06-29-15-00_specretf-forecaster.md`
 - **task-log_2026-07-04-17-02_retrieval-service-enhancement.md**: `.agent/task-logs/task-log_2026-07-04-17-02_retrieval-service-enhancement.md`
 - **task-log_2026-07-05-02-54_remove-mocks-and-styles.md**: `.agent/task-logs/task-log_2026-07-05-02-54_remove-mocks-and-styles.md`
+- **task-log_2026-07-05-03-09_order-book-rework.md**: `.agent/task-logs/task-log_2026-07-05-03-09_order-book-rework.md`
 
 ## Memory System Status
 
 ### Overall Health
 - **Status**: Synchronized
-- **Last Check**: 2026-07-05 02:54:00 UTC
-- **Files Tracked**: 6 core files + 3 plans + 5 task logs
+- **Last Check**: 2026-07-05 03:09:00 UTC
+- **Files Tracked**: 6 core files + 4 plans + 6 task logs
 - **Integrity**: All systems updated and synchronized
 
 
