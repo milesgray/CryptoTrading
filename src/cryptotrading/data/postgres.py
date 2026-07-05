@@ -241,9 +241,27 @@ async def init_schema(conn: Connection):
                 metadata JSONB,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            
+            CREATE TABLE IF NOT EXISTS trade_setups (
+                id SERIAL PRIMARY KEY,
+                embedding VECTOR(128),  -- Default dimension for trade pattern embeddings
+                direction SMALLINT NOT NULL,
+                profit_pct REAL NOT NULL,
+                leverage REAL NOT NULL,
+                hold_duration INTEGER NOT NULL,
+                entry_timestamp DOUBLE PRECISION NOT NULL,
+                entry_price DOUBLE PRECISION NOT NULL,
+                exit_price DOUBLE PRECISION NOT NULL,
+                symbol VARCHAR(20) NOT NULL,
+                timeframe VARCHAR(10) NOT NULL,
+                window_size INTEGER NOT NULL,
+                price_window BYTEA,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                CONSTRAINT valid_direction CHECK (direction IN (-1, 1))
+            );
             ''')
         except Exception as e:
-            logger.error(f"Failed to create document_embeddings table: {e}")
+            logger.error(f"Failed to create pgvector tables: {e}")
     
     # Convert regular tables to hypertables if TimescaleDB is enabled
     if POSTGRES_USE_TIMESCALE:
@@ -304,6 +322,18 @@ async def init_schema(conn: Connection):
             -- Create GIN index on JSONB metadata
             CREATE INDEX IF NOT EXISTS idx_document_embeddings_metadata 
                 ON document_embeddings USING GIN (metadata);
+                
+            -- Create HNSW index for fast similarity search on trade pattern setups
+            CREATE INDEX IF NOT EXISTS trade_setups_embedding_idx 
+                ON trade_setups 
+                USING hnsw (embedding vector_cosine_ops)
+                WITH (m = 16, ef_construction = 64);
+                
+            -- Additional indexes for filtering trade setups
+            CREATE INDEX IF NOT EXISTS trade_setups_symbol_idx ON trade_setups(symbol);
+            CREATE INDEX IF NOT EXISTS trade_setups_direction_idx ON trade_setups(direction);
+            CREATE INDEX IF NOT EXISTS trade_setups_profit_idx ON trade_setups(profit_pct);
+            CREATE INDEX IF NOT EXISTS trade_setups_timestamp_idx ON trade_setups(entry_timestamp);
             ''')
         except Exception as e:
             logger.error(f"Failed to set up pgvector indexes: {e}")

@@ -17,14 +17,24 @@ from typing import Optional, Dict, List
 from tqdm import tqdm
 import json
 
-from .encoder import (
-    PriceWindowEncoder,
-    SupervisedContrastiveLoss,
-    TripletLoss,
-    TradeSetupDataset,
-    TradeSetup,
-    extract_trade_setups
-)
+try:
+    from encoder import (
+        PriceWindowEncoder,
+        SupervisedContrastiveLoss,
+        TripletLoss,
+        TradeSetupDataset,
+        TradeSetup,
+        extract_trade_setups
+    )
+except ImportError:
+    from services.embed.models.encoder import (
+        PriceWindowEncoder,
+        SupervisedContrastiveLoss,
+        TripletLoss,
+        TradeSetupDataset,
+        TradeSetup,
+        extract_trade_setups
+    )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

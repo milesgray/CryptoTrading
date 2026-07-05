@@ -10,7 +10,7 @@ Endpoints:
 - GET /stats: Store statistics
 - WS /ws/live: WebSocket for live price streaming and real-time matching
 """
-
+import os
 import json
 import numpy as np
 from pathlib import Path
@@ -24,8 +24,9 @@ from pydantic import BaseModel, Field
 import torch
 import logging
 
-from .models.encoder import PriceWindowEncoder, normalize_price_window
-from .database.numpy_store import NumpyVectorStore
+from models.encoder import PriceWindowEncoder, normalize_price_window
+from database.numpy_store import NumpyVectorStore
+from database.pgvector_store import TradeEmbeddingDB
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -149,13 +150,26 @@ async def startup():
     state.encoder.eval()
     
     # Initialize vector store
-    store_path = state.config.get('store_path', 'vector_store')
-    state.store = NumpyVectorStore(
-        store_path=store_path,
-        embedding_dim=state.embedding_dim
-    )
+    db_backend = os.getenv("DB_BACKEND", "numpy").lower()
+    if db_backend == "postgres":
+        postgres_uri = os.getenv("POSTGRES_URI", "postgresql://postgres:postgres@localhost:5432/crypto_trading")
+        logger.info(f"Initializing PostgreSQL/pgvector store with URI: {postgres_uri}")
+        state.store = TradeEmbeddingDB(
+            dsn=postgres_uri,
+            embedding_dim=state.embedding_dim
+        )
+        await state.store.connect()
+        await state.store.initialize_schema()
+        stats = await state.store.get_stats()
+    else:
+        store_path = state.config.get('store_path', 'vector_store')
+        state.store = NumpyVectorStore(
+            store_path=store_path,
+            embedding_dim=state.embedding_dim
+        )
+        stats = state.store.get_stats()
     
-    logger.info(f"Vector store loaded: {state.store.get_stats()}")
+    logger.info(f"Vector store loaded: {stats}")
     logger.info("Startup complete!")
 
 
@@ -164,7 +178,10 @@ async def shutdown():
     logger.info("Shutting down...")
     
     if state.store:
-        state.store.save()
+        if isinstance(state.store, TradeEmbeddingDB):
+            await state.store.disconnect()
+        else:
+            state.store.save()
     
     for ws in state.active_connections:
         await ws.close()
@@ -221,18 +238,31 @@ async def search_similar(request: SearchRequest):
         x = torch.from_numpy(normalized).float().unsqueeze(0).to(state.device)
         query_embedding = state.encoder(x).cpu().numpy()[0]
     
-    results = state.store.search(
-        query_embedding=query_embedding,
-        k=request.k,
-        symbol=request.symbol,
-        direction=request.direction,
-        min_profit=request.min_profit,
-        max_profit=request.max_profit
-    )
+    if isinstance(state.store, TradeEmbeddingDB):
+        results = await state.store.search_similar(
+            query_embedding=query_embedding,
+            k=request.k,
+            symbol=request.symbol,
+            direction=request.direction,
+            min_profit=request.min_profit,
+            max_profit=request.max_profit
+        )
+    else:
+        results = state.store.search(
+            query_embedding=query_embedding,
+            k=request.k,
+            symbol=request.symbol,
+            direction=request.direction,
+            min_profit=request.min_profit,
+            max_profit=request.max_profit
+        )
     
     result_responses = []
     for r in results:
-        price_window = state.store.get_price_window(r.setup.id)
+        if isinstance(state.store, TradeEmbeddingDB):
+            price_window = r.setup.price_window
+        else:
+            price_window = state.store.get_price_window(r.setup.id)
         
         setup_response = SetupResponse(
             id=r.setup.id,
@@ -286,12 +316,16 @@ async def get_setup(setup_id: int):
     if state.store is None:
         raise HTTPException(503, "Store not available")
     
-    result = state.store.get_by_id(setup_id)
-    
-    if result is None:
-        raise HTTPException(404, f"Setup {setup_id} not found")
-    
-    setup, embedding, price_window = result
+    if isinstance(state.store, TradeEmbeddingDB):
+        setup = await state.store.get_setup_by_id(setup_id)
+        if setup is None:
+            raise HTTPException(404, f"Setup {setup_id} not found")
+        price_window = setup.price_window
+    else:
+        result = state.store.get_by_id(setup_id)
+        if result is None:
+            raise HTTPException(404, f"Setup {setup_id} not found")
+        setup, embedding, price_window = result
     
     return SetupResponse(
         id=setup.id,
@@ -315,16 +349,27 @@ async def get_stats():
     if state.store is None:
         raise HTTPException(503, "Store not available")
     
+    if isinstance(state.store, TradeEmbeddingDB):
+        return await state.store.get_stats()
     return state.store.get_stats()
 
 
 @app.get("/health")
 async def health_check():
+    if state.store:
+        if isinstance(state.store, TradeEmbeddingDB):
+            stats = await state.store.get_stats()
+            num_setups = stats['total_setups']
+        else:
+            num_setups = len(state.store.metadata)
+    else:
+        num_setups = 0
+
     return {
         'status': 'healthy',
         'encoder_loaded': state.encoder is not None,
         'store_loaded': state.store is not None,
-        'num_setups': len(state.store.metadata) if state.store else 0,
+        'num_setups': num_setups,
         'device': state.device,
         'window_size': state.window_size,
         'embedding_dim': state.embedding_dim
@@ -369,12 +414,22 @@ async def websocket_live(websocket: WebSocket, symbol: str):
                         x = torch.from_numpy(normalized).float().unsqueeze(0).to(state.device)
                         query_embedding = state.encoder(x).cpu().numpy()[0]
                     
-                    if state.store and len(state.store.metadata) > 0:
-                        results = state.store.search(
-                            query_embedding=query_embedding,
-                            k=5,
-                            symbol=symbol
-                        )
+                    if state.store:
+                        if isinstance(state.store, TradeEmbeddingDB):
+                            results = await state.store.search_similar(
+                                query_embedding=query_embedding,
+                                k=5,
+                                symbol=symbol
+                            )
+                        else:
+                            if len(state.store.metadata) > 0:
+                                results = state.store.search(
+                                    query_embedding=query_embedding,
+                                    k=5,
+                                    symbol=symbol
+                                )
+                            else:
+                                results = []
                         
                         if results and results[0].similarity > 0.7:
                             long_weight = sum(
@@ -429,4 +484,5 @@ async def websocket_live(websocket: WebSocket, symbol: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8301))
+    uvicorn.run(app, host="0.0.0.0", port=port)

@@ -84,9 +84,18 @@
 - [x] Build live training job queue status tracker, dynamic loss curves, and checkpoint inference tester.
 - [x] Verify successful production asset build using Vite compiler.
 
+### Phase 13: Embed Service Polish & pgvector Centralization (Completed ✅)
+- [x] Modify `pgvector_store.py` to support native DSN parameters.
+- [x] Update `server.py` startup, REST, and WebSocket logic to pull from PostgreSQL/pgvector.
+- [x] Correct port binding from 8000 to 8301 to match docker-compose configuration.
+- [x] Migrate pgvector database layer to the main `cryptotrading` package.
+- [x] Centralize `trade_setups` schema and index generation in `postgres.py`.
+- [x] Write and run unit tests for all touched components.
+
 ## Sprint Progress
  
 - [x] Remove mock results and simulated data states from the frontend.
 - [x] Fix dropdown and input styling issues (white-on-white text background) globally.
 - [x] Align CandlestickChart and OrderBookPanel components with the global dark theme.
 - [x] Rework Order Book snapshot panel into a cumulative depth chart visualizer.
+- [x] Polish up the embed service, centralize pgvector database storage, and write comprehensive tests.

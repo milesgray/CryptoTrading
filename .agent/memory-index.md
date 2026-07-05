@@ -97,6 +97,8 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **retrieval-service-plan.md**: Proposed implementation plan for retrieval service enhancements.
 - **remove-mocks-and-styles-plan.md**: `.agent/plans/remove-mocks-and-styles-plan.md`
 - **order-book-rework-plan.md**: `.agent/plans/order-book-rework-plan.md`
+- **polish-embed-service-plan.md**: `.agent/plans/polish-embed-service-plan.md`
+- **move-pgvector-store-plan.md**: `.agent/plans/move-pgvector-store-plan.md`
 
 ### task-logs/
 - **task-log_2026-06-22-05-56_postgres-migration.md**: `.agent/task-logs/task-log_2026-06-22-05-56_postgres-migration.md`
@@ -105,13 +107,15 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **task-log_2026-07-04-17-02_retrieval-service-enhancement.md**: `.agent/task-logs/task-log_2026-07-04-17-02_retrieval-service-enhancement.md`
 - **task-log_2026-07-05-02-54_remove-mocks-and-styles.md**: `.agent/task-logs/task-log_2026-07-05-02-54_remove-mocks-and-styles.md`
 - **task-log_2026-07-05-03-09_order-book-rework.md**: `.agent/task-logs/task-log_2026-07-05-03-09_order-book-rework.md`
+- **task-log_2026-07-05-04-30_polish-embed-service.md**: `.agent/task-logs/task-log_2026-07-05-04-30_polish-embed-service.md`
+- **task-log_2026-07-05-05-50_move-pgvector-store.md**: `.agent/task-logs/task-log_2026-07-05-05-50_move-pgvector-store.md`
 
 ## Memory System Status
 
 ### Overall Health
 - **Status**: Synchronized
-- **Last Check**: 2026-07-05 03:09:00 UTC
-- **Files Tracked**: 6 core files + 4 plans + 6 task logs
+- **Last Check**: 2026-07-05 05:50:00 UTC
+- **Files Tracked**: 6 core files + 6 plans + 8 task logs
 - **Integrity**: All systems updated and synchronized
 
 
