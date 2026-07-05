@@ -1,21 +1,37 @@
 @import "tailwindcss";
 
-/* Fix for unreadable dropdown option text on light/white backgrounds */
-select option {
-  background-color: #ffffff;
-  color: #0f172a;
-}
-
-/* Ensure dark dropdowns have readable options */
-.bg-slate-900 option,
-.bg-slate-950 option,
-.bg-slate-800 option,
+/* Force all select options to render with dark backgrounds and light text */
+select option,
 select.bg-slate-900 option,
 select.bg-slate-950 option,
-select.bg-slate-800 option {
+select.bg-slate-800 option,
+.bg-slate-900 option,
+.bg-slate-950 option,
+.bg-slate-800 option {
   background-color: #0f172a !important;
   color: #f1f5f9 !important;
 }
+
+/* Standardize inputs, textareas, and selects globally to avoid native browser light overrides */
+input[type="text"],
+input[type="date"],
+input[type="number"],
+select,
+textarea {
+  background-color: #0f172a;
+  color: #f1f5f9;
+  border-color: #1e293b;
+}
+
+input[type="text"]:focus,
+input[type="date"]:focus,
+input[type="number"]:focus,
+select:focus,
+textarea:focus {
+  border-color: #4f46e5;
+  outline: none;
+}
+
 
 /* Fix for unreadable text selections in input fields and textareas */
 input::selection, 

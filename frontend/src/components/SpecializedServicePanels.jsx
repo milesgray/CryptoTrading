@@ -20,13 +20,8 @@ import {
 // 1. Price Ingestion & Recording Panel
 // ============================================================================
 export const PriceIngestionPanel = () => {
-  const [feeds, setFeeds] = useState([
-    { exchange: 'Binance Spot', symbol: 'BTC/USDT', status: 'ACTIVE', latency: '42ms', price: 63245.5 },
-    { exchange: 'Coinbase Spot', symbol: 'BTC/USD', status: 'ACTIVE', latency: '68ms', price: 63248.2 },
-    { exchange: 'OKX Swap', symbol: 'BTC/USDT-SWAP', status: 'ACTIVE', latency: '52ms', price: 63243.0 },
-    { exchange: 'Bybit Linear', symbol: 'BTC/USDT', status: 'ACTIVE', latency: '55ms', price: 63244.8 }
-  ]);
-  const [indexPrice, setIndexPrice] = useState(63244.92);
+  const [feeds, setFeeds] = useState([]);
+  const [indexPrice, setIndexPrice] = useState(0);
   const [tickCount, setTickCount] = useState(0);
 
   useEffect(() => {
@@ -59,7 +54,7 @@ export const PriceIngestionPanel = () => {
         <div className="flex justify-between items-center">
           <h3 className="text-base font-semibold text-slate-300">Exchange API Feeds</h3>
           <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-semibold">
-            {feeds.filter(f => f.status === 'ACTIVE').length} / {feeds.length} Online
+            {feeds.length > 0 ? `${feeds.filter(f => f.status === 'ACTIVE').length} / ${feeds.length} Online` : 'Offline'}
           </span>
         </div>
 
@@ -82,6 +77,11 @@ export const PriceIngestionPanel = () => {
               </div>
             </div>
           ))}
+          {feeds.length === 0 && (
+            <div className="col-span-2 text-center py-12 text-slate-500 font-mono text-xs">
+              Waiting for exchange feeds to initialize...
+            </div>
+          )}
         </div>
       </div>
 
@@ -92,10 +92,10 @@ export const PriceIngestionPanel = () => {
         <div className="flex flex-col items-center justify-center p-4 bg-slate-900/30 border border-slate-850 rounded-xl text-center">
           <span className="text-xs text-slate-500 uppercase tracking-wider font-mono">Rollbit Index Price</span>
           <span className="text-3xl font-mono font-extrabold text-emerald-400 mt-2 bg-slate-950 px-4 py-1.5 rounded-lg border border-slate-800 shadow-inner">
-            ${indexPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {indexPrice > 0 ? `$${indexPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
           </span>
           <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono mt-3">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+            <span className={`h-1.5 w-1.5 rounded-full ${indexPrice > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-650'}`} />
             Update Frequency: <span className="text-slate-400 font-bold">500ms</span>
           </div>
         </div>
@@ -278,13 +278,9 @@ export const EmbeddingMatcherPanel = () => {
 // 3. Twitter Sentiment Panel
 // ============================================================================
 export const SentimentStreamPanel = () => {
-  const [tweets, setTweets] = useState([
-    { user: '@CryptoGains', text: 'BTC holding the support levels perfectly. Strong order book pressure showing up on spot, looks highly bullish for the next candle! 🚀', score: 0.85 },
-    { user: '@MacroCrypto', text: 'Markets choppy today. Volumes declining. Better stay on sidelines until break of consolidation range.', score: 0.05 },
-    { user: '@WhaleAlert', text: 'Significant sell pressure coming from exchange inflows. Volatility rising, expect sharp downward move soon.', score: -0.68 }
-  ]);
-  const [btcIndex, setBtcIndex] = useState(68.5);
-  const [ethIndex, setEthIndex] = useState(54.2);
+  const [tweets, setTweets] = useState([]);
+  const [btcIndex, setBtcIndex] = useState(0);
+  const [ethIndex, setEthIndex] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -322,7 +318,7 @@ export const SentimentStreamPanel = () => {
                 <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
                   t.score > 0.3 ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/10' :
                   t.score < -0.3 ? 'bg-rose-950/40 text-rose-400 border border-rose-500/10' :
-                  'bg-gray-950 text-gray-400 border border-gray-800'
+                  'bg-slate-950 text-slate-400 border border-slate-800'
                 }`}>
                   VADER: {t.score > 0 ? '+' : ''}{t.score.toFixed(2)}
                 </span>
@@ -330,6 +326,11 @@ export const SentimentStreamPanel = () => {
               <p className="text-xs text-slate-300 leading-relaxed font-sans">{t.text}</p>
             </div>
           ))}
+          {tweets.length === 0 && (
+            <div className="text-center py-12 text-slate-500 font-mono text-xs">
+              No live tweets received yet. Waiting for stream...
+            </div>
+          )}
         </div>
       </div>
 
@@ -376,8 +377,8 @@ export const SentimentStreamPanel = () => {
 // 4. JEPA Market Regime Panel
 // ============================================================================
 export const JepaRegimePanel = () => {
-  const [activeRegime, setActiveRegime] = useState('BULLISH_HIGH_VOL');
-  const [leverageMultiplier, setLeverageMultiplier] = useState(8.5);
+  const [activeRegime, setActiveRegime] = useState('');
+  const [leverageMultiplier, setLeverageMultiplier] = useState(0);
   
   // Transition probabilities
   const matrix = {
@@ -423,14 +424,20 @@ export const JepaRegimePanel = () => {
         
         <div className="flex flex-col items-center py-4 text-center">
           <span className="text-xs text-slate-500 uppercase tracking-wider font-mono">Classified Market Regime</span>
-          <span className={`text-sm font-bold px-4 py-1.5 rounded-lg border shadow-inner mt-2 inline-block ${getRegimeStyle(activeRegime)}`}>
-            {activeRegime.replace(/_/g, ' ')}
-          </span>
+          {activeRegime ? (
+            <span className={`text-sm font-bold px-4 py-1.5 rounded-lg border shadow-inner mt-2 inline-block ${getRegimeStyle(activeRegime)}`}>
+              {activeRegime.replace(/_/g, ' ')}
+            </span>
+          ) : (
+            <span className="text-xs font-bold px-4 py-1.5 rounded-lg border border-slate-800 bg-slate-900/40 text-slate-500 shadow-inner mt-2 inline-block font-mono animate-pulse">
+              CLASSIFYING...
+            </span>
+          )}
           
           <div className="flex flex-col items-center mt-6">
             <span className="text-xs text-slate-500 uppercase tracking-wider font-mono">Dynamic Leverage Cap</span>
             <span className="text-4xl font-mono font-extrabold text-indigo-400 mt-2 bg-slate-950 px-4 py-1.5 rounded-lg border border-slate-850 shadow-inner">
-              {leverageMultiplier.toFixed(1)}x
+              {leverageMultiplier > 0 ? `${leverageMultiplier.toFixed(1)}x` : '—'}
             </span>
           </div>
         </div>

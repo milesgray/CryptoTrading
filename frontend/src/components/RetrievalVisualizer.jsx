@@ -31,7 +31,16 @@ const RetrievalVisualizer = ({ token }) => {
     try {
       // 1. Fetch live forecast (retrieved segments) from serve proxy
       const forecastRes = await fetch(`/api/retrieval/forecast?symbol=${token}&k=${k}`);
-      if (!forecastRes.ok) throw new Error("Failed to fetch forecasting data");
+      if (!forecastRes.ok) {
+        let errMsg = "Failed to fetch forecasting data";
+        try {
+          const errData = await forecastRes.json();
+          if (errData && errData.detail) {
+            errMsg = errData.detail;
+          }
+        } catch (_) {}
+        throw new Error(errMsg);
+      }
       const forecastData = await forecastRes.json();
       
       const segments = forecastData.retrieved || [];
@@ -44,17 +53,17 @@ const RetrievalVisualizer = ({ token }) => {
       
       if (candles && candles.length > 0) {
         const recentPrices = candles.slice(-60).map(c => parseFloat(c.close));
+        if (recentPrices.length < 60) {
+          throw new Error(`Insufficient live query data. Need 60 points, but only found ${recentPrices.length}.`);
+        }
         setQueryPrices(recentPrices);
       } else {
-        // Fallback mock query prices if history is empty
-        setQueryPrices(Array.from({ length: 60 }, (_, i) => 50000 + Math.sin(i / 5) * 200 + i * 10));
+        throw new Error("No recent price history found to establish current pattern baseline.");
       }
 
-      // Add mock similarity scores and metrics for visual completeness if needed
+      // Process similarity scores and metrics
       const processedSegments = segments.map((seg, idx) => {
-        // Generate a stable similarity score between 0.82 and 0.98
-        const similarity = seg.similarity || (0.98 - idx * 0.04 - Math.random() * 0.02);
-        // Calculate direction and return of this segment
+        const similarity = seg.similarity || 0;
         const prices = seg.prices || [];
         const startPrice = prices[0] || 1;
         const endPrice = prices[prices.length - 1] || 1;
@@ -80,7 +89,7 @@ const RetrievalVisualizer = ({ token }) => {
       
     } catch (err) {
       console.error(err);
-      setError("Unable to load forecasting patterns. Ensure retrieval service is running.");
+      setError(err.message || "Unable to load forecasting patterns. Ensure retrieval service is running.");
     } finally {
       setLoading(false);
     }
@@ -361,23 +370,23 @@ const RetrievalVisualizer = ({ token }) => {
   const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
 
   return (
-    <div className="bg-white rounded-xl shadow p-6 border border-gray-100 flex flex-col gap-6">
-      <div className="flex flex-wrap justify-between items-center gap-4 border-b border-gray-100 pb-4">
+    <div className="bg-slate-900/30 p-6 rounded-2xl border border-slate-800 backdrop-blur-md flex flex-col gap-6">
+      <div className="flex flex-wrap justify-between items-center gap-4 border-b border-slate-850 pb-4">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Pattern Matching & Retrieval Forecast</h2>
-          <p className="text-sm text-gray-500">Retrieves historical cycles matching the current price momentum and order book depth</p>
+          <h2 className="text-base font-semibold text-slate-350">Pattern Matching & Retrieval Forecast</h2>
+          <p className="text-xs text-slate-500">Retrieves historical cycles matching the current price momentum and order book depth</p>
         </div>
         <button 
           onClick={fetchForecastData}
           disabled={loading}
-          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-semibold rounded-lg text-xs transition disabled:opacity-50"
+          className="px-4 py-1.5 bg-indigo-950/40 text-indigo-400 border border-indigo-800/20 hover:bg-indigo-900/40 font-semibold rounded-lg text-xs transition disabled:opacity-50"
         >
           {loading ? 'Retrieving...' : 'Trigger Query'}
         </button>
       </div>
 
       {error ? (
-        <div className="p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm">
+        <div className="p-4 bg-rose-950/40 text-rose-400 border border-rose-800/20 rounded-xl text-xs font-mono">
           {error}
         </div>
       ) : null}
@@ -386,12 +395,12 @@ const RetrievalVisualizer = ({ token }) => {
         {/* Left: Chart & Stats */}
         <div className="xl:col-span-2 flex flex-col gap-4">
           {/* Chart Container */}
-          <div className="relative border border-gray-100 rounded-xl p-4 bg-gray-50">
+          <div className="relative border border-slate-800 rounded-xl p-4 bg-slate-950/50">
             {loading && (
-              <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-20 rounded-xl">
+              <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-20 rounded-xl">
                 <div className="text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
-                  <p className="mt-2 text-sm text-gray-600 font-medium">Retrieving similar sequences...</p>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-650 mx-auto"></div>
+                  <p className="mt-2 text-xs text-slate-400 font-mono">Retrieving similar sequences...</p>
                 </div>
               </div>
             )}
@@ -399,66 +408,66 @@ const RetrievalVisualizer = ({ token }) => {
           </div>
 
           {/* Next Candle Predictor Hero Card */}
-          <div className="flex flex-col sm:flex-row gap-4 p-4 border border-gray-100 rounded-xl bg-gradient-to-r from-gray-50 to-white items-center justify-between shadow-sm">
+          <div className="flex flex-col sm:flex-row gap-4 p-4 border border-slate-850 rounded-xl bg-gradient-to-r from-slate-950/60 to-slate-900/60 items-center justify-between shadow-inner">
             <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold shadow-sm ${
-                stats.nextCandleColor === 'GREEN' ? 'bg-emerald-50 text-emerald-600 shadow-emerald-100' : 
-                stats.nextCandleColor === 'RED' ? 'bg-rose-50 text-rose-600 shadow-rose-100' : 
-                'bg-gray-50 text-gray-500'
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold border shadow-sm ${
+                stats.nextCandleColor === 'GREEN' ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/10 shadow-emerald-950/10' : 
+                stats.nextCandleColor === 'RED' ? 'bg-rose-950/40 text-rose-400 border-rose-500/10 shadow-rose-950/10' : 
+                'bg-slate-950 text-slate-500 border-slate-800'
               }`}>
                 {stats.nextCandleColor === 'GREEN' ? '▲' : stats.nextCandleColor === 'RED' ? '▼' : '◆'}
               </div>
               <div>
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">PREDICTED NEXT CANDLE COLOR</span>
-                <h3 className={`text-lg font-black tracking-tight ${
-                  stats.nextCandleColor === 'GREEN' ? 'text-emerald-600' : 
-                  stats.nextCandleColor === 'RED' ? 'text-rose-600' : 
-                  'text-gray-500'
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider font-mono">PREDICTED NEXT CANDLE COLOR</span>
+                <h3 className={`text-base font-extrabold tracking-tight ${
+                  stats.nextCandleColor === 'GREEN' ? 'text-emerald-400' : 
+                  stats.nextCandleColor === 'RED' ? 'text-rose-400' : 
+                  'text-slate-500'
                 }`}>
                   {stats.nextCandleColor === 'GREEN' ? 'GREEN (UP)' : stats.nextCandleColor === 'RED' ? 'RED (DOWN)' : 'NEUTRAL (FLAT)'}
                 </h3>
               </div>
             </div>
             <div className="flex flex-col items-start sm:items-end gap-1 w-full sm:w-auto">
-              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">CONSENSUS CONFIDENCE</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider font-mono">CONSENSUS CONFIDENCE</span>
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                <span className="text-lg font-extrabold text-gray-800 font-mono">{stats.nextCandleConfidence.toFixed(0)}%</span>
-                <div className="w-24 bg-gray-250 rounded-full h-2 border border-gray-100">
+                <span className="text-base font-extrabold text-slate-300 font-mono">{stats.nextCandleConfidence.toFixed(0)}%</span>
+                <div className="w-24 bg-slate-900 rounded-full h-2 border border-slate-850">
                   <div 
-                    className={`h-2 rounded-full ${stats.nextCandleColor === 'GREEN' ? 'bg-emerald-500' : stats.nextCandleColor === 'RED' ? 'bg-rose-500' : 'bg-gray-400'}`}
+                    className={`h-2 rounded-full ${stats.nextCandleColor === 'GREEN' ? 'bg-emerald-500' : stats.nextCandleColor === 'RED' ? 'bg-rose-500' : 'bg-slate-500'}`}
                     style={{ width: `${stats.nextCandleConfidence}%` }}
                   ></div>
                 </div>
               </div>
-              <span className="text-[9px] text-gray-400 italic">
+              <span className="text-[9px] text-slate-500 font-mono">
                 ({stats.upTicks} of {stats.activeCount} active historical matches agree)
               </span>
             </div>
           </div>
 
           {/* Summary Statistics Card */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 border border-gray-100 rounded-xl bg-gradient-to-r from-gray-50 to-white">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 border border-slate-850 rounded-xl bg-gradient-to-r from-slate-950/60 to-slate-900/60">
             <div className="flex flex-col">
-              <span className="text-xs text-gray-400 font-medium">EXPECTED RETURN</span>
-              <span className={`text-lg font-bold font-mono mt-0.5 ${stats.expectedReturn >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              <span className="text-[10px] text-slate-500 font-semibold font-mono uppercase tracking-wider">EXPECTED RETURN</span>
+              <span className={`text-base font-bold font-mono mt-0.5 ${stats.expectedReturn >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {stats.expectedReturn >= 0 ? '+' : ''}{stats.expectedReturn.toFixed(2)}%
               </span>
             </div>
             <div className="flex flex-col">
-              <span className="text-xs text-gray-400 font-medium">BULLISH CONSENSUS</span>
-              <span className="text-lg font-bold font-mono mt-0.5 text-gray-800">
+              <span className="text-[10px] text-slate-500 font-semibold font-mono uppercase tracking-wider">BULLISH CONSENSUS</span>
+              <span className="text-base font-bold font-mono mt-0.5 text-slate-300">
                 {stats.bullRatio.toFixed(0)}%
               </span>
             </div>
             <div className="flex flex-col">
-              <span className="text-xs text-gray-400 font-medium">UNCERTAINTY (VOL)</span>
-              <span className="text-lg font-bold font-mono mt-0.5 text-indigo-600">
+              <span className="text-[10px] text-slate-500 font-semibold font-mono uppercase tracking-wider">UNCERTAINTY (VOL)</span>
+              <span className="text-base font-bold font-mono mt-0.5 text-indigo-400">
                 {stats.volatility.toFixed(2)}%
               </span>
             </div>
             <div className="flex flex-col">
-              <span className="text-xs text-gray-400 font-medium">MATCH STRENGTH</span>
-              <span className="text-lg font-bold font-mono mt-0.5 text-emerald-500">
+              <span className="text-[10px] text-slate-500 font-semibold font-mono uppercase tracking-wider">MATCH STRENGTH</span>
+              <span className="text-base font-bold font-mono mt-0.5 text-emerald-450">
                 {stats.avgSimilarity.toFixed(1)}%
               </span>
             </div>
@@ -466,11 +475,11 @@ const RetrievalVisualizer = ({ token }) => {
         </div>
 
         {/* Right: Settings & Toggles */}
-        <div className="xl:col-span-1 flex flex-col gap-6 border-t xl:border-t-0 xl:border-l border-gray-100 xl:pl-6 pt-6 xl:pt-0">
+        <div className="xl:col-span-1 flex flex-col gap-6 border-t xl:border-t-0 xl:border-l border-slate-850 xl:pl-6 pt-6 xl:pt-0">
           
           {/* Settings Section */}
           <div className="flex flex-col gap-4">
-            <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider border-b border-gray-100 pb-2">Retrieval Settings</h3>
+            <h3 className="text-xs font-bold text-slate-350 uppercase tracking-wider border-b border-slate-850 pb-2 font-mono">Retrieval Settings</h3>
             
             {/* number of segments (k) */}
             <div className="flex flex-col gap-1.5">
@@ -491,12 +500,12 @@ const RetrievalVisualizer = ({ token }) => {
 
             {/* length of segment */}
             <div className="flex flex-col gap-1">
-              <label htmlFor="len-select" className="text-xs font-semibold text-gray-600">Segment Length</label>
+              <label htmlFor="len-select" className="text-[10px] text-slate-500 uppercase font-semibold">Segment Length</label>
               <select 
                 id="len-select"
                 value={segmentLength}
                 onChange={(e) => setSegmentLength(parseInt(e.target.value))}
-                className="mt-1 block w-full rounded-md border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-xs py-1.5"
+                className="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-800 text-slate-300 text-xs py-1.5 px-3 focus:outline-none focus:border-slate-700"
               >
                 <option value={15}>15 steps (Short-term)</option>
                 <option value={30}>30 steps (Standard)</option>
@@ -507,12 +516,12 @@ const RetrievalVisualizer = ({ token }) => {
 
             {/* frequency */}
             <div className="flex flex-col gap-1">
-              <label htmlFor="freq-select" className="text-xs font-semibold text-gray-600">Retrieval Frequency</label>
+              <label htmlFor="freq-select" className="text-[10px] text-slate-500 uppercase font-semibold">Retrieval Frequency</label>
               <select 
                 id="freq-select"
                 value={frequency}
                 onChange={(e) => setFrequency(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-xs py-1.5"
+                className="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-800 text-slate-300 text-xs py-1.5 px-3 focus:outline-none focus:border-slate-700"
               >
                 <option value="1m">1 Minute</option>
                 <option value="5m">5 Minutes</option>
@@ -523,9 +532,9 @@ const RetrievalVisualizer = ({ token }) => {
 
             {/* weight */}
             <div className="flex flex-col gap-1.5">
-              <div className="flex justify-between text-xs font-semibold text-gray-600">
+              <div className="flex justify-between text-[10px] text-slate-500 uppercase font-semibold">
                 <label htmlFor="weight-slider">Order Book Weight</label>
-                <span className="font-mono text-indigo-600">{orderBookWeight}%</span>
+                <span className="font-mono text-indigo-400">{orderBookWeight}%</span>
               </div>
               <input 
                 id="weight-slider"
@@ -534,9 +543,9 @@ const RetrievalVisualizer = ({ token }) => {
                 max="100" 
                 value={orderBookWeight}
                 onChange={(e) => setOrderBookWeight(parseInt(e.target.value))}
-                className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-650"
               />
-              <div className="flex justify-between text-[10px] text-gray-400">
+              <div className="flex justify-between text-[9px] font-mono text-slate-500">
                 <span>100% Price Shape</span>
                 <span>100% Depth Imbalance</span>
               </div>
@@ -545,7 +554,7 @@ const RetrievalVisualizer = ({ token }) => {
 
           {/* Toggles Section */}
           <div className="flex flex-col gap-4">
-            <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider border-b border-gray-100 pb-2">Overlay Segments</h3>
+            <h3 className="text-xs font-bold text-slate-350 uppercase tracking-wider border-b border-slate-850 pb-2 font-mono">Overlay Segments</h3>
             
             <div className="flex flex-col gap-2.5 max-h-[220px] overflow-y-auto pr-1">
               {retrievedData.map((segment) => {
@@ -556,7 +565,7 @@ const RetrievalVisualizer = ({ token }) => {
                 return (
                   <div 
                     key={segId} 
-                    className="flex items-center justify-between p-2.5 rounded-lg border border-gray-50 hover:bg-gray-50 transition"
+                    className="flex items-center justify-between p-2.5 rounded-lg border border-slate-850 bg-slate-950/20 hover:bg-slate-900/40 transition"
                   >
                     <div className="flex items-center gap-3">
                       <input 
@@ -564,22 +573,26 @@ const RetrievalVisualizer = ({ token }) => {
                         id={`seg-${segId}`}
                         checked={isActive}
                         onChange={() => handleToggleChange(segId)}
-                        className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+                        className="h-4 w-4 text-indigo-600 border-slate-800 bg-slate-950 rounded focus:ring-indigo-500 cursor-pointer"
                       />
                       <label 
                         htmlFor={`seg-${segId}`}
-                        className="flex items-center gap-2 text-xs font-semibold text-gray-700 cursor-pointer"
+                        className="flex items-center gap-2 text-xs font-semibold text-slate-350 cursor-pointer"
                       >
                         <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }}></span>
                         Pattern #{segment.index + 1}
                       </label>
                     </div>
                     
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold font-mono ${segment.direction === 'BULLISH' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                    <div className="flex items-center gap-2 font-mono">
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                        segment.direction === 'BULLISH' 
+                          ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/10' 
+                          : 'bg-rose-950/40 text-rose-400 border-rose-500/10'
+                      }`}>
                         {segment.pctReturn >= 0 ? '+' : ''}{segment.pctReturn.toFixed(1)}%
                       </span>
-                      <span className="text-xs font-bold text-indigo-600 font-mono">
+                      <span className="text-xs font-bold text-indigo-400">
                         {(segment.similarity * 100).toFixed(0)}%
                       </span>
                     </div>
@@ -588,7 +601,7 @@ const RetrievalVisualizer = ({ token }) => {
               })}
               
               {retrievedData.length === 0 && !loading && (
-                <div className="text-center py-6 text-xs text-gray-400">
+                <div className="text-center py-6 text-xs text-slate-500 font-mono">
                   No segments retrieved. Press "Trigger Query".
                 </div>
               )}

@@ -85,10 +85,7 @@
 - [x] Verify successful production asset build using Vite compiler.
 
 ## Sprint Progress
-
-### Current Goal: HTTP Enabled Training Service & Frontend
-- [x] Implement FastAPI endpoints and Pydantic validation schemas.
-- [x] Support asynchronous background training runs.
-- [x] Serve model weight files and predictions/inference.
-- [x] Update frontend proxy config, Axios helper requests, and ModelTrainingConsole components.
-- [x] Verify successful compilation and build of React assets.
+ 
+- [x] Remove mock results and simulated data states from the frontend.
+- [x] Fix dropdown and input styling issues (white-on-white text background) globally.
+- [x] Align CandlestickChart and OrderBookPanel components with the global dark theme.

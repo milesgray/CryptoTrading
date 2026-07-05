@@ -523,9 +523,9 @@ const CandlestickChart = ({ token }) => {
 
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="bg-slate-900/30 p-6 rounded-2xl border border-slate-800 backdrop-blur-md">
       {error && (
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded" role="alert">
+        <div className="bg-rose-950/40 border-l-4 border-rose-500 text-rose-400 p-4 mb-4 rounded-xl" role="alert">
           <p className="font-bold">Error</p>
           <p>{error}</p>
         </div>
@@ -533,34 +533,34 @@ const CandlestickChart = ({ token }) => {
       {loading ? (
         <ChartLoading token={token} />
       ) : (
-        <div className="flex flex-wrap gap-4 mb-4">
+        <div className="flex flex-wrap gap-4 mb-4 items-center">
           <div>
-            <label htmlFor="start-date" className="block text-sm font-medium text-gray-700">Start Date:</label>
+            <label htmlFor="start-date" className="block text-[10px] text-slate-500 uppercase font-semibold mb-1">Start Date:</label>
             <input
               type="date"
               id="start-date"
               value={format(startDate, 'yyyy-MM-dd')}
               onChange={handleStartDateChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-slate-700 font-mono"
             />
           </div>
           <div>
-            <label htmlFor="end-date" className="block text-sm font-medium text-gray-700">End Date:</label>
+            <label htmlFor="end-date" className="block text-[10px] text-slate-500 uppercase font-semibold mb-1">End Date:</label>
             <input
               type="date"
               id="end-date"
               value={format(endDate, 'yyyy-MM-dd')}
               onChange={handleEndDateChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-slate-700 font-mono"
             />
           </div>
           <div>
-            <label htmlFor="granularity" className="block text-sm font-medium text-gray-700">Granularity:</label>
+            <label htmlFor="granularity" className="block text-[10px] text-slate-500 uppercase font-semibold mb-1">Granularity:</label>
             <select
               id="granularity"
               value={granularity}
               onChange={handleGranularityChange}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-slate-700"
             >
               <option value={60}>1 Minute</option>
               <option value={300}>5 Minutes</option>
@@ -569,26 +569,32 @@ const CandlestickChart = ({ token }) => {
               <option value={86400}>1 Day</option>
             </select>
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end self-end h-[32px] mt-4 sm:mt-0">
             <button
               onClick={toggleLiveUpdates}
-              className={`px-4 py-2 rounded-md text-white font-medium ${isLiveUpdating ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
-                }`}
+              className={`px-4 py-1.5 rounded-lg text-white text-xs font-semibold border transition-all ${
+                isLiveUpdating 
+                  ? 'bg-rose-900/40 text-rose-300 border-rose-800/50 hover:bg-rose-900/50' 
+                  : 'bg-emerald-900/40 text-emerald-300 border-emerald-800/50 hover:bg-emerald-900/50'
+              }`}
             >
               {isLiveUpdating ? 'Pause Live Updates' : 'Enable Live Updates'}
             </button>
           </div>
         </div>
       )}
-      <div className="bg-white rounded-lg shadow p-4">
+      <div className="bg-slate-950/50 rounded-xl border border-slate-800 p-4">
         {latestPrice && (
-          <div className="mb-4 p-2 bg-gray-50 rounded">
-            <h3 className="text-lg font-semibold">{token} Price: ${latestPrice.toFixed(2)}</h3>
+          <div className="mb-4 p-3 bg-slate-900/30 border border-slate-850 rounded-lg flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-300">{token} Price Data Stream</h3>
+            <span className="text-sm font-mono font-bold text-emerald-400">
+              ${latestPrice.toFixed(2)}
+            </span>
           </div>
         )}
         <div
           ref={chartContainer}
-          className="w-full bg-gray-100 border border-gray-300 rounded p-2"
+          className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2"
           style={{
             minHeight: '600px',
             height: '600px',
@@ -597,8 +603,8 @@ const CandlestickChart = ({ token }) => {
         >
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <div className="text-gray-500">Loading chart data...</div>
-              <div className="mt-2 text-sm text-gray-400">
+              <div className="text-slate-500 text-sm">Loading chart data...</div>
+              <div className="mt-2 text-xs text-slate-600 font-mono">
                 {dataTable.current ? 'Rendering chart...' : 'Initializing data...'}
               </div>
             </div>
