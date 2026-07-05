@@ -151,3 +151,44 @@ def test_specretf_forecaster_empty_prices():
     
     with pytest.raises(ValueError, match="prices array must not be empty"):
         forecaster.forecast(empty_prices, query_order_book)
+
+def test_specretf_scale_invariance_and_alignment():
+    """Verify that retrieved forecast paths are aligned to connect seamlessly to query_last_price and scale-invariant."""
+    encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+    
+    # Add a base segment
+    prices = np.linspace(10.0, 11.0, 60)
+    future_prices = np.linspace(11.0, 12.0, 60)
+    order_book = {"bids": [[11.0, 10.0]], "asks": [[11.5, 10.0]]}
+    
+    encoder_service.add_segment(prices, order_book, {
+        "id": 1,
+        "historical_prices": prices.tolist(),
+        "prices": future_prices.tolist(),
+        "order_book": order_book
+    })
+    encoder_service.build_index(n_trees=2)
+    
+    forecaster = SpecReTFForecaster(encoder_service, frame_size=16, hop_size=4)
+    
+    # Query at a completely different price level (10x price level)
+    query_prices = np.linspace(100.0, 110.0, 60)
+    query_order_book = {"bids": [[110.0, 5.0]], "asks": [[111.0, 5.0]]}
+    
+    result = forecaster.forecast(query_prices, query_order_book, k=1)
+    
+    # 1. Assert scale-invariant retrieval matched the segment (which was stored at a different scale)
+    assert len(result["retrieved"]) == 1
+    assert result["retrieved"][0]["id"] == 1
+    
+    # 2. Assert future path is scaled to be aligned to query_last_price
+    # The consensus path should connect seamlessly starting from query_prices[-1] (which is 110.0)
+    # The return step is: future_prices / base_val, so aligned_path should be scaled.
+    consensus_path = result["consensus_path"]
+    query_last_price = query_prices[-1]
+    
+    # First step of consensus_path (weighted combination of aligned_paths) should match scaled first future price
+    # base_val = prices[-1] = 11.0. future_prices[0] = 11.0. So returns factor = 1.0.
+    # Therefore, consensus_path[0] should be exactly 110.0.
+    assert abs(consensus_path[0] - query_last_price) < 1e-4
+

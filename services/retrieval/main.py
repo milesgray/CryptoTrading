@@ -1,125 +1,263 @@
+"""
+Retrieval Service FastAPI Microservice.
+
+This module sets up a FastAPI web service that bootstraps historical 1-minute
+candlestick data from CCXT exchanges into Postgres, indexes historical price
+segments using neural embeddings, and serves shape-similarity forecasting queries.
+"""
+
 import datetime
 import logging
+import asyncio
+import numpy as np
+from typing import Dict, Any
 from fastapi import FastAPI, HTTPException
 from encoder import RetrievalServiceEncoder
 from forecaster import SpecReTFForecaster
-import numpy as np
-from typing import Dict, Any
-
 from cryptotrading.data.factory import get_price_adapter
+from cryptotrading.config import SYMBOLS
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("retrieval_service")
 
-app = FastAPI()
+app = FastAPI(
+    title="Retrieval Service API",
+    description="Microservice for real-time shape-similarity quantitative timeseries matching.",
+    version="1.0.0"
+)
 
-# Initialize encoder and forecaster
-encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+# Initialize encoder and forecaster with dim=184 for combined embedding compatibility (128D deep learning + 56D local features)
+encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=184)
 forecaster = SpecReTFForecaster(encoder_service, frame_size=16, hop_size=4)
+
+async def bootstrap_historical_data(price_adapter, symbol: str, days: int = 7):
+    """
+    Fetch historical 1m candlestick data from a CCXT exchange and store it in Postgres.
+
+    Checks the database to verify if sufficient data exists for the given symbol.
+    If not, it paginates backward using CCXT (trying Binance, Coinbase, or Kraken)
+    to pull 7 days of 1-minute candlesticks. The candles are written to the database
+    with exchange set to 'index' using ON CONFLICT DO NOTHING to prevent duplicates.
+
+    Args:
+        price_adapter: DB adapter instance used to query/insert prices.
+        symbol (str): Target trading symbol (e.g. 'BTC/USDT').
+        days (int): Number of historical days to pull. Defaults to 7.
+
+    Raises:
+        Exception: Propagates CCXT or database connection failures.
+    """
+    import ccxt
+    from cryptotrading.data.postgres import get_connection
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    start_time = now - datetime.timedelta(days=days)
+
+    # Check database for existing data points in timeframe
+    count = await price_adapter.get_price_data_count(symbol, start_time, now)
+    logger.info(f"Existing price data points in database for {symbol}: {count}")
+
+    expected_points = days * 24 * 60
+    if count >= expected_points * 0.8:
+        logger.info(f"Sufficient data already exists for {symbol} ({count}/{expected_points} points). Skipping CCXT fetch.")
+        return
+
+    logger.info(f"Bootstrapping historical 1m candlestick data for {symbol} from CCXT...")
+
+    # Identify and load the exchange
+    exchanges_to_try = ["binance", "coinbase", "kraken"]
+    exchange = None
+    cex = None
+    for ex_name in exchanges_to_try:
+        try:
+            cex = getattr(ccxt, ex_name)()
+            cex.load_markets()
+            if symbol in cex.markets:
+                exchange = ex_name
+                break
+        except Exception as e:
+            logger.warning(f"Failed to check exchange {ex_name}: {e}")
+
+    if not cex:
+        cex = ccxt.binance()
+        exchange = "binance"
+
+    logger.info(f"Using exchange {exchange} to pull historical data for {symbol}")
+
+    limit = 1000
+    since = int((now - datetime.timedelta(days=days)).timestamp() * 1000)
+    all_candles = []
+    
+    max_retries = 3
+    retries = 0
+    current_since = since
+    target_timestamp_ms = int(now.timestamp() * 1000)
+
+    while current_since < target_timestamp_ms:
+        try:
+            logger.info(f"Fetching candles starting from {datetime.datetime.fromtimestamp(current_since/1000, tz=datetime.timezone.utc)}")
+            ohlcv = cex.fetch_ohlcv(symbol, '1m', since=current_since, limit=limit)
+            if not ohlcv:
+                logger.info("No more candles returned by CEX.")
+                break
+
+            all_candles.extend(ohlcv)
+            last_timestamp = ohlcv[-1][0]
+            if last_timestamp <= current_since:
+                current_since += 60 * 1000
+            else:
+                current_since = last_timestamp + 60 * 1000
+
+            await asyncio.sleep(cex.rateLimit / 1000.0 if hasattr(cex, 'rateLimit') else 1.0)
+            retries = 0
+        except Exception as e:
+            logger.error(f"Error fetching OHLCV from {exchange}: {e}")
+            retries += 1
+            if retries >= max_retries:
+                logger.error("Max retries reached while fetching OHLCV. Stopping.")
+                break
+            await asyncio.sleep(2 * retries)
+
+    if not all_candles:
+        logger.warning(f"No candles fetched from CCXT for {symbol}.")
+        return
+
+    logger.info(f"Fetched {len(all_candles)} candles from CCXT. Inserting into Postgres...")
+
+    inserted_count = 0
+    async with get_connection() as conn:
+        async with conn.transaction():
+            for candle in all_candles:
+                ts_ms, open_p, high_p, low_p, close_p, volume = candle
+                dt_val = datetime.datetime.fromtimestamp(ts_ms / 1000, tz=datetime.timezone.utc)
+                token = symbol.split("/")[0] if "/" in symbol else symbol
+                
+                metadata = {
+                    "token": token,
+                    "symbol": symbol,
+                    "type": "index_price",
+                    "price": close_p,
+                    "exchanges_count": 1,
+                    "bootstrapped": True
+                }
+
+                await conn.execute('''
+                    INSERT INTO price_data (time, symbol, exchange, open, high, low, close, volume, metadata)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    ON CONFLICT (time, symbol, exchange) DO NOTHING;
+                ''', dt_val, symbol, 'index', open_p, high_p, low_p, close_p, volume, metadata)
+                inserted_count += 1
+
+    logger.info(f"Successfully processed {inserted_count} candles for {symbol} (with ON CONFLICT DO NOTHING).")
 
 @app.on_event("startup")
 async def startup_event():
-    """Load historical data from TimescaleDB/MongoDB and build the vector index on startup."""
+    """
+    FastAPI Startup Event Handler.
+
+    Initializes the database adapters, triggers CCXT historical data bootstrapping,
+    queries the database to retrieve historical prices, parses sliding window segments,
+    indexes them using the encoder service, and constructs the vector index.
+    
+    If bootstrapping fails or database is empty, the service aborts startup with an
+    exception (no mock data fallback is permitted).
+    """
     logger.info("Initializing database adapters...")
     price_adapter = get_price_adapter()
     await price_adapter.initialize()
     
-    symbol = "BTC/USDT"
+    # Bootstrap historical data via CCXT if missing
+    for symbol in SYMBOLS:
+        try:
+            await bootstrap_historical_data(price_adapter, symbol, days=7)
+        except Exception as e:
+            logger.error(f"Failed to bootstrap historical data for {symbol}: {e}", exc_info=True)
+    
     token = "BTC"
     end_time = datetime.datetime.now(datetime.timezone.utc)
-    start_time = end_time - datetime.timedelta(days=7) # Load past 7 days
+    start_time = end_time - datetime.timedelta(days=7)
     
-    logger.info(f"Fetching historical price data for {symbol} from {start_time} to {end_time}...")
+    logger.info(f"Fetching historical price data for {token} from {start_time} to {end_time}...")
     try:
-        # Fetch high-resolution candlestick data to build historical segments
         candles = await price_adapter.get_candlestick_data(
             token=token,
             start_time=start_time,
             end_time=end_time,
-            granularity=60, # 1-minute bars
+            granularity=60,
             include_book=True
         )
         
-        if not candles or len(candles) < 120:  # Need enough points for window (60) + horizon (60)
-            logger.warning(f"Insufficient historical data found ({len(candles) if candles else 0} points). Falling back to mock data for indexing.")
-            # Fallback to avoid service startup crash if DB is empty
-            for i in range(100):
-                prices = np.random.rand(60) + i * 0.1
-                future_prices = np.random.rand(60) + (i + 60) * 0.1
-                order_book = {"bids": [[100 + i, 10]], "asks": [[101 + i, 10]]}
-                encoder_service.add_segment(prices, order_book, {
-                    "id": i,
-                    "historical_prices": prices.tolist(),
-                    "prices": future_prices.tolist(),
-                    "order_book": order_book
-                })
-        else:
-            logger.info(f"Loaded {len(candles)} historical candles. Building sliding window segments...")
-            # Build sliding windows of size 60 with a forecasting horizon of 60
-            window_size = 60
-            horizon = 60
-            for i in range(len(candles) - window_size - horizon + 1):
-                window = candles[i : i + window_size]
-                future_window = candles[i + window_size : i + window_size + horizon]
-                
-                prices = np.array([float(c.close) for c in window])
-                future_prices = np.array([float(c.close) for c in future_window])
-                
-                # Retrieve the order book from the last candle in the window
-                last_candle = window[-1]
-                order_book = {}
-                if last_candle.order_book:
-                    # Map structured order book back to dictionary format
-                    ob = last_candle.order_book
-                    order_book = {
-                        "bids": [[b.avg_price, b.volume] for b in ob.bid_buckets] if hasattr(ob, 'bid_buckets') else [],
-                        "asks": [[a.avg_price, a.volume] for a in ob.ask_buckets] if hasattr(ob, 'ask_buckets') else []
-                    }
-                
-                if not order_book or not order_book.get("bids"):
-                    order_book = {"bids": [[prices[-1], 1.0]], "asks": [[prices[-1] + 1.0, 1.0]]}
-                
-                encoder_service.add_segment(prices, order_book, {
-                    "id": i,
-                    "historical_prices": prices.tolist(),
-                    "prices": future_prices.tolist(),
-                    "order_book": order_book
-                })
+        if not candles or len(candles) < 120:
+            raise RuntimeError(f"Insufficient historical data found ({len(candles) if candles else 0} points). Startup aborted: no mock fallback allowed.")
             
-            logger.info(f"Successfully indexed {len(candles) - window_size + 1} historical segments.")
+        logger.info(f"Loaded {len(candles)} historical candles. Building sliding window segments...")
+        window_size = 60
+        horizon = 60
+        for i in range(len(candles) - window_size - horizon + 1):
+            window = candles[i : i + window_size]
+            future_window = candles[i + window_size : i + window_size + horizon]
             
-    except Exception as e:
-        logger.error(f"Error loading historical price data during startup: {e}", exc_info=True)
-        # Fallback setup on database connection error
-        for i in range(100):
-            prices = np.random.rand(60) + i * 0.1
-            future_prices = np.random.rand(60) + (i + 60) * 0.1
-            order_book = {"bids": [[100 + i, 10]], "asks": [[101 + i, 10]]}
+            prices = np.array([float(c.close) for c in window])
+            future_prices = np.array([float(c.close) for c in future_window])
+            
+            last_candle = window[-1]
+            order_book = {}
+            if last_candle.order_book:
+                ob = last_candle.order_book
+                order_book = {
+                    "bids": [[b.avg_price, b.volume] for b in ob.bid_buckets] if hasattr(ob, 'bid_buckets') else [],
+                    "asks": [[a.avg_price, a.volume] for a in ob.ask_buckets] if hasattr(ob, 'ask_buckets') else []
+                }
+            
+            if not order_book or not order_book.get("bids"):
+                order_book = {"bids": [[prices[-1], 1.0]], "asks": [[prices[-1] + 1.0, 1.0]]}
+            
             encoder_service.add_segment(prices, order_book, {
                 "id": i,
                 "historical_prices": prices.tolist(),
                 "prices": future_prices.tolist(),
                 "order_book": order_book
             })
+        
+        logger.info(f"Successfully indexed {len(candles) - window_size - horizon + 1} historical segments.")
+        
+    except Exception as e:
+        logger.error(f"Error loading historical price data during startup: {e}", exc_info=True)
+        raise e
             
-    # Build vector index
     logger.info("Building vector index...")
     encoder_service.build_index(n_trees=10)
     logger.info("Vector index built successfully.")
 
 @app.get("/forecast")
 async def forecast(symbol: str = "BTC", k: int = 5) -> Dict[str, Any]:
-    """Forecast endpoint returning similarity matching on real live price segments."""
+    """
+    Get matching historical patterns and compute a consensus forecast.
+
+    Retrieves the last 60 minutes of live price data for the specified token,
+    queries the vector index for similar historical cycles, and returns
+    a similarity-weighted projection.
+
+    Args:
+        symbol (str): The token/symbol to query. Defaults to 'BTC'.
+        k (int): Number of matches to retrieve. Defaults to 5.
+
+    Returns:
+        Dict[str, Any]: Forecast predictions, consensus path, and similarity stats.
+
+    Raises:
+        HTTPException (400): If there is insufficient live query data.
+        HTTPException (500): For general retrieval and forecasting processing failures.
+    """
     try:
         price_adapter = get_price_adapter()
         await price_adapter.initialize()
         
         token = symbol.split("/")[0] if "/" in symbol else symbol
         
-        # Fetch the most recent 60 minutes of real price data to build the query segment
         end_time = datetime.datetime.now(datetime.timezone.utc)
-        start_time = end_time - datetime.timedelta(hours=2) # Fetch extra to ensure we get 60 points
+        start_time = end_time - datetime.timedelta(hours=2)
         
         candles = await price_adapter.get_candlestick_data(
             token=token,
@@ -130,33 +268,31 @@ async def forecast(symbol: str = "BTC", k: int = 5) -> Dict[str, Any]:
         )
         
         if not candles or len(candles) < 60:
-            # If not enough real data exists yet in DB, fallback to mock query data to avoid 500 error
-            logger.warning(f"Insufficient live query data ({len(candles) if candles else 0} points). Using fallback query.")
-            current_prices = np.random.rand(60) + 50 * 0.1
-            current_order_book = {"bids": [[150, 10]], "asks": [[151, 10]]}
-        else:
-            # Use the latest 60 candles
-            query_candles = candles[-60:]
-            current_prices = np.array([float(c.close) for c in query_candles])
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient live query data. Need at least 60 points, found {len(candles) if candles else 0}."
+            )
             
-            last_candle = query_candles[-1]
-            current_order_book = {}
-            if last_candle.order_book:
-                ob = last_candle.order_book
-                current_order_book = {
-                    "bids": [[b.avg_price, b.volume] for b in ob.bid_buckets] if hasattr(ob, 'bid_buckets') else [],
-                    "asks": [[a.avg_price, a.volume] for a in ob.ask_buckets] if hasattr(ob, 'ask_buckets') else []
-                }
-            if not current_order_book or not current_order_book.get("bids"):
-                current_order_book = {"bids": [[current_prices[-1], 1.0]], "asks": [[current_prices[-1] + 1.0, 1.0]]}
+        query_candles = candles[-60:]
+        current_prices = np.array([float(c.close) for c in query_candles])
+        
+        last_candle = query_candles[-1]
+        current_order_book = {}
+        if last_candle.order_book:
+            ob = last_candle.order_book
+            current_order_book = {
+                "bids": [[b.avg_price, b.volume] for b in ob.bid_buckets] if hasattr(ob, 'bid_buckets') else [],
+                "asks": [[a.avg_price, a.volume] for a in ob.ask_buckets] if hasattr(ob, 'ask_buckets') else []
+            }
+        if not current_order_book or not current_order_book.get("bids"):
+            current_order_book = {"bids": [[current_prices[-1], 1.0]], "asks": [[current_prices[-1] + 1.0, 1.0]]}
         
         return forecaster.forecast(current_prices, current_order_book, k=k)
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"Error in forecast endpoint: {e}", exc_info=True)
-        # Graceful degradation fallback
-        current_prices = np.random.rand(60) + 50 * 0.1
-        current_order_book = {"bids": [[150, 10]], "asks": [[151, 10]]}
-        return forecaster.forecast(current_prices, current_order_book, k=k)
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

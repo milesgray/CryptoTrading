@@ -119,15 +119,18 @@ class EncoderTrainer:
             )
         
         # Learning rate scheduler with warmup
-        num_training_steps = num_epochs * len(train_loader)
-        warmup_steps = min(1000, num_training_steps // 10)
+        num_training_steps = max(1, num_epochs * len(train_loader))
+        warmup_steps = max(1, min(1000, num_training_steps // 10))
         
-        self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            self.optimizer,
-            max_lr=self.optimizer.defaults['lr'],
-            total_steps=num_training_steps,
-            pct_start=warmup_steps / num_training_steps
-        )
+        if num_training_steps < 30:
+            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=1.0)
+        else:
+            self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                self.optimizer,
+                max_lr=self.scheduler_max_lr if hasattr(self, 'scheduler_max_lr') else self.optimizer.defaults['lr'],
+                total_steps=num_training_steps,
+                pct_start=warmup_steps / num_training_steps
+            )
         
         best_val_loss = float('inf')
         patience_counter = 0

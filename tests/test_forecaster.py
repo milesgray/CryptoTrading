@@ -87,7 +87,7 @@ def test_retrieval_forecaster_math():
     assert abs(result["prediction"] - result["consensus_path"][-1]) < 1e-5
 
 def test_retrieval_forecaster_fallback():
-    """Verify that the forecaster degrades gracefully with an empty index."""
+    """Verify that the forecaster raises an error with an unbuilt/empty index."""
     encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
     # Notice we do NOT add segments or build the index here
     
@@ -96,9 +96,6 @@ def test_retrieval_forecaster_fallback():
     query_prices = np.linspace(100.0, 105.0, 60)
     query_order_book = {"bids": [[105.0, 5.0]], "asks": [[106.0, 5.0]]}
     
-    # The forecaster should catch the index build error and return the fallback path
-    result = forecaster.forecast(query_prices, query_order_book, k=2)
-    assert result["retrieved"] == []
-    assert len(result["consensus_path"]) == 60
-    assert result["expected_return"] > 0
-    assert result["direction"] == "BULLISH"
+    # The forecaster should propagate the index build error
+    with pytest.raises(RuntimeError, match="Index not built. Call build_index\\(\\) first."):
+        forecaster.forecast(query_prices, query_order_book, k=2)

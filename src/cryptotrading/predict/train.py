@@ -18,9 +18,9 @@ from torch.utils.data import DataLoader
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-from cryptotrading.predict.models import get_model
-from cryptotrading.predict.utils.tools import dotdict
 from cryptotrading.predict.data import TimeSeriesDataset
+from cryptotrading.predict.models import get_model
+from cryptotrading.predict.utils import dotdict
 
 # Set random seeds for reproducibility
 torch.manual_seed(42)
