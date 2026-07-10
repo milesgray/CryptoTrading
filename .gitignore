@@ -6,3 +6,5 @@ logs
 *.log
 .cache/
 *kube.conf
+checkpoints/
+services/embed/models/trained/

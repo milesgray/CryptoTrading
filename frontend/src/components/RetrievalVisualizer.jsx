@@ -30,7 +30,7 @@ const RetrievalVisualizer = ({ token }) => {
     setError(null);
     try {
       // 1. Fetch live forecast (retrieved segments) from serve proxy
-      const forecastRes = await fetch(`/api/retrieval/forecast?symbol=${token}&k=${k}`);
+      const forecastRes = await fetch(`/api/retrieval/forecast?symbol=${token}&k=${k}&granularity=${frequency}&window_size=${segmentLength}`);
       if (!forecastRes.ok) {
         let errMsg = "Failed to fetch forecasting data";
         try {
@@ -46,15 +46,23 @@ const RetrievalVisualizer = ({ token }) => {
       const segments = forecastData.retrieved || [];
       
       // 2. Fetch the recent price history (query segment) to show as baseline
-      // Since window size is 60, we fetch the last 60 steps
+      const freqToSec = {
+        '1m': 60,
+        '5m': 300,
+        '15m': 900,
+        '1h': 3600
+      };
+      const granularitySec = freqToSec[frequency] || 60;
+      const totalSec = segmentLength * granularitySec;
       const end = new Date();
-      const start = new Date(end.getTime() - 4 * 3600 * 1000); // 4 hours ago is plenty for 60m
-      const candles = await getCandlestickData(token, start, end, 60);
+      // Add 30% buffer to make sure we have enough points and it's robust
+      const start = new Date(end.getTime() - (totalSec * 1.3) * 1000);
+      const candles = await getCandlestickData(token, start, end, granularitySec);
       
       if (candles && candles.length > 0) {
-        const recentPrices = candles.slice(-60).map(c => parseFloat(c.close));
-        if (recentPrices.length < 60) {
-          throw new Error(`Insufficient live query data. Need 60 points, but only found ${recentPrices.length}.`);
+        const recentPrices = candles.slice(-segmentLength).map(c => parseFloat(c.close));
+        if (recentPrices.length < segmentLength) {
+          throw new Error(`Insufficient live query data. Need ${segmentLength} points, but only found ${recentPrices.length}.`);
         }
         setQueryPrices(recentPrices);
       } else {
@@ -93,7 +101,7 @@ const RetrievalVisualizer = ({ token }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, k]);
+  }, [token, k, frequency, segmentLength]);
 
   // Handle toggle change
   const handleToggleChange = (id) => {
@@ -103,10 +111,10 @@ const RetrievalVisualizer = ({ token }) => {
     }));
   };
 
-  // Trigger data fetch on token or k change
+  // Trigger data fetch on token, k, frequency, or segmentLength change
   useEffect(() => {
     fetchForecastData();
-  }, [token, k, fetchForecastData]);
+  }, [token, k, frequency, segmentLength, fetchForecastData]);
 
   // Recalculate and render the chart whenever active segments or data changes
   useEffect(() => {
@@ -120,11 +128,22 @@ const RetrievalVisualizer = ({ token }) => {
     // Colors for the retrieved segments
     const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
     
-    // X-axis: 60 historical steps + 60 forecasted steps
-    const xAxisData = Array.from({ length: 120 }, (_, i) => {
-      if (i < 60) return `-${60 - i}m`;
-      return `+${i - 59}m`;
-    });
+    const activeSegments = retrievedData.filter(seg => activeToggles[seg.id || seg.index]);
+    const forecastLength = activeSegments.length > 0
+      ? Math.min(...activeSegments.map(s => (s.prices || []).length))
+      : segmentLength; // fallback
+
+    const stepUnit = frequency.endsWith('m') ? 'm' : 'h';
+    const stepMultiplier = parseInt(frequency) || 1;
+
+    // X-axis: segmentLength historical steps + forecastLength forecasted steps
+    const xAxisData = [];
+    for (let i = 0; i < segmentLength; i++) {
+      xAxisData.push(`-${(segmentLength - i) * stepMultiplier}${stepUnit}`);
+    }
+    for (let i = 1; i <= forecastLength; i++) {
+      xAxisData.push(`+${i * stepMultiplier}${stepUnit}`);
+    }
 
     // 1. Historical baseline series
     const series = [
@@ -144,7 +163,6 @@ const RetrievalVisualizer = ({ token }) => {
     ];
 
     const lastQueryPrice = queryPrices[queryPrices.length - 1] || 0;
-    const activeSegments = retrievedData.filter(seg => activeToggles[seg.id || seg.index]);
 
     // 2. Add retrieved patterns (only if checked/active)
     activeSegments.forEach((segment) => {
@@ -162,8 +180,8 @@ const RetrievalVisualizer = ({ token }) => {
         return lastQueryPrice + standardized * scaleMultiplier;
       });
 
-      // The segment line starts at index 59 (the last historical tick) to connect seamlessly
-      const segmentLineData = Array(59).fill(null).concat([lastQueryPrice, ...alignedForecast]);
+      // The segment line starts at index segmentLength - 1 (the last historical tick) to connect seamlessly
+      const segmentLineData = Array(segmentLength - 1).fill(null).concat([lastQueryPrice, ...alignedForecast]);
 
       series.push({
         name: `Pattern #${segment.id || segment.index + 1}`,
@@ -183,7 +201,6 @@ const RetrievalVisualizer = ({ token }) => {
 
     // 3. Consensus Forecast: Average of all checked segments
     if (activeSegments.length > 0) {
-      const forecastLength = Math.min(...activeSegments.map(s => (s.prices || []).length));
       if (forecastLength > 0) {
         const consensusPrices = [];
         
@@ -201,7 +218,7 @@ const RetrievalVisualizer = ({ token }) => {
           consensusPrices.push(sum / activeSegments.length);
         }
 
-        const consensusLineData = Array(59).fill(null).concat([lastQueryPrice, ...consensusPrices]);
+        const consensusLineData = Array(segmentLength - 1).fill(null).concat([lastQueryPrice, ...consensusPrices]);
         
         series.push({
           name: 'Consensus Projection',
@@ -282,7 +299,7 @@ const RetrievalVisualizer = ({ token }) => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
 
-  }, [queryPrices, retrievedData, activeToggles]);
+  }, [queryPrices, retrievedData, activeToggles, segmentLength, frequency]);
 
   // Clean up chart on unmount
   useEffect(() => {

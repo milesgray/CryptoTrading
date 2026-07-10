@@ -37,12 +37,19 @@ class SearchResultItem(BaseModel):
 
 # --- Endpoints ---
 @router.get("/forecast")
-async def forecast(symbol: str = "BTC", k: int = 5):
+async def forecast(
+    symbol: str = "BTC",
+    k: int = 5,
+    granularity: str = "1m",
+    window_size: int = 60
+):
     """Proxy to retrieval service with robust timeout and error handling."""
     retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://retrieval:8000")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{retrieval_url}/forecast?symbol={symbol}&k={k}")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{retrieval_url}/forecast?symbol={symbol}&k={k}&granularity={granularity}&window_size={window_size}"
+            )
             response.raise_for_status()
             return response.json()
     except httpx.HTTPError as e:

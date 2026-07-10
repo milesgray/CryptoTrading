@@ -110,13 +110,15 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **task-log_2026-07-05-04-30_polish-embed-service.md**: `.agent/task-logs/task-log_2026-07-05-04-30_polish-embed-service.md`
 - **task-log_2026-07-05-05-50_move-pgvector-store.md**: `.agent/task-logs/task-log_2026-07-05-05-50_move-pgvector-store.md`
 - **task-log_2026-07-10-16-44_candlestick-query-timeouts.md**: `.agent/task-logs/task-log_2026-07-10-16-44_candlestick-query-timeouts.md`
+- **task-log_2026-07-10-18-35_dynamic_forecasting.md**: `.agent/task-logs/task-log_2026-07-10-18-35_dynamic_forecasting.md`
+- **task-log_2026-07-10-18-45_embed_service_auto_training.md**: `.agent/task-logs/task-log_2026-07-10-18-45_embed_service_auto_training.md`
 
 ## Memory System Status
 
 ### Overall Health
 - **Status**: Synchronized
-- **Last Check**: 2026-07-05 05:50:00 UTC
-- **Files Tracked**: 6 core files + 6 plans + 8 task logs
+- **Last Check**: 2026-07-10 18:45:00 CST
+- **Files Tracked**: 6 core files + 6 plans + 11 task logs
 - **Integrity**: All systems updated and synchronized
 
 

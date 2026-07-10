@@ -158,6 +158,18 @@ async def auto_populate_db():
     
     from cryptotrading.data.postgres import init_pool
     
+    model_path = Path(state.config.get('model_path', 'models/trained/encoder.pt'))
+    
+    # If the trained model is missing, we clear any existing database records to force retraining and regeneration
+    if not model_path.exists():
+        logger.warning(f"No trained model found at {model_path}. Forcing clearing of vector store for retraining...")
+        if isinstance(state.store, TradeEmbeddingDB):
+            try:
+                await state.store.delete_all()
+                logger.info("Cleared existing setups to allow retraining and repopulation.")
+            except Exception as e:
+                logger.error(f"Error clearing setups: {e}")
+    
     while retries < max_retries:
         if state.store is None:
             await asyncio.sleep(2)
@@ -210,13 +222,14 @@ async def auto_populate_db():
             logger.warning("No symbols found in price data.")
             return
             
-        total_extracted = 0
-        total_inserted = 0
-        
+        # 1. First, extract setups for all symbols
+        all_setups_by_symbol = {}
         for sym in symbols:
-            # Query data per symbol to avoid memory overload
             async with pool.acquire() as conn:
-                rows = await conn.fetch("SELECT time, close FROM price_data WHERE symbol = $1 ORDER BY time ASC", sym)
+                rows = await conn.fetch(
+                    "SELECT time, close FROM (SELECT time, close FROM price_data WHERE symbol = $1 ORDER BY time DESC LIMIT 100000) AS sub ORDER BY time ASC",
+                    sym
+                )
                 
             if not rows:
                 continue
@@ -236,24 +249,90 @@ async def auto_populate_db():
                 
             logger.info(f"Extracting setups for {sym} ({len(prices)} prices)...")
             
-            # Offload heavy CPU calculations to worker thread to keep the event loop responsive
-            device = next(state.encoder.parameters()).device
-            setups, embeddings = await asyncio.to_thread(
-                _process_symbol_sync,
-                sym,
-                prices,
-                timestamps,
-                state.window_size,
-                state.encoder,
-                device
+            # Use DP oracle to get optimal setups
+            oracle = LeveragedDPOracle(max_leverage=20.0, transaction_cost=0.001)
+            actions, leverages = await asyncio.to_thread(oracle.compute_oracle_actions, prices)
+            setups = extract_trade_setups(
+                prices=prices,
+                timestamps=timestamps,
+                oracle_actions=actions,
+                oracle_leverages=leverages,
+                window_size=state.window_size
             )
             
-            if not setups or embeddings is None:
+            if setups:
+                all_setups_by_symbol[sym] = (setups, prices, timestamps)
+                logger.info(f"Extracted {len(setups)} setups for {sym}")
+                
+        # Combine all setups for training
+        train_setups = []
+        for sym, (setups, _, _) in all_setups_by_symbol.items():
+            train_setups.extend(setups)
+            
+        if not train_setups:
+            logger.warning("No setups found across any symbols. Auto-population aborted.")
+            return
+            
+        # 2. Train the encoder if weights file is missing
+        if not model_path.exists():
+            logger.info(f"Training contrastive encoder on {len(train_setups)} setups...")
+            from models.trainer import EncoderTrainer
+            
+            trainer = EncoderTrainer(
+                window_size=state.window_size,
+                embedding_dim=state.embedding_dim,
+                device=state.device
+            )
+            
+            model_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Split train/val
+            np.random.shuffle(train_setups)
+            split_idx = int(len(train_setups) * 0.9)
+            t_setups = train_setups[:split_idx]
+            v_setups = train_setups[split_idx:]
+            
+            # Ensure we have at least some validation data
+            if not v_setups:
+                v_setups = t_setups
+                
+            # Train for 15 epochs on CPU/GPU
+            await asyncio.to_thread(
+                trainer.train,
+                train_setups=t_setups,
+                val_setups=v_setups,
+                num_epochs=15,
+                save_path=model_path.parent
+            )
+            
+            # Load trained weights
+            state.encoder = trainer.encoder
+            state.encoder.eval()
+            logger.info(f"Saved trained encoder weights to {model_path}")
+            
+        # 3. Generate embeddings and insert into vector store
+        total_inserted = 0
+        device = next(state.encoder.parameters()).device
+        
+        for sym, (setups, prices, timestamps) in all_setups_by_symbol.items():
+            logger.info(f"Generating embeddings and inserting setups for {sym}...")
+            
+            # Generate embeddings in batches
+            embeddings = []
+            batch_size = 256
+            for i in range(0, len(setups), batch_size):
+                batch = setups[i:i + batch_size]
+                windows = np.stack([s.price_window for s in batch])
+                with torch.no_grad():
+                    x = torch.from_numpy(windows).float().to(device)
+                    emb = state.encoder(x).cpu().numpy()
+                embeddings.append(emb)
+                
+            if embeddings:
+                embeddings = np.vstack(embeddings)
+            else:
                 continue
                 
-            logger.info(f"Extracted {len(setups)} setups for {sym}")
-            total_extracted += len(setups)
-            
             # Convert to StoredTradeSetup objects
             stored_setups = []
             for idx, setup in enumerate(setups):
@@ -314,10 +393,9 @@ async def auto_populate_db():
                 state.store.save()
                 total_inserted += len(ids)
                 
-            # Briefly yield control to the event loop between symbols
             await asyncio.sleep(0.05)
             
-        logger.info(f"Auto-population complete. Extracted: {total_extracted}, Inserted/Saved: {total_inserted}")
+        logger.info(f"Auto-population complete. Extracted: {len(train_setups)}, Inserted/Saved: {total_inserted}")
     except Exception as e:
         logger.error(f"Error during auto-population background task: {e}", exc_info=True)
 

@@ -51,6 +51,8 @@ services:
             dockerfile: services/embed/Dockerfile
         ports:
             - "8301:8301"
+        volumes:
+            - ./services/embed/models/trained:/app/models/trained
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}

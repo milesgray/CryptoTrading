@@ -108,11 +108,22 @@
 - [x] Deduplicate overlapping data points by timestamp and sort chronologically.
 - [x] Handle 404 response cases gracefully by treating missing data chunks as empty lists instead of failing the entire query.
 
+### Phase 17: Dynamic Retrieval Granularity Forecasting & Self-Healing (Completed ✅)
+- [x] Implement thread-safe dynamic in-memory vector index cache in retrieval service.
+- [x] Configure dynamic STFT parameters (frame size, hop size, FFT bins, forecast horizon) based on target window size.
+- [x] Expose granularity and window size query parameters on the serve proxy and microservice.
+- [x] Hook up React frontend frequency and segment length controls to trigger auto-updates on value change.
+- [x] Enable dynamic date range calculation and chart labels scaling on the frontend.
+- [x] Implement self-healing auto-training logic and dynamic PyTorch DataLoader batch scaling inside the embed service.
+- [x] Configure persistent Docker volume mounts for encoder checkpoints.
+
 ## Sprint Progress
  
+- [x] Add granularity to retrieval forecast and hook it up to the frontend.
 - [x] Remove mock results and simulated data states from the frontend.
 - [x] Fix dropdown and input styling issues (white-on-white text background) globally.
 - [x] Align CandlestickChart and OrderBookPanel components with the global dark theme.
 - [x] Rework Order Book snapshot panel into a cumulative depth chart visualizer.
 - [x] Polish up the embed service, centralize pgvector database storage, and write comprehensive tests.
 - [x] Implement transparent historical candlestick query chunking on the frontend.
+- [x] Resolve the embed service missing model weights issue and ensure proper embedding comparisons.

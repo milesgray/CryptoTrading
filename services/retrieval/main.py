@@ -151,6 +151,101 @@ async def bootstrap_historical_data(price_adapter, symbol: str, days: int = 7):
 
     logger.info(f"Successfully processed {inserted_count} candles for {symbol} (with ON CONFLICT DO NOTHING).")
 
+# Dynamic cache for forecasters by (token, granularity_seconds, window_size)
+forecasters_cache = {}
+cache_lock = asyncio.Lock()
+
+async def build_index_for_combination(token: str, granularity_sec: int, window_size: int) -> SpecReTFForecaster:
+    """
+    Build a retrieval index for the given combination of token, granularity, and window size.
+    """
+    logger.info(f"Building dynamic retrieval index for token={token}, granularity={granularity_sec}s, window_size={window_size}...")
+    price_adapter = get_price_adapter()
+    await price_adapter.initialize()
+    
+    end_time = datetime.datetime.now(datetime.timezone.utc)
+    # Determine history days to load: at least 7 days, or more if granularity is high
+    min_duration_sec = max(7 * 24 * 3600, window_size * 4 * granularity_sec)
+    start_time = end_time - datetime.timedelta(seconds=min_duration_sec)
+    
+    candles = await price_adapter.get_candlestick_data(
+        token=token,
+        start_time=start_time,
+        end_time=end_time,
+        granularity=granularity_sec,
+        include_book=True
+    )
+    
+    if not candles or len(candles) <= window_size:
+        raise ValueError(
+            f"Insufficient historical data to build index for token {token} at granularity {granularity_sec}s. "
+            f"Found {len(candles) if candles else 0} points, need at least {window_size + 5}."
+        )
+        
+    # Determine parameters dynamically
+    horizon = window_size
+    if len(candles) < (window_size + horizon):
+        horizon = max(5, len(candles) - window_size)
+        
+    n_fft = 32
+    while n_fft >= window_size:
+        n_fft = n_fft // 2
+    n_fft = max(8, n_fft)
+    
+    frame_size = 16
+    while frame_size >= window_size:
+        frame_size = frame_size // 2
+    frame_size = max(4, frame_size)
+    hop_size = max(1, frame_size // 4)
+    
+    logger.info(f"Initializing encoder with window_size={window_size}, n_fft={n_fft}, frame_size={frame_size}, hop_size={hop_size}, horizon={horizon}")
+    encoder = RetrievalServiceEncoder(window_size=window_size, n_fft=n_fft, dim=184)
+    
+    # Build sliding window segments
+    for i in range(len(candles) - window_size - horizon + 1):
+        window = candles[i : i + window_size]
+        future_window = candles[i + window_size : i + window_size + horizon]
+        
+        prices = np.array([float(c.close) for c in window])
+        future_prices = np.array([float(c.close) for c in future_window])
+        
+        last_candle = window[-1]
+        order_book = {}
+        if last_candle.order_book:
+            ob = last_candle.order_book
+            order_book = {
+                "bids": [[b.avg_price, b.volume] for b in ob.bid_buckets] if hasattr(ob, 'bid_buckets') else [],
+                "asks": [[a.avg_price, a.volume] for a in ob.ask_buckets] if hasattr(ob, 'ask_buckets') else []
+            }
+        
+        if not order_book or not order_book.get("bids"):
+            order_book = {"bids": [[prices[-1], 1.0]], "asks": [[prices[-1] + 1.0, 1.0]]}
+        
+        encoder.add_segment(prices, order_book, {
+            "id": i,
+            "historical_prices": prices.tolist(),
+            "prices": future_prices.tolist(),
+            "order_book": order_book
+        })
+        
+    encoder.build_index(n_trees=10)
+    
+    new_forecaster = SpecReTFForecaster(
+        encoder_service=encoder,
+        frame_size=frame_size,
+        hop_size=hop_size,
+        horizon=horizon
+    )
+    return new_forecaster
+
+async def get_forecaster(token: str, granularity_sec: int, window_size: int) -> SpecReTFForecaster:
+    key = (token, granularity_sec, window_size)
+    async with cache_lock:
+        if key not in forecasters_cache:
+            forecaster_instance = await build_index_for_combination(token, granularity_sec, window_size)
+            forecasters_cache[key] = forecaster_instance
+        return forecasters_cache[key]
+
 @app.on_event("startup")
 async def startup_event():
     """
@@ -174,74 +269,45 @@ async def startup_event():
         except Exception as e:
             logger.error(f"Failed to bootstrap historical data for {symbol}: {e}", exc_info=True)
     
-    token = "BTC"
-    end_time = datetime.datetime.now(datetime.timezone.utc)
-    start_time = end_time - datetime.timedelta(days=7)
-    
-    logger.info(f"Fetching historical price data for {token} from {start_time} to {end_time}...")
-    try:
-        candles = await price_adapter.get_candlestick_data(
-            token=token,
-            start_time=start_time,
-            end_time=end_time,
-            granularity=60,
-            include_book=True
-        )
-        
-        if not candles or len(candles) < 120:
-            raise RuntimeError(f"Insufficient historical data found ({len(candles) if candles else 0} points). Startup aborted: no mock fallback allowed.")
+    # Build default index for each configured symbol at (60, 60)
+    global encoder_service, forecaster
+    default_forecaster = None
+    for symbol in SYMBOLS:
+        token = symbol.split("/")[0] if "/" in symbol else symbol
+        try:
+            logger.info(f"Pre-building default retrieval index for {token}...")
+            f_inst = await get_forecaster(token, granularity_sec=60, window_size=60)
+            if token == "BTC":
+                default_forecaster = f_inst
+        except Exception as e:
+            logger.error(f"Failed to build startup index for {token}: {e}", exc_info=True)
+            raise e
             
-        logger.info(f"Loaded {len(candles)} historical candles. Building sliding window segments...")
-        window_size = 60
-        horizon = 60
-        for i in range(len(candles) - window_size - horizon + 1):
-            window = candles[i : i + window_size]
-            future_window = candles[i + window_size : i + window_size + horizon]
-            
-            prices = np.array([float(c.close) for c in window])
-            future_prices = np.array([float(c.close) for c in future_window])
-            
-            last_candle = window[-1]
-            order_book = {}
-            if last_candle.order_book:
-                ob = last_candle.order_book
-                order_book = {
-                    "bids": [[b.avg_price, b.volume] for b in ob.bid_buckets] if hasattr(ob, 'bid_buckets') else [],
-                    "asks": [[a.avg_price, a.volume] for a in ob.ask_buckets] if hasattr(ob, 'ask_buckets') else []
-                }
-            
-            if not order_book or not order_book.get("bids"):
-                order_book = {"bids": [[prices[-1], 1.0]], "asks": [[prices[-1] + 1.0, 1.0]]}
-            
-            encoder_service.add_segment(prices, order_book, {
-                "id": i,
-                "historical_prices": prices.tolist(),
-                "prices": future_prices.tolist(),
-                "order_book": order_book
-            })
-        
-        logger.info(f"Successfully indexed {len(candles) - window_size - horizon + 1} historical segments.")
-        
-    except Exception as e:
-        logger.error(f"Error loading historical price data during startup: {e}", exc_info=True)
-        raise e
-            
-    logger.info("Building vector index...")
-    encoder_service.build_index(n_trees=10)
-    logger.info("Vector index built successfully.")
+    if default_forecaster:
+        forecaster = default_forecaster
+        encoder_service = default_forecaster.encoder_service
+    else:
+        logger.warning("BTC default forecaster not pre-built, globals left as is.")
 
 @app.get("/forecast")
-async def forecast(symbol: str = "BTC", k: int = 5) -> Dict[str, Any]:
+async def forecast(
+    symbol: str = "BTC",
+    k: int = 5,
+    granularity: str = "1m",
+    window_size: int = 60
+) -> Dict[str, Any]:
     """
     Get matching historical patterns and compute a consensus forecast.
 
-    Retrieves the last 60 minutes of live price data for the specified token,
-    queries the vector index for similar historical cycles, and returns
-    a similarity-weighted projection.
+    Retrieves the last window_size price points of live price data for the specified token
+    at the specified granularity, queries the dynamic vector index for similar historical cycles,
+    and returns a similarity-weighted projection.
 
     Args:
         symbol (str): The token/symbol to query. Defaults to 'BTC'.
         k (int): Number of matches to retrieve. Defaults to 5.
+        granularity (str): The candlestick interval (e.g. '1m', '5m', '15m', '1h'). Defaults to '1m'.
+        window_size (int): Temporal window width of sequence. Defaults to 60.
 
     Returns:
         Dict[str, Any]: Forecast predictions, consensus path, and similarity stats.
@@ -256,24 +322,43 @@ async def forecast(symbol: str = "BTC", k: int = 5) -> Dict[str, Any]:
         
         token = symbol.split("/")[0] if "/" in symbol else symbol
         
+        # Map granularity string/integer to seconds
+        gran_map = {
+            "1m": 60,
+            "5m": 300,
+            "15m": 900,
+            "1h": 3600
+        }
+        
+        if isinstance(granularity, str):
+            try:
+                granularity_sec = int(granularity)
+            except ValueError:
+                granularity_sec = gran_map.get(granularity.lower(), 60)
+        else:
+            granularity_sec = int(granularity)
+            
+        # Calculate time window to fetch live prices
         end_time = datetime.datetime.now(datetime.timezone.utc)
-        start_time = end_time - datetime.timedelta(hours=2)
+        duration_sec = window_size * granularity_sec * 2
+        start_time = end_time - datetime.timedelta(seconds=duration_sec)
         
         candles = await price_adapter.get_candlestick_data(
             token=token,
             start_time=start_time,
             end_time=end_time,
-            granularity=60,
+            granularity=granularity_sec,
             include_book=True
         )
         
-        if not candles or len(candles) < 60:
+        if not candles or len(candles) < window_size:
             raise HTTPException(
                 status_code=400,
-                detail=f"Insufficient live query data. Need at least 60 points, found {len(candles) if candles else 0}."
+                detail=f"Insufficient live query data for {token} at {granularity} granularity. "
+                       f"Need at least {window_size} points, found {len(candles) if candles else 0}."
             )
             
-        query_candles = candles[-60:]
+        query_candles = candles[-window_size:]
         current_prices = np.array([float(c.close) for c in query_candles])
         
         last_candle = query_candles[-1]
@@ -287,7 +372,8 @@ async def forecast(symbol: str = "BTC", k: int = 5) -> Dict[str, Any]:
         if not current_order_book or not current_order_book.get("bids"):
             current_order_book = {"bids": [[current_prices[-1], 1.0]], "asks": [[current_prices[-1] + 1.0, 1.0]]}
         
-        return forecaster.forecast(current_prices, current_order_book, k=k)
+        dyn_forecaster = await get_forecaster(token, granularity_sec, window_size)
+        return dyn_forecaster.forecast(current_prices, current_order_book, k=k)
     except HTTPException as he:
         raise he
     except Exception as e:

@@ -27,14 +27,24 @@ try:
         extract_trade_setups
     )
 except ImportError:
-    from services.embed.models.encoder import (
-        PriceWindowEncoder,
-        SupervisedContrastiveLoss,
-        TripletLoss,
-        TradeSetupDataset,
-        TradeSetup,
-        extract_trade_setups
-    )
+    try:
+        from models.encoder import (
+            PriceWindowEncoder,
+            SupervisedContrastiveLoss,
+            TripletLoss,
+            TradeSetupDataset,
+            TradeSetup,
+            extract_trade_setups
+        )
+    except ImportError:
+        from services.embed.models.encoder import (
+            PriceWindowEncoder,
+            SupervisedContrastiveLoss,
+            TripletLoss,
+            TradeSetupDataset,
+            TradeSetup,
+            extract_trade_setups
+        )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -110,20 +120,28 @@ class EncoderTrainer:
         """
         # Create datasets
         train_dataset = TradeSetupDataset(train_setups, augment=True)
+        
+        # Adjust batch size and drop_last dynamically for small datasets
+        dataset_len = len(train_dataset)
+        curr_batch_size = min(self.batch_size, dataset_len) if dataset_len > 0 else self.batch_size
+        drop_last = True if dataset_len >= self.batch_size else False
+        
         train_loader = DataLoader(
             train_dataset,
-            batch_size=self.batch_size,
+            batch_size=curr_batch_size,
             shuffle=True,
             num_workers=0,
-            drop_last=True
+            drop_last=drop_last
         )
         
         val_loader = None
         if val_setups:
             val_dataset = TradeSetupDataset(val_setups, augment=False)
+            val_dataset_len = len(val_dataset)
+            curr_val_batch_size = min(self.batch_size, val_dataset_len) if val_dataset_len > 0 else self.batch_size
             val_loader = DataLoader(
                 val_dataset,
-                batch_size=self.batch_size,
+                batch_size=curr_val_batch_size,
                 shuffle=False,
                 num_workers=0
             )
