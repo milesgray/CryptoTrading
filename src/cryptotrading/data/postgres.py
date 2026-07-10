@@ -707,6 +707,8 @@ class DocumentEmbeddingRepository(Database):
 # Helper to resolve matching symbols efficiently using TimescaleDB SkipScan
 async def resolve_matching_symbols(token_or_symbol: str) -> List[str]:
     """Resolve a token or symbol to the list of matching symbols in the database using a fast SkipScan."""
+    if not token_or_symbol:
+        return []
     async with get_connection() as conn:
         rows = await conn.fetch("SELECT DISTINCT symbol FROM price_data;")
     all_symbols = [r["symbol"] for r in rows]
