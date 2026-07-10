@@ -425,9 +425,15 @@ export const getCandlestickData = async (token, start, end, granularity) => {
       return [];
     }
 
+    let safeGranularity = granularity;
+    if (!safeGranularity || safeGranularity <= 0) {
+      console.warn(`Invalid granularity: ${safeGranularity}, defaulting to 60 seconds`);
+      safeGranularity = 60;
+    }
+
     // Limit maximum data points per chunk to 1000
     const MAX_POINTS_PER_QUERY = 1000;
-    const chunkDurationMs = MAX_POINTS_PER_QUERY * granularity * 1000;
+    const chunkDurationMs = MAX_POINTS_PER_QUERY * safeGranularity * 1000;
 
     // Generate chunks
     const chunks = [];
@@ -460,7 +466,7 @@ export const getCandlestickData = async (token, start, end, granularity) => {
             params: {
               start: formattedStart,
               end: formattedEnd,
-              granularity,
+              granularity: safeGranularity,
               include_book: true
             },
           });
