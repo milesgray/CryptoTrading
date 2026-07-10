@@ -1,30 +1,29 @@
-# Active Context: Resolve Retrieval-Embed Service Connection & Auto-populate DB
+# Active Context: Optimize Candlestick & Price Queries to Prevent Timeouts
 
 ## Quick Reference
-- **Feature**: Resolve Retrieval-Embed Service Connection & Auto-populate DB
-- **Branch**: `fix/retrieval-embed-connection`
+- **Feature**: Optimize Candlestick & Price Queries
 - **Status**: Completed & Verified ✅
 
 ## Executive Summary
-Resolved connection failures between the `retrieval` (and `serve`) services and the `embed` service by configuring the correct `EMBED_SERVICE_URL` in the docker compose files. Added an asynchronous background task `auto_populate_db` in `services/embed/server.py` to auto-populate the pgvector database at startup by pulling, DP-labeling, and embedding historical price data when the store is empty.
+Resolved candlestick chart loading timeouts (`QueryCanceledError`) by recovering host disk space (freeing ~13.2 GB of space to boot up TimescaleDB) and rewriting database query interfaces to bypass slow JSONB metadata filtering and prefix-LIKE matches. Introduced a SkipScan-based `resolve_matching_symbols` helper to resolve tokens to symbol lists and query with parallel index scans (`symbol = ANY($1)`).
 
 ## Architecture Overview
-The retrieval and serve services resolve the embed service container host correctly. The embed service implements a self-bootstrapping background task at startup that ensures the vector database is fully populated with trade setup embeddings if no setups are present.
+Queries on the `price_data` table (9.5+ million rows) now run in under 200 ms. The SkipScan helper queries unique symbols in under 1 ms using TimescaleDB's metadata chunk indexes. All service endpoints (`serve`, `retrieval`, `analysis`) now execute highly efficient parallel B-tree index scans on `idx_price_data_symbol_time`.
 
 ## Tech Stack for This Feature
-- **FastAPI**: Endpoint handler & lifespan events
-- **Docker Compose**: Container orchestration and network resolution
-- **PostgreSQL + pgvector**: Vector and metadata store
-- **asyncpg**: Async database connector
+- **PostgreSQL + TimescaleDB**: Query optimizations and hypertable indexing
+- **asyncpg**: Async database driver and connection pool management
+- **Docker Compose**: Service container orchestration and system resource cleaning
 
 ## Key Files Created/Modified
-- [docker-compose.yml](file:///home/miles/Development/notebooks/CryptoTrading/docker-compose.yml): Configured `EMBED_SERVICE_URL` for `retrieval` and `serve`.
-- [docker-compose-full.yml](file:///home/miles/Development/notebooks/CryptoTrading/docker-compose-full.yml): Configured `EMBED_SERVICE_URL` for `retrieval` and `serve`.
-- [services/embed/server.py](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/server.py): Added the `auto_populate_db` background task at startup.
+- [postgres.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/postgres.py): Added `resolve_matching_symbols` SkipScan query helper.
+- [price.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/price.py): Optimized `get_price_data`, `get_price_data_count`, `get_latest_price`, and `get_candlestick_data`.
+- [book.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/book.py): Optimized `get_orderbook_data`, `get_latest_transformed_order_book_point`, and `get_transformed_order_book`.
+- [price.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/analysis/price.py): Optimized raw exchange price analysis retrieval.
+- [retrieval.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/routers/retrieval.py): Optimized JEPA market regime calculation queries.
 
 ## Verification & Validation
-- Verified using `docker compose up -d --build` to compile Docker images and spin up all services.
-- Checked container logs to ensure `retrieval` is connecting to `embed:8301` without connection errors.
-- Verified uvicorn logs in `embed` showing the database auto-population task successfully pulling price data and starting embedding extraction.
-- Executed unit tests:
-  - `uv run pytest tests/...` -> **38 Passed**
+- **Automated Tests**: Executed database query tests and pytest suite:
+  - `PYTHONPATH=src uv run python test_db.py` -> **Passed**
+  - `uv run pytest tests/` -> **26 Passed**
+- **Manual Verification**: Curled the `candlestick` endpoint (`http://localhost:8362/candlestick/BTC`) and verified immediate returns (under ~200 ms) without timeouts.

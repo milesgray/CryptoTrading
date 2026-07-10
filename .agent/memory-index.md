@@ -109,6 +109,7 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **task-log_2026-07-05-03-09_order-book-rework.md**: `.agent/task-logs/task-log_2026-07-05-03-09_order-book-rework.md`
 - **task-log_2026-07-05-04-30_polish-embed-service.md**: `.agent/task-logs/task-log_2026-07-05-04-30_polish-embed-service.md`
 - **task-log_2026-07-05-05-50_move-pgvector-store.md**: `.agent/task-logs/task-log_2026-07-05-05-50_move-pgvector-store.md`
+- **task-log_2026-07-10-16-44_candlestick-query-timeouts.md**: `.agent/task-logs/task-log_2026-07-10-16-44_candlestick-query-timeouts.md`
 
 ## Memory System Status
 

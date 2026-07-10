@@ -205,15 +205,17 @@ async def get_jepa_regime(request: Request, token: str):
     try:
         from cryptotrading.config import DB_BACKEND
         if DB_BACKEND == 'postgres':
-            from cryptotrading.data.postgres import get_connection
-            query = """
-                SELECT close FROM price_data
-                WHERE (metadata->>'token' = $1 OR symbol LIKE $2 OR symbol = $1)
-                ORDER BY time DESC LIMIT 100;
-            """
-            async with get_connection() as conn:
-                rows = await conn.fetch(query, token, f"{token}/%")
-                prices = [float(r["close"]) for r in rows]
+            from cryptotrading.data.postgres import get_connection, resolve_matching_symbols
+            matching_symbols = await resolve_matching_symbols(token)
+            if matching_symbols:
+                query = """
+                    SELECT close FROM price_data
+                    WHERE symbol = ANY($1)
+                    ORDER BY time DESC LIMIT 100;
+                """
+                async with get_connection() as conn:
+                    rows = await conn.fetch(query, matching_symbols)
+                    prices = [float(r["close"]) for r in rows]
     except Exception as e:
         logger.warning(f"Could not fetch historical prices for JEPA regime: {e}")
         

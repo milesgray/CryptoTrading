@@ -3,7 +3,7 @@ import datetime as dt
 from datetime import datetime, timezone
 from typing import Any, Optional, Union
 
-from cryptotrading.data.postgres import get_connection, init_pool, _pool
+from cryptotrading.data.postgres import get_connection, init_pool, _pool, resolve_matching_symbols
 
 from pymongo import ASCENDING
 
@@ -600,14 +600,18 @@ class OrderBookPostgresAdapter:
         start_time: datetime,
         end_time: datetime
     ) -> list[OrderBookSnapshot]:
+        matching_symbols = await resolve_matching_symbols(token)
+        if not matching_symbols:
+            return []
+            
         query = '''
             SELECT time as timestamp, close as midpoint, metadata
             FROM price_data
-            WHERE (metadata->>'token' = $1 OR symbol LIKE $2) AND exchange = 'composite' AND time >= $3 AND time <= $4
+            WHERE symbol = ANY($1) AND exchange = 'composite' AND time >= $2 AND time <= $3
             ORDER BY time ASC;
         '''
         async with get_connection() as conn:
-            rows = await conn.fetch(query, token, f"{token}/%", start_time, end_time)
+            rows = await conn.fetch(query, matching_symbols, start_time, end_time)
             
         snapshots = []
         for r in rows:
@@ -679,14 +683,18 @@ class OrderBookPostgresAdapter:
         return [dict(r) for r in rows]
  
     async def get_latest_transformed_order_book_point(self, token: str) -> Optional[TransformedOrderBookDataPoint]:
+        matching_symbols = await resolve_matching_symbols(token)
+        if not matching_symbols:
+            return None
+            
         query = '''
             SELECT time as timestamp, close as midpoint, metadata
             FROM price_data
-            WHERE (metadata->>'token' = $1 OR symbol LIKE $2) AND exchange = 'transformed'
+            WHERE symbol = ANY($1) AND exchange = 'transformed'
             ORDER BY time DESC LIMIT 1;
         '''
         async with get_connection() as conn:
-            row = await conn.fetchrow(query, token, f"{token}/%")
+            row = await conn.fetchrow(query, matching_symbols)
             
         if not row:
             return None
@@ -707,14 +715,18 @@ class OrderBookPostgresAdapter:
         end_time: datetime,
         granularity: int
     ) -> Optional[Any]:
+        matching_symbols = await resolve_matching_symbols(token)
+        if not matching_symbols:
+            return None
+            
         query = '''
             SELECT time as timestamp, close as midpoint, metadata
             FROM price_data
-            WHERE (metadata->>'token' = $1 OR symbol LIKE $2) AND exchange = 'transformed' AND time >= $3 AND time <= $4
+            WHERE symbol = ANY($1) AND exchange = 'transformed' AND time >= $2 AND time <= $3
             ORDER BY time ASC;
         '''
         async with get_connection() as conn:
-            rows = await conn.fetch(query, token, f"{token}/%", start_time, end_time)
+            rows = await conn.fetch(query, matching_symbols, start_time, end_time)
             
         if not rows:
             return None

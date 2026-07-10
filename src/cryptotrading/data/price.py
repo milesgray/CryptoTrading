@@ -10,7 +10,7 @@ from cryptotrading.data.models import (
     CandlestickData,
     ExchangeRawOrderBook,
 )
-from cryptotrading.data.postgres import get_connection, init_pool, _pool
+from cryptotrading.data.postgres import get_connection, init_pool, _pool, resolve_matching_symbols
 from cryptotrading.data.book import OrderBookMongoAdapter, OrderBookPostgresAdapter
 from cryptotrading.config import (
     PRICE_COLLECTION_NAME,
@@ -423,16 +423,20 @@ class PricePostgresAdapter:
         offset = (page - 1) * limit
         order_dir = "DESC" if sort == "desc" else "ASC"
         
+        matching_symbols = await resolve_matching_symbols(symbol)
+        if not matching_symbols:
+            return []
+            
         query = f'''
             SELECT time as timestamp, close as price, metadata
             FROM price_data
-            WHERE (metadata->>'token' = $1 OR symbol LIKE $2 OR symbol = $1) AND exchange = 'index' AND time >= $3 AND time <= $4
+            WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time <= $3
             ORDER BY time {order_dir}
-            LIMIT $5 OFFSET $6;
+            LIMIT $4 OFFSET $5;
         '''
         
         async with get_connection() as conn:
-            rows = await conn.fetch(query, symbol, f"{symbol}/%", start_time, end_time, limit, offset)
+            rows = await conn.fetch(query, matching_symbols, start_time, end_time, limit, offset)
             
         results = []
         for r in rows:
@@ -450,12 +454,16 @@ class PricePostgresAdapter:
         start_time: datetime.datetime, 
         end_time: datetime.datetime
     ) -> int:
+        matching_symbols = await resolve_matching_symbols(symbol)
+        if not matching_symbols:
+            return 0
+            
         query = '''
             SELECT COUNT(*) FROM price_data
-            WHERE (metadata->>'token' = $1 OR symbol LIKE $2 OR symbol = $1) AND exchange = 'index' AND time >= $3 AND time <= $4;
+            WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time <= $3;
         '''
         async with get_connection() as conn:
-            val = await conn.fetchval(query, symbol, f"{symbol}/%", start_time, end_time)
+            val = await conn.fetchval(query, matching_symbols, start_time, end_time)
         return val or 0
 
     async def get_prices(
@@ -478,14 +486,18 @@ class PricePostgresAdapter:
         return results[:count]
 
     async def get_latest_price(self, token: str) -> Optional[dict[str, Any]]:
+        matching_symbols = await resolve_matching_symbols(token)
+        if not matching_symbols:
+            return None
+            
         query = '''
             SELECT time as timestamp, close as price, metadata
             FROM price_data
-            WHERE (metadata->>'token' = $1 OR symbol LIKE $2) AND exchange = 'index'
+            WHERE symbol = ANY($1) AND exchange = 'index'
             ORDER BY time DESC LIMIT 1;
         '''
         async with get_connection() as conn:
-            row = await conn.fetchrow(query, token, f"{token}/%")
+            row = await conn.fetchrow(query, matching_symbols)
             
         if not row:
             return None
@@ -511,14 +523,18 @@ class PricePostgresAdapter:
         granularity: int,
         include_book: bool = False
     ) -> list[CandlestickData]:
+        matching_symbols = await resolve_matching_symbols(token)
+        if not matching_symbols:
+            return []
+            
         query = '''
             SELECT time as timestamp, close as price, metadata
             FROM price_data
-            WHERE (metadata->>'token' = $1 OR symbol LIKE $2) AND exchange = 'index' AND time >= $3 AND time <= $4
+            WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time <= $3
             ORDER BY time ASC;
         '''
         async with get_connection() as conn:
-            rows = await conn.fetch(query, token, f"{token}/%", start_time, end_time)
+            rows = await conn.fetch(query, matching_symbols, start_time, end_time)
             
         if not rows:
             return []

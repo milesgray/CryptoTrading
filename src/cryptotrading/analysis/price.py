@@ -151,19 +151,22 @@ class PriceAnalytics:
             return pd.DataFrame(processed_data)
         else:
             # Postgres: fetch raw exchange data
-            query = '''
-                SELECT time as timestamp, close as price, symbol, exchange, metadata
-                FROM price_data
-                WHERE (metadata->>'token' = $1 OR symbol LIKE $2 OR symbol = $1)
-                  AND exchange LIKE 'exchange_raw_%'
-                  AND time >= $3 AND time <= $4
-                ORDER BY time ASC;
-            '''
-            from cryptotrading.data.postgres import get_connection
+            from cryptotrading.data.postgres import get_connection, resolve_matching_symbols
             
             async def run_query():
+                matching_symbols = await resolve_matching_symbols(symbol)
+                if not matching_symbols:
+                    return []
+                query = '''
+                    SELECT time as timestamp, close as price, symbol, exchange, metadata
+                    FROM price_data
+                    WHERE symbol = ANY($1)
+                      AND exchange LIKE 'exchange_raw_%'
+                      AND time >= $2 AND time <= $3
+                    ORDER BY time ASC;
+                '''
                 async with get_connection() as conn:
-                    return await conn.fetch(query, symbol, f"{symbol}/%", start_time, end_time)
+                    return await conn.fetch(query, matching_symbols, start_time, end_time)
                     
             rows = loop.run_until_complete(run_query())
             processed_data = []
