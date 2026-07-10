@@ -191,8 +191,8 @@ const CandlestickChart = ({ token }) => {
     };
 
     // Only set up the WebSocket connection after the component is mounted
-    // and we have a valid token
-    if (token) {
+    // and we have a valid token and historical data is loaded
+    if (token && historicalDataLoaded) {
       connectWebSocket();
 
       // Set up the price update handler
@@ -562,6 +562,9 @@ const CandlestickChart = ({ token }) => {
               onChange={handleGranularityChange}
               className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-slate-700"
             >
+              <option value={5}>5 Seconds</option>
+              <option value={15}>15 Seconds</option>
+              <option value={30}>30 Seconds</option>
               <option value={60}>1 Minute</option>
               <option value={300}>5 Minutes</option>
               <option value={900}>15 Minutes</option>
@@ -572,11 +575,10 @@ const CandlestickChart = ({ token }) => {
           <div className="flex items-end self-end h-[32px] mt-4 sm:mt-0">
             <button
               onClick={toggleLiveUpdates}
-              className={`px-4 py-1.5 rounded-lg text-white text-xs font-semibold border transition-all ${
-                isLiveUpdating 
-                  ? 'bg-rose-900/40 text-rose-300 border-rose-800/50 hover:bg-rose-900/50' 
-                  : 'bg-emerald-900/40 text-emerald-300 border-emerald-800/50 hover:bg-emerald-900/50'
-              }`}
+              className={`px-4 py-1.5 rounded-lg text-white text-xs font-semibold border transition-all ${isLiveUpdating
+                ? 'bg-rose-900/40 text-rose-300 border-rose-800/50 hover:bg-rose-900/50'
+                : 'bg-emerald-900/40 text-emerald-300 border-emerald-800/50 hover:bg-emerald-900/50'
+                }`}
             >
               {isLiveUpdating ? 'Pause Live Updates' : 'Enable Live Updates'}
             </button>

@@ -102,6 +102,12 @@
 - [x] Resolve SQL query timeouts on the 9.5M-row `price_data` table by replacing slow JSONB filters and pattern-LIKE matches with SkipScan-based `resolve_matching_symbols` and indexed `symbol = ANY($1)` scans.
 - [x] Verify query performance and correctness via tests and endpoints, restoring candlestick rendering in under 200 ms.
 
+### Phase 16: Frontend Candlestick Query Chunking (Completed ✅)
+- [x] Chunk up large historical candlestick fetches transparently inside `getCandlestickData` using dynamic range division based on query granularity.
+- [x] Implement a concurrent batching queue (with limit of 3 concurrent requests) to execute chunk queries in parallel safely.
+- [x] Deduplicate overlapping data points by timestamp and sort chronologically.
+- [x] Handle 404 response cases gracefully by treating missing data chunks as empty lists instead of failing the entire query.
+
 ## Sprint Progress
  
 - [x] Remove mock results and simulated data states from the frontend.
@@ -109,3 +115,4 @@
 - [x] Align CandlestickChart and OrderBookPanel components with the global dark theme.
 - [x] Rework Order Book snapshot panel into a cumulative depth chart visualizer.
 - [x] Polish up the embed service, centralize pgvector database storage, and write comprehensive tests.
+- [x] Implement transparent historical candlestick query chunking on the frontend.

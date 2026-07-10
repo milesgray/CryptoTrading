@@ -417,36 +417,85 @@ export const webSocketService = new WebSocketService();
 export const getCandlestickData = async (token, start, end, granularity) => {
   console.log('getCandlestickData called with:', { token, start, end, granularity });
   try {
-    const formattedStart = formatISO(start);  // Format dates for the API
-    const formattedEnd = formatISO(end);
-    console.log('Formatted dates:', { formattedStart, formattedEnd });
-    
-    console.log('Making API request to:', `/candlestick/${token}`, {
-      params: { start: formattedStart, end: formattedEnd, granularity, include_book: true }
-    });
-    
-    const response = await api.get(`/candlestick/${token}`, {
-      params: {
-        start: formattedStart,
-        end: formattedEnd,
-        granularity,
-        include_book: true
-      },
-    });
-    
-    console.log('API response received:', {
-      status: response.status,
-      statusText: response.statusText,
-      dataLength: response.data ? response.data.length : 0,
-      dataSample: response.data ? response.data.slice(0, 2) : null
-    });
-    
-    if (!response.data) {
-      console.warn('No data in API response');
+    const startTime = new Date(start).getTime();
+    const endTime = new Date(end).getTime();
+
+    if (startTime >= endTime) {
+      console.warn('Start time is greater than or equal to end time');
       return [];
     }
-    
-    return response.data;
+
+    // Limit maximum data points per chunk to 1000
+    const MAX_POINTS_PER_QUERY = 1000;
+    const chunkDurationMs = MAX_POINTS_PER_QUERY * granularity * 1000;
+
+    // Generate chunks
+    const chunks = [];
+    let currentStart = startTime;
+    while (currentStart < endTime) {
+      const currentEnd = Math.min(currentStart + chunkDurationMs, endTime);
+      chunks.push({
+        start: new Date(currentStart),
+        end: new Date(currentEnd)
+      });
+      currentStart = currentEnd;
+    }
+
+    console.log(`Splitting query into ${chunks.length} chunk(s) based on granularity ${granularity}s`);
+
+    // Concurrency limit for chunk queries
+    const CONCURRENCY_LIMIT = 3;
+    const allResults = [];
+
+    for (let i = 0; i < chunks.length; i += CONCURRENCY_LIMIT) {
+      const batch = chunks.slice(i, i + CONCURRENCY_LIMIT);
+      console.log(`Executing batch ${Math.floor(i / CONCURRENCY_LIMIT) + 1}/${Math.ceil(chunks.length / CONCURRENCY_LIMIT)} with ${batch.length} queries`);
+
+      const batchPromises = batch.map(async (chunk) => {
+        const formattedStart = formatISO(chunk.start);
+        const formattedEnd = formatISO(chunk.end);
+
+        try {
+          const response = await api.get(`/candlestick/${token}`, {
+            params: {
+              start: formattedStart,
+              end: formattedEnd,
+              granularity,
+              include_book: true
+            },
+          });
+          return response.data || [];
+        } catch (error) {
+          if (error.response && error.response.status === 404) {
+            console.warn(`No data found for chunk: ${formattedStart} to ${formattedEnd}`);
+            return [];
+          }
+          console.error(`Error fetching chunk start=${formattedStart} end=${formattedEnd}:`, error);
+          throw error;
+        }
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      for (const data of batchResults) {
+        allResults.push(...data);
+      }
+    }
+
+    // Deduplicate by timestamp and sort chronologically
+    const uniqueDataMap = new Map();
+    for (const item of allResults) {
+      if (item && item.timestamp) {
+        const ts = new Date(item.timestamp).getTime();
+        uniqueDataMap.set(ts, item);
+      }
+    }
+
+    const sortedData = Array.from(uniqueDataMap.values()).sort((a, b) => {
+      return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+    });
+
+    console.log(`Total retrieved candlestick points: ${sortedData.length}`);
+    return sortedData;
   } catch (error) {
     console.error("Error fetching candlestick data:", error);
     if (error.response) {

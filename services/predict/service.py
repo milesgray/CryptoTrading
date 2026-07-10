@@ -48,7 +48,12 @@ CONFIGS = dotdict({
 async def startup_event():
     """Initializes the database connection, loads pre-trained model checkpoints, or performs training if necessary."""
     global model, scaler, model_device
-    checkpoint_dir = "/app/checkpoints"
+    checkpoint_dir = os.environ.get("CHECKPOINT_DIR", "/app/checkpoints")
+    try:
+        os.makedirs(checkpoint_dir, exist_ok=True)
+    except OSError:
+        checkpoint_dir = "./checkpoints"
+        os.makedirs(checkpoint_dir, exist_ok=True)
     checkpoint_path = os.path.join(checkpoint_dir, "WAVESTATE_checkpoint.pth")
     scaler_path = os.path.join(checkpoint_dir, "scaler.pkl")
     
