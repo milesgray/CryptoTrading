@@ -114,6 +114,7 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **task-log_2026-07-10-18-45_embed_service_auto_training.md**: `.agent/task-logs/task-log_2026-07-10-18-45_embed_service_auto_training.md`
 - **task-log_2026-07-10-19-01_candlestick-remote-timeout.md**: `.agent/task-logs/task-log_2026-07-10-19-01_candlestick-remote-timeout.md`
 - **task-log_2026-07-10-20-40_candlestick-backend-chunking.md**: `.agent/task-logs/task-log_2026-07-10-20-40_candlestick-backend-chunking.md`
+- **task-log_2026-07-10-23-21_candlestick_retrieval.md**: `.agent/task-logs/task-log_2026-07-10-23-21_candlestick_retrieval.md`
 
 ## Memory System Status
 

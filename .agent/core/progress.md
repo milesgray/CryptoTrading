@@ -117,6 +117,7 @@
 - [x] Enable dynamic date range calculation and chart labels scaling on the frontend.
 - [x] Implement self-healing auto-training logic and dynamic PyTorch DataLoader batch scaling inside the embed service.
 - [x] Configure persistent Docker volume mounts for encoder checkpoints.
+- [x] Convert the retrieval forecasting visualizer to a multi-series candlestick chart.
 
 ## Sprint Progress
  
@@ -129,3 +130,4 @@
 - [x] Implement transparent historical candlestick query chunking on the frontend.
 - [x] Resolve the embed service missing model weights issue and ensure proper embedding comparisons.
 - [x] Implement backend database query chunking for candlestick data retrieval to prevent statement timeouts.
+- [x] Implement ECharts-based candlestick chart in the retrieval visualizer including historical baseline, lavender consensus projection, and transparent cyan retrieved matches.

@@ -1,24 +1,26 @@
-# Active Context: Candlestick Query Timeout Resolution via Chunked Retrieval
+# Active Context: Retrieval Visualizer Candlestick Enhancements
 
 ## Quick Reference
-- **Feature**: Candlestick Database Query Chunking & Timeout Resolution
+- **Feature**: Retrieval-Augmented Forecast Candlestick Charting
 - **Status**: Completed & Verified ✅
 
 ## Executive Summary
-Resolved the statement timeout error on the `/candlestick` endpoint when querying historical price ticks from PostgreSQL/TimescaleDB. The adapter now queries the hypertable in 1-day temporal chunks, and incrementally groups the results into candlestick objects. This prevents single database statements from exceeding the 30-second connection timeout and reduces the peak RAM load in Python.
+Converted the pattern-matching retrieval forecasting visualizer on the frontend to render the historical baseline query, consensus projection path, and individual retrieved segments as a multi-series candlestick chart. Calculated historical wick ratios dynamically to synthesize realistic candles for forecast continuations, ensuring the wicks and scaling are in line with the recent price context.
 
 ## Architecture Overview
-1. **Query Performance Issue**: Even with index tuning, requesting candlestick data over long ranges (e.g. 7 days) fetched massive numbers of raw tick records in a single database query, causing connection statement timeouts.
-2. **Temporal Chunking**: Implemented 1-day temporal sliding window queries in `PricePostgresAdapter.get_candlestick_data`. The query upper-bound utilizes exclusive range filters (`time < current_end`) for non-final chunks to prevent boundary duplicate processing.
-3. **Incremental Memory Aggregation**: Rows are aggregated into the candlestick map chunk-by-chunk, allowing raw rows from previous chunks to be garbage collected immediately, lowering peak RAM usage.
-
-## Tech Stack
-- **PostgreSQL / TimescaleDB**: Hypertable storage
-- **asyncpg**: Async connection pooling and execution
+1. **Historical Candlestick Ingestion**: Retrieved baseline segments are now stored as complete candles (`queryCandles` state containing open, high, low, close) instead of just single closing prices.
+2. **Relative Shadow Extrapolator**: Handled shadow wick proportions dynamically by measuring average upper and lower shadow wicks on the historical baseline. This makes synthesized forecast candles look extremely natural at any price level.
+3. **Contiguous Path Mapping**:
+   - Anchored the first predicted candle to start exactly at the last historical candle's close, preventing gaps.
+   - Chained subsequent forecast candle open prices directly from their previous close values.
+4. **Visual Interface Optimization**:
+   - Configured three premium color schemes tailored for dark theme contrast: Emerald/Rose for history, Lavender/Violet for the consensus projection, and a semi-transparent (0.35 opacity) Cyan/Teal for the individual retrieved segments.
+   - Formatted tooltips to decode and display detailed OHLC values when hovering over any candlestick series point.
+   - Shifted to `boundaryGap: true` on the X-axis to keep end candles within bounds.
 
 ## Key Files Modified
-- [price.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/price.py): Updated `get_candlestick_data` to loop through dates in 1-day chunks and aggregate.
+- [RetrievalVisualizer.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/RetrievalVisualizer.jsx): Updated component states, data processing, path rendering, and ECharts styling options.
 
 ## Verification & Validation
-- **Unit Tests**: Ran `./src/.venv/bin/pytest tests/` successfully (all 19 tests passed).
-- **Manual Verification**: Performed a `/candlestick` request using `curl`. It completed successfully in `0.22 seconds` and logged chunked retrieval execution accurately.
+- **Compilation Check**: Executed `npm run build` inside the frontend directory, confirming the code builds without errors or warnings.
+- **Visual Design**: The visualizer chart seamlessly integrates with the dark mode card panel, rendering high contrast wicks and transparent grids.

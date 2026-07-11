@@ -16,6 +16,7 @@ const RetrievalVisualizer = ({ token }) => {
   // Data State
   const [retrievedData, setRetrievedData] = useState([]);
   const [queryPrices, setQueryPrices] = useState([]);
+  const [queryCandles, setQueryCandles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
@@ -60,11 +61,13 @@ const RetrievalVisualizer = ({ token }) => {
       const candles = await getCandlestickData(token, start, end, granularitySec);
       
       if (candles && candles.length > 0) {
-        const recentPrices = candles.slice(-segmentLength).map(c => parseFloat(c.close));
+        const slicedCandles = candles.slice(-segmentLength);
+        const recentPrices = slicedCandles.map(c => parseFloat(c.close));
         if (recentPrices.length < segmentLength) {
           throw new Error(`Insufficient live query data. Need ${segmentLength} points, but only found ${recentPrices.length}.`);
         }
         setQueryPrices(recentPrices);
+        setQueryCandles(slicedCandles);
       } else {
         throw new Error("No recent price history found to establish current pattern baseline.");
       }
@@ -118,7 +121,7 @@ const RetrievalVisualizer = ({ token }) => {
 
   // Recalculate and render the chart whenever active segments or data changes
   useEffect(() => {
-    if (!chartRef.current || queryPrices.length === 0) return;
+    if (!chartRef.current || queryCandles.length === 0) return;
 
     // Initialize ECharts instance if not done
     if (!chartInstance.current) {
@@ -145,19 +148,58 @@ const RetrievalVisualizer = ({ token }) => {
       xAxisData.push(`+${i * stepMultiplier}${stepUnit}`);
     }
 
+    // Calculate average relative shadows from queryCandles
+    let avgRelUpper = 0.001; // default fallback (0.1%)
+    let avgRelLower = 0.001; // default fallback (0.1%)
+    if (queryCandles.length > 0) {
+      let sumRelUpper = 0;
+      let sumRelLower = 0;
+      queryCandles.forEach(c => {
+        const o = parseFloat(c.open);
+        const h = parseFloat(c.high);
+        const l = parseFloat(c.low);
+        const cl = parseFloat(c.close);
+        
+        const upperShadow = h - Math.max(o, cl);
+        const lowerShadow = Math.min(o, cl) - l;
+        
+        sumRelUpper += cl > 0 ? (upperShadow / cl) : 0;
+        sumRelLower += cl > 0 ? (lowerShadow / cl) : 0;
+      });
+      avgRelUpper = sumRelUpper / queryCandles.length;
+      avgRelLower = sumRelLower / queryCandles.length;
+      
+      // Enforce realistic bounds/fallbacks
+      if (isNaN(avgRelUpper) || avgRelUpper < 0.0001) avgRelUpper = 0.0005;
+      if (isNaN(avgRelLower) || avgRelLower < 0.0001) avgRelLower = 0.0005;
+    }
+
+    // Format historical candles for ECharts: [open, close, low, high]
+    const historicalCandleData = queryCandles.map(c => [
+      parseFloat(c.open),
+      parseFloat(c.close),
+      parseFloat(c.low),
+      parseFloat(c.high)
+    ]);
+    
+    // Pad historical candle data with nulls for the forecast steps
+    const paddedHistoricalData = [...historicalCandleData];
+    for (let i = 0; i < forecastLength; i++) {
+      paddedHistoricalData.push(null);
+    }
+
     // 1. Historical baseline series
     const series = [
       {
         name: 'Current Pattern',
-        type: 'line',
-        data: queryPrices,
-        smooth: true,
-        showSymbol: false,
-        lineStyle: {
-          color: '#111827',
-          width: 3
+        type: 'candlestick',
+        data: paddedHistoricalData,
+        itemStyle: {
+          color: '#10b981',        // Bullish fill (Emerald Green)
+          color0: '#f43f5e',       // Bearish fill (Rose Red)
+          borderColor: '#10b981',  // Bullish border
+          borderColor0: '#f43f5e'  // Bearish border
         },
-        itemStyle: { color: '#111827' },
         zIndex: 10
       }
     ];
@@ -180,22 +222,31 @@ const RetrievalVisualizer = ({ token }) => {
         return lastQueryPrice + standardized * scaleMultiplier;
       });
 
-      // The segment line starts at index segmentLength - 1 (the last historical tick) to connect seamlessly
-      const segmentLineData = Array(segmentLength - 1).fill(null).concat([lastQueryPrice, ...alignedForecast]);
+      // Construct forecasted candles continuing from history's last close
+      const retrievedCandles = Array(segmentLength).fill(null);
+      let prevClose = lastQueryPrice;
+      for (let t = 0; t < forecastLength; t++) {
+        const currentClose = alignedForecast[t];
+        const open = prevClose;
+        const close = currentClose;
+        const high = Math.max(open, close) + close * avgRelUpper;
+        const low = Math.min(open, close) - close * avgRelLower;
+        retrievedCandles.push([open, close, low, high]);
+        prevClose = currentClose;
+      }
 
       series.push({
-        name: `Pattern #${segment.id || segment.index + 1}`,
-        type: 'line',
-        data: segmentLineData,
-        smooth: true,
-        showSymbol: false,
-        lineStyle: {
-          color: colors[segment.index % colors.length],
-          width: 2,
-          type: 'dashed',
-          opacity: 0.7
+        name: `Pattern #${segment.index + 1}`,
+        type: 'candlestick',
+        data: retrievedCandles,
+        itemStyle: {
+          color: '#22d3ee',         // Bullish fill (Cyan)
+          color0: '#0891b2',        // Bearish fill (Dark Cyan)
+          borderColor: '#22d3ee',   // Bullish border
+          borderColor0: '#0891b2',  // Bearish border
+          opacity: 0.35             // Partially opaque
         },
-        itemStyle: { color: colors[segment.index % colors.length] }
+        zIndex: 2
       });
     });
 
@@ -218,25 +269,27 @@ const RetrievalVisualizer = ({ token }) => {
           consensusPrices.push(sum / activeSegments.length);
         }
 
-        const consensusLineData = Array(segmentLength - 1).fill(null).concat([lastQueryPrice, ...consensusPrices]);
+        const consensusCandles = Array(segmentLength).fill(null);
+        let consensusPrevClose = lastQueryPrice;
+        for (let t = 0; t < forecastLength; t++) {
+          const currentClose = consensusPrices[t];
+          const open = consensusPrevClose;
+          const close = currentClose;
+          const high = Math.max(open, close) + close * avgRelUpper;
+          const low = Math.min(open, close) - close * avgRelLower;
+          consensusCandles.push([open, close, low, high]);
+          consensusPrevClose = currentClose;
+        }
         
         series.push({
           name: 'Consensus Projection',
-          type: 'line',
-          data: consensusLineData,
-          smooth: true,
-          showSymbol: false,
-          lineStyle: {
-            color: '#10b981', // Bullish emerald green
-            width: 4,
-            type: 'solid'
-          },
-          itemStyle: { color: '#10b981' },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(16, 185, 129, 0.15)' },
-              { offset: 1, color: 'rgba(16, 185, 129, 0)' }
-            ])
+          type: 'candlestick',
+          data: consensusCandles,
+          itemStyle: {
+            color: '#a78bfa',        // Bullish fill (Lavender/Purple)
+            color0: '#7c3aed',       // Bearish fill (Deep Violet)
+            borderColor: '#a78bfa',  // Bullish border
+            borderColor0: '#7c3aed'  // Bearish border
           },
           zIndex: 5
         });
@@ -244,16 +297,47 @@ const RetrievalVisualizer = ({ token }) => {
     }
 
     const option = {
-      backgroundColor: '#ffffff',
+      backgroundColor: 'transparent',
       tooltip: {
         trigger: 'axis',
+        backgroundColor: '#0f172a', // slate-900
+        borderColor: '#1e293b',     // slate-800
+        textStyle: { color: '#f8fafc' },
         formatter: (params) => {
-          let html = `<div class="font-semibold text-gray-800 border-b pb-1 mb-1">${params[0].name}</div>`;
+          let html = `<div class="font-semibold text-slate-200 border-b border-slate-700 pb-1 mb-1 font-mono">${params[0].name}</div>`;
           params.forEach(p => {
             if (p.value !== undefined && p.value !== null) {
-              html += `<div class="flex justify-between gap-4 text-xs">
-                <span class="text-gray-500">${p.seriesName}:</span>
-                <span class="font-mono font-medium" style="color:${p.color}">${typeof p.value === 'number' ? '$' + p.value.toFixed(2) : p.value}</span>
+              let valueStr = '';
+              if (Array.isArray(p.value)) {
+                const val = p.value;
+                const offset = val.length === 5 ? 1 : 0;
+                const open = parseFloat(val[offset]);
+                const close = parseFloat(val[offset + 1]);
+                const low = parseFloat(val[offset + 2]);
+                const high = parseFloat(val[offset + 3]);
+                
+                if (!isNaN(open) && !isNaN(close)) {
+                  valueStr = `
+                    <div class="flex flex-col ml-4 border-l border-slate-700 pl-2 text-[10px] text-slate-400">
+                      <div>Open: <span class="font-mono text-slate-350">$${open.toFixed(2)}</span></div>
+                      <div>Close: <span class="font-mono text-slate-200 font-bold">$${close.toFixed(2)}</span></div>
+                      <div>Low: <span class="font-mono text-slate-450">$${low.toFixed(2)}</span></div>
+                      <div>High: <span class="font-mono text-slate-450">$${high.toFixed(2)}</span></div>
+                    </div>
+                  `;
+                }
+              } else if (typeof p.value === 'number') {
+                valueStr = `<span class="font-mono font-medium" style="color:${p.color}">$${p.value.toFixed(2)}</span>`;
+              } else {
+                valueStr = `<span class="font-mono font-medium" style="color:${p.color}">${p.value}</span>`;
+              }
+              
+              html += `<div class="flex flex-col gap-0.5 text-xs mt-1">
+                <div class="flex justify-between gap-4 font-semibold" style="color:${p.color}">
+                  <span>${p.seriesName}:</span>
+                  ${!Array.isArray(p.value) ? valueStr : ''}
+                </div>
+                ${Array.isArray(p.value) ? valueStr : ''}
               </div>`;
             }
           });
@@ -264,7 +348,7 @@ const RetrievalVisualizer = ({ token }) => {
         data: series.map(s => s.name),
         bottom: 0,
         icon: 'roundRect',
-        textStyle: { color: '#4b5563', fontSize: 11 }
+        textStyle: { color: '#94a3b8', fontSize: 11 }
       },
       grid: {
         top: '8%',
@@ -275,17 +359,17 @@ const RetrievalVisualizer = ({ token }) => {
       },
       xAxis: {
         type: 'category',
-        boundaryGap: false,
+        boundaryGap: true,
         data: xAxisData,
-        axisLine: { lineStyle: { color: '#e5e7eb' } },
-        axisLabel: { color: '#6b7280', fontSize: 10 }
+        axisLine: { lineStyle: { color: '#334155' } },
+        axisLabel: { color: '#94a3b8', fontSize: 10 }
       },
       yAxis: {
         type: 'value',
         scale: true,
         axisLine: { show: false },
-        splitLine: { lineStyle: { color: '#f3f4f6' } },
-        axisLabel: { color: '#6b7280', fontSize: 10 }
+        splitLine: { lineStyle: { color: '#1e293b' } },
+        axisLabel: { color: '#94a3b8', fontSize: 10 }
       },
       series: series
     };
@@ -299,7 +383,7 @@ const RetrievalVisualizer = ({ token }) => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
 
-  }, [queryPrices, retrievedData, activeToggles, segmentLength, frequency]);
+  }, [queryPrices, queryCandles, retrievedData, activeToggles, segmentLength, frequency]);
 
   // Clean up chart on unmount
   useEffect(() => {
