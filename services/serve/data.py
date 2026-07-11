@@ -194,6 +194,13 @@ async def get_candlestick_data(
                 # Get order book data if available and requested
                 if "metadata" in doc and "book" in doc["metadata"]:
                     candle_map[candle_time]["order_book"] = {**candle_map[candle_time]["order_book"], **doc["metadata"]["book"]}
+                    book_data = doc["metadata"]["book"]
+                    tick_volume = 0.0
+                    if "bid_buckets" in book_data and book_data["bid_buckets"]:
+                        tick_volume += sum(bucket[2] for bucket in book_data["bid_buckets"] if len(bucket) > 2)
+                    if "ask_buckets" in book_data and book_data["ask_buckets"]:
+                        tick_volume += sum(bucket[2] for bucket in book_data["ask_buckets"] if len(bucket) > 2)
+                    candle_map[candle_time]["volume"] += tick_volume
             
             # Convert the map to a list of CandlestickData objects
             candlestick_data = []
@@ -213,7 +220,7 @@ async def get_candlestick_data(
                     high=candle["high"],
                     low=candle["low"],
                     close=candle["close"],
-                    volume=order_book.volume if order_book else 0,
+                    volume=candle["volume"],
                     exchange_count=candle["exchange_count"],
                     order_book=order_book
                 )
