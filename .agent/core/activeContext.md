@@ -1,26 +1,17 @@
-# Active Context: Batch Embedding Optimization & Candlestick Aggregation Fix
+# Active Context: Candlestick Volume Aggregation Fix
 
 ## Quick Reference
-- **Feature**: Batch Embedding Optimization
+- **Feature**: Candlestick Volume Aggregation Fix
 - **Status**: Completed & Verified ✅
 
 ## Executive Summary
-Optimized the Retrieval Service index bootstrapping process to prevent sequential HTTP request loops and resolved an underlying PostgreSQL candlestick aggregation boundary bug that caused all raw price ticks to be returned as separate candles. Re-built and verified the system containers on the remote host, completing startup within 2.5 minutes (down from infinite loops/timeout).
-
-## Architecture Overview
-1. **Batch Embed Endpoint**: Exposed `POST /embed/batch` in the Embed service to support vectorizing multiple price windows simultaneously via PyTorch.
-2. **Bulk Indexing Pipeline**: Modified `build_index_for_combination` in the Retrieval service to accumulate window segments and execute indexing in batches of 1000.
-3. **Time Boundary Aggregation**: Corrected `calc_second` and `calc_minute` functions in the database adapter to correctly group seconds/minutes on clean boundaries when granularity is $\ge 60$ seconds, preventing raw tick counts (375k+) from leaking into candlestick buckets.
+Resolved a discrepancy between the volume calculation for historical candlestick data and live updates. The historical data endpoint previously returned the snapshot volume of only the final tick in each candle's time window, whereas the live WebSocket updates continuously sum the snapshot volumes of all ticks. The historical aggregation logic was modified to accumulate the snapshot volumes of all ticks falling into the candle's bucket, ensuring smooth and consistent volume levels.
 
 ## Key Files Modified
-- [server.py](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/server.py): Implemented the batch embedding endpoint.
-- [encoder.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/encoder.py): Added batch encoding/adding pipeline logic.
-- [main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/main.py): Refactored index builder to batch requests.
-- [price.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/price.py): Fixed aggregation time-boundary bug.
-- [data.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/data.py): Fixed boundary bug in serve data.
+- [price.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/price.py): Updated `PriceMongoAdapter.get_candlestick_data` and `PricePostgresAdapter.get_candlestick_data` to sum tick order book volumes.
+- [data.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/data.py): Updated the MongoDB-specific `get_candlestick_data` serving fallback to also accumulate tick volumes.
 
 ## Verification & Validation
-- **Unit Tests**: All 49 tests passed.
-- **Docker Deployment**: Rebuilt and restarted services on remote server `cloud@50.117.53.113`.
-- **Uvicorn Startup**: The retrieval service initialized default indexes for BTC and ETH in less than 2.5 minutes and successfully started listening.
-- **API Functional Check**: Queried `/candlestick/BTC` on serve and verified clean, correct aggregated candles returned instantly.
+- **Unit Tests**: Ran 22 tests in `tests/test_exchange.py`, `tests/test_specretf.py`, `tests/test_orchestrator.py`, and `tests/test_order_book_analytics.py`; all passed successfully.
+- **Docker Deployment**: Rebuilt and restarted the `serve` and `retrieval` services to load the updated code.
+- **API Functional Check**: Queried `/candlestick/ETH` on the serve port `8362` and verified that historic candles now return a correctly aggregated volume (e.g. `30340.87`) representing the sum of all ticks, rather than just the final tick's volume (e.g. `883.93`).

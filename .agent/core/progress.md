@@ -137,3 +137,9 @@
 - [x] Integrate bulk segment indexing (`add_segments_batch`) chunked in sub-batches of 1000 in retrieval service.
 - [x] Fix candlestick aggregation boundary logic in `src/cryptotrading/data/price.py` and `services/serve/data.py` to correctly map time buckets.
 - [x] Rebuild and redeploy containers on the remote host, completing bootstrapping in under 2.5 minutes.
+
+### Phase 19: Candlestick Volume Aggregation Fix (Completed ✅)
+- [x] Correct the calculation of volume for historical candlestick data by summing the order book snapshot volumes of all ticks in a candle's time window, matching the behavior of the live WebSocket updates.
+- [x] Apply changes to MongoDB and PostgreSQL adapters in `src/cryptotrading/data/price.py` and `services/serve/data.py`.
+- [x] Verify correct non-zero sum of tick volumes on historic queries.
+
