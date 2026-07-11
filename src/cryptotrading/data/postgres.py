@@ -170,6 +170,8 @@ async def setup_connection(conn: Connection):
 # Initialize database schema
 async def init_schema(conn: Connection):
     """Initialize database schema and extensions."""
+    # Temporarily disable statement timeout to allow index creation on large datasets
+    await conn.execute('SET statement_timeout = 0')
     # Enable TimescaleDB if configured
     if POSTGRES_USE_TIMESCALE:
         try:
@@ -274,6 +276,9 @@ async def init_schema(conn: Connection):
             -- Create appropriate indexes
             CREATE INDEX IF NOT EXISTS idx_price_data_symbol_time 
                 ON price_data(symbol, time DESC);
+                
+            CREATE INDEX IF NOT EXISTS idx_price_data_symbol_exchange_time 
+                ON price_data(symbol, exchange, time DESC);
                 
             CREATE INDEX IF NOT EXISTS idx_order_book_data_symbol_time 
                 ON order_book_data(symbol, time DESC);

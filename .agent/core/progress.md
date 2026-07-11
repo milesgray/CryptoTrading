@@ -100,6 +100,7 @@
 ### Phase 15: Database Query Optimization & Restoring Candlestick Charts (Completed ✅)
 - [x] Recover host disk space (pruning Docker resources to free ~13.2 GB) allowing TimescaleDB database container to boot successfully.
 - [x] Resolve SQL query timeouts on the 9.5M-row `price_data` table by replacing slow JSONB filters and pattern-LIKE matches with SkipScan-based `resolve_matching_symbols` and indexed `symbol = ANY($1)` scans.
+- [x] Fix candlestick query timeouts on the remote server by adding a composite index on `(symbol, exchange, time DESC)` and disabling statement timeouts during schema initialization to allow large-table DDL updates on startup.
 - [x] Verify query performance and correctness via tests and endpoints, restoring candlestick rendering in under 200 ms.
 
 ### Phase 16: Frontend Candlestick Query Chunking (Completed ✅)
