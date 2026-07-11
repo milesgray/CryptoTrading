@@ -545,7 +545,7 @@ async def embed_prices_batch(request: BatchEmbedRequest):
     
     embeddings = []
     batch_size = 256
-    device = next(state.encoder.parameters()).device
+    device = state.device
     
     for i in range(0, len(x_batch), batch_size):
         sub_batch = x_batch[i:i + batch_size]

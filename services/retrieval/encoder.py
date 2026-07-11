@@ -133,19 +133,22 @@ class RetrievalServiceEncoder:
                 response = httpx.post(f"{self.embed_service_url}/embed/batch", json=payload, timeout=10.0)
                 if response.status_code == 200:
                     data = response.json()
-                    for emb in data["embeddings"]:
-                        embeddings_128.append(np.array(emb, dtype=np.float32))
+                    embs = data.get("embeddings", [])
+                    if len(embs) == len(sub_prices):
+                        for emb in embs:
+                            embeddings_128.append(np.array(emb, dtype=np.float32))
+                    else:
+                        logger.warning(f"Embed service returned {len(embs)} embeddings for {len(sub_prices)} requests. Using fallback.")
+                        for _ in range(len(sub_prices)):
+                            embeddings_128.append(np.zeros(128, dtype=np.float32))
                 else:
                     logger.warning(f"Embed service batch returned {response.status_code}, falling back to padded local representation for this batch.")
-                    for j in range(i, min(i + batch_size, n)):
-                        local_emb = local_embs[j]
-                        embeddings_128.append(np.pad(local_emb, (0, 128), 'constant')[:128])
+                    for _ in range(i, min(i + batch_size, n)):
+                        embeddings_128.append(np.zeros(128, dtype=np.float32))
         except Exception as e:
             logger.error(f"Error encoding segments batch via embed service: {e}. Falling back to padded local representation.")
             while len(embeddings_128) < n:
-                idx = len(embeddings_128)
-                local_emb = local_embs[idx]
-                embeddings_128.append(np.pad(local_emb, (0, 128), 'constant')[:128])
+                embeddings_128.append(np.zeros(128, dtype=np.float32))
 
         # Concatenate 128D embed representation + 56D local representation
         combined_embs = []
