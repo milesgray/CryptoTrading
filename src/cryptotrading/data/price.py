@@ -537,7 +537,15 @@ class PricePostgresAdapter:
         def calc_hour(doc_time):
             return doc_time.hour - (doc_time.hour % (granularity // 3600)) if granularity // 3600 > 0 else doc_time.hour
 
-        chunk_duration = datetime.timedelta(days=1)
+        # Determine dynamic chunk size based on total range to balance query count and timeout safety
+        total_duration = end_time - start_time
+        if total_duration > datetime.timedelta(days=14):
+            chunk_duration = datetime.timedelta(days=3)
+        elif total_duration > datetime.timedelta(days=7):
+            chunk_duration = datetime.timedelta(days=2)
+        else:
+            chunk_duration = datetime.timedelta(days=1)
+
         current_start = start_time
         
         while current_start < end_time:
