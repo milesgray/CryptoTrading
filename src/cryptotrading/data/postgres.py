@@ -172,6 +172,13 @@ async def init_schema(conn: Connection):
     """Initialize database schema and extensions."""
     # Temporarily disable statement timeout to allow index creation on large datasets
     await conn.execute('SET statement_timeout = 0')
+    try:
+        await _init_schema_impl(conn)
+    finally:
+        # Restore default statement timeout of 30 seconds
+        await conn.execute('SET statement_timeout = 30000')
+
+async def _init_schema_impl(conn: Connection):
     # Enable TimescaleDB if configured
     if POSTGRES_USE_TIMESCALE:
         try:
