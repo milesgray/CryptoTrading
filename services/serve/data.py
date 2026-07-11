@@ -135,9 +135,14 @@ async def get_candlestick_data(
             candle_map = {}
 
             def calc_second(doc_time):
+                if granularity >= 60:
+                    return 0
                 return doc_time.second - (doc_time.second % (granularity % 60)) if granularity % 60 > 0 else doc_time.second
             def calc_minute(doc_time):
-                return doc_time.minute - (doc_time.minute % (granularity // 60 % 60)) if granularity // 60 % 60 > 0 else doc_time.minute
+                if granularity >= 3600:
+                    return 0
+                val = granularity // 60 % 60
+                return doc_time.minute - (doc_time.minute % val) if val > 0 else doc_time.minute
             def calc_hour(doc_time):
                 return doc_time.hour - (doc_time.hour % (granularity // 3600)) if granularity // 3600 > 0 else doc_time.hour
                 

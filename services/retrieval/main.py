@@ -201,7 +201,11 @@ async def build_index_for_combination(token: str, granularity_sec: int, window_s
     logger.info(f"Initializing encoder with window_size={window_size}, n_fft={n_fft}, frame_size={frame_size}, hop_size={hop_size}, horizon={horizon}")
     encoder = RetrievalServiceEncoder(window_size=window_size, n_fft=n_fft, dim=184)
     
-    # Build sliding window segments
+    # Build sliding window segments in batch
+    prices_list = []
+    order_books = []
+    metadatas = []
+    
     for i in range(len(candles) - window_size - horizon + 1):
         window = candles[i : i + window_size]
         future_window = candles[i + window_size : i + window_size + horizon]
@@ -220,13 +224,18 @@ async def build_index_for_combination(token: str, granularity_sec: int, window_s
         
         if not order_book or not order_book.get("bids"):
             order_book = {"bids": [[prices[-1], 1.0]], "asks": [[prices[-1] + 1.0, 1.0]]}
-        
-        encoder.add_segment(prices, order_book, {
+            
+        prices_list.append(prices)
+        order_books.append(order_book)
+        metadatas.append({
             "id": i,
             "historical_prices": prices.tolist(),
             "prices": future_prices.tolist(),
             "order_book": order_book
         })
+        
+    if prices_list:
+        encoder.add_segments_batch(prices_list, order_books, metadatas)
         
     encoder.build_index(n_trees=10)
     

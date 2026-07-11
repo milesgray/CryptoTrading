@@ -1,26 +1,26 @@
-# Active Context: Retrieval Visualizer Candlestick Enhancements
+# Active Context: Batch Embedding Optimization & Candlestick Aggregation Fix
 
 ## Quick Reference
-- **Feature**: Retrieval-Augmented Forecast Candlestick Charting
+- **Feature**: Batch Embedding Optimization
 - **Status**: Completed & Verified ✅
 
 ## Executive Summary
-Converted the pattern-matching retrieval forecasting visualizer on the frontend to render the historical baseline query, consensus projection path, and individual retrieved segments as a multi-series candlestick chart. Calculated historical wick ratios dynamically to synthesize realistic candles for forecast continuations, ensuring the wicks and scaling are in line with the recent price context.
+Optimized the Retrieval Service index bootstrapping process to prevent sequential HTTP request loops and resolved an underlying PostgreSQL candlestick aggregation boundary bug that caused all raw price ticks to be returned as separate candles. Re-built and verified the system containers on the remote host, completing startup within 2.5 minutes (down from infinite loops/timeout).
 
 ## Architecture Overview
-1. **Historical Candlestick Ingestion**: Retrieved baseline segments are now stored as complete candles (`queryCandles` state containing open, high, low, close) instead of just single closing prices.
-2. **Relative Shadow Extrapolator**: Handled shadow wick proportions dynamically by measuring average upper and lower shadow wicks on the historical baseline. This makes synthesized forecast candles look extremely natural at any price level.
-3. **Contiguous Path Mapping**:
-   - Anchored the first predicted candle to start exactly at the last historical candle's close, preventing gaps.
-   - Chained subsequent forecast candle open prices directly from their previous close values.
-4. **Visual Interface Optimization**:
-   - Configured three premium color schemes tailored for dark theme contrast: Emerald/Rose for history, Lavender/Violet for the consensus projection, and a semi-transparent (0.35 opacity) Cyan/Teal for the individual retrieved segments.
-   - Formatted tooltips to decode and display detailed OHLC values when hovering over any candlestick series point.
-   - Shifted to `boundaryGap: true` on the X-axis to keep end candles within bounds.
+1. **Batch Embed Endpoint**: Exposed `POST /embed/batch` in the Embed service to support vectorizing multiple price windows simultaneously via PyTorch.
+2. **Bulk Indexing Pipeline**: Modified `build_index_for_combination` in the Retrieval service to accumulate window segments and execute indexing in batches of 1000.
+3. **Time Boundary Aggregation**: Corrected `calc_second` and `calc_minute` functions in the database adapter to correctly group seconds/minutes on clean boundaries when granularity is $\ge 60$ seconds, preventing raw tick counts (375k+) from leaking into candlestick buckets.
 
 ## Key Files Modified
-- [RetrievalVisualizer.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/RetrievalVisualizer.jsx): Updated component states, data processing, path rendering, and ECharts styling options.
+- [server.py](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/server.py): Implemented the batch embedding endpoint.
+- [encoder.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/encoder.py): Added batch encoding/adding pipeline logic.
+- [main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/main.py): Refactored index builder to batch requests.
+- [price.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/price.py): Fixed aggregation time-boundary bug.
+- [data.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/data.py): Fixed boundary bug in serve data.
 
 ## Verification & Validation
-- **Compilation Check**: Executed `npm run build` inside the frontend directory, confirming the code builds without errors or warnings.
-- **Visual Design**: The visualizer chart seamlessly integrates with the dark mode card panel, rendering high contrast wicks and transparent grids.
+- **Unit Tests**: All 49 tests passed.
+- **Docker Deployment**: Rebuilt and restarted services on remote server `cloud@50.117.53.113`.
+- **Uvicorn Startup**: The retrieval service initialized default indexes for BTC and ETH in less than 2.5 minutes and successfully started listening.
+- **API Functional Check**: Queried `/candlestick/BTC` on serve and verified clean, correct aggregated candles returned instantly.

@@ -103,3 +103,37 @@ def test_embed_service_full_trace(tmp_path):
     assert "normalized_prices" in data
     assert len(data["embedding"]) == 128
     assert len(data["normalized_prices"]) == window_size - 1
+
+
+def test_embed_service_batch():
+    """
+    Test the batch embedding endpoint /embed/batch.
+    """
+    window_size = 100
+    state.window_size = window_size
+    state.embedding_dim = 128
+    state.device = "cpu"
+    state.encoder = PriceWindowEncoder(
+        window_size=window_size - 1,
+        embedding_dim=128,
+        hidden_dim=64
+    ).to(state.device)
+    state.encoder.eval()
+
+    client = TestClient(app)
+
+    # Payloads containing lists of raw prices
+    raw_prices_1 = np.linspace(100.0, 110.0, window_size).tolist()
+    raw_prices_2 = np.linspace(110.0, 100.0, window_size).tolist()
+
+    response = client.post(
+        "/embed/batch",
+        json={"prices_list": [raw_prices_1, raw_prices_2]}
+    )
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "embeddings" in data
+    assert len(data["embeddings"]) == 2
+    assert len(data["embeddings"][0]) == 128
+    assert len(data["embeddings"][1]) == 128

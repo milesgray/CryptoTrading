@@ -131,3 +131,9 @@
 - [x] Resolve the embed service missing model weights issue and ensure proper embedding comparisons.
 - [x] Implement backend database query chunking for candlestick data retrieval to prevent statement timeouts.
 - [x] Implement ECharts-based candlestick chart in the retrieval visualizer including historical baseline, lavender consensus projection, and transparent cyan retrieved matches.
+
+### Phase 18: Batch Embedding Optimization & Boundary Aggregation Fix (Completed ✅)
+- [x] Implement batched embedding endpoint (`POST /embed/batch`) on the embed service.
+- [x] Integrate bulk segment indexing (`add_segments_batch`) chunked in sub-batches of 1000 in retrieval service.
+- [x] Fix candlestick aggregation boundary logic in `src/cryptotrading/data/price.py` and `services/serve/data.py` to correctly map time buckets.
+- [x] Rebuild and redeploy containers on the remote host, completing bootstrapping in under 2.5 minutes.

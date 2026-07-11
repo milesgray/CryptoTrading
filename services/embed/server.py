@@ -45,6 +45,12 @@ class EmbedResponse(BaseModel):
     embedding: List[float]
     normalized_prices: List[float]
 
+class BatchEmbedRequest(BaseModel):
+    prices_list: List[List[float]] = Field(..., description="List of raw prices windows to embed")
+
+class BatchEmbedResponse(BaseModel):
+    embeddings: List[List[float]]
+
 class SearchRequest(BaseModel):
     prices: List[float] = Field(..., description="Price window to match")
     k: int = Field(default=10, ge=1, le=100)
@@ -510,6 +516,50 @@ async def embed_prices(request: EmbedRequest):
         embedding=embedding.tolist(),
         normalized_prices=normalized.tolist()
     )
+
+
+@app.post("/embed/batch", response_model=BatchEmbedResponse)
+async def embed_prices_batch(request: BatchEmbedRequest):
+    """Embed multiple price windows into representation space."""
+    if not request.prices_list:
+        return BatchEmbedResponse(embeddings=[])
+
+    target_len = state.window_size - 1
+    normalized_list = []
+    
+    for prices in request.prices_list:
+        if len(prices) < 2:
+            raise HTTPException(400, "Each price window must have at least 2 prices")
+        
+        p_arr = np.array(prices, dtype=np.float32)
+        norm = normalize_price_window(p_arr)
+        
+        if len(norm) < target_len:
+            norm = np.pad(norm, (target_len - len(norm), 0), mode='edge')
+        elif len(norm) > target_len:
+            norm = norm[-target_len:]
+        
+        normalized_list.append(norm)
+
+    x_batch = np.stack(normalized_list)
+    
+    embeddings = []
+    batch_size = 256
+    device = next(state.encoder.parameters()).device
+    
+    for i in range(0, len(x_batch), batch_size):
+        sub_batch = x_batch[i:i + batch_size]
+        with torch.no_grad():
+            x = torch.from_numpy(sub_batch).float().to(device)
+            emb = state.encoder(x).cpu().numpy()
+        embeddings.append(emb)
+
+    if embeddings:
+        embeddings = np.vstack(embeddings)
+    else:
+        embeddings = np.empty((0, state.embedding_dim))
+
+    return BatchEmbedResponse(embeddings=embeddings.tolist())
 
 
 @app.post("/search", response_model=SearchResponse)

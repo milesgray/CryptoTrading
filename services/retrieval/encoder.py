@@ -93,6 +93,67 @@ class RetrievalServiceEncoder:
         # Padded local fallback to fit dim 184
         return np.pad(local_emb, (0, 184 - len(local_emb)), 'constant')
 
+    def encode_segments_batch(self, prices_list: List[np.ndarray], order_books: List[Dict[str, Any]]) -> List[np.ndarray]:
+        """
+        Batch encode price segments and order book structures.
+
+        Args:
+            prices_list (List[np.ndarray]): List of 1D arrays of price returns.
+            order_books (List[Dict[str, Any]]): List of order book dictionaries.
+
+        Returns:
+            List[np.ndarray]: List of 1D float32 arrays representing segment embeddings.
+        """
+        n = len(prices_list)
+        if n == 0:
+            return []
+
+        # Calculate local handcrafted representations
+        local_embs = [self.encoder.encode(prices_list[i], order_books[i]) for i in range(n)]
+
+        if self.dim != 184:
+            res = []
+            for local_emb in local_embs:
+                if len(local_emb) < self.dim:
+                    res.append(np.pad(local_emb, (0, self.dim - len(local_emb)), 'constant'))
+                elif len(local_emb) > self.dim:
+                    res.append(local_emb[:self.dim])
+                else:
+                    res.append(local_emb)
+            return res
+
+        # Call the batch embed endpoint
+        embeddings_128 = []
+        batch_size = 500  # Batch size for HTTP requests
+
+        try:
+            for i in range(0, n, batch_size):
+                sub_prices = [p.tolist() for p in prices_list[i:i+batch_size]]
+                payload = {"prices_list": sub_prices}
+                response = httpx.post(f"{self.embed_service_url}/embed/batch", json=payload, timeout=10.0)
+                if response.status_code == 200:
+                    data = response.json()
+                    for emb in data["embeddings"]:
+                        embeddings_128.append(np.array(emb, dtype=np.float32))
+                else:
+                    logger.warning(f"Embed service batch returned {response.status_code}, falling back to padded local representation for this batch.")
+                    for j in range(i, min(i + batch_size, n)):
+                        local_emb = local_embs[j]
+                        embeddings_128.append(np.pad(local_emb, (0, 128), 'constant')[:128])
+        except Exception as e:
+            logger.error(f"Error encoding segments batch via embed service: {e}. Falling back to padded local representation.")
+            while len(embeddings_128) < n:
+                idx = len(embeddings_128)
+                local_emb = local_embs[idx]
+                embeddings_128.append(np.pad(local_emb, (0, 128), 'constant')[:128])
+
+        # Concatenate 128D embed representation + 56D local representation
+        combined_embs = []
+        for i in range(n):
+            combined_embs.append(np.concatenate([embeddings_128[i], local_embs[i]]))
+
+        return combined_embs
+
     def add_segment(self, prices: np.ndarray, order_book: Dict[str, Any], metadata: Dict[str, Any]) -> int:
         """
         Encode and index a historical price segment.
@@ -107,6 +168,25 @@ class RetrievalServiceEncoder:
         """
         embedding = self.encode_segment(prices, order_book)
         return self.index.add_segment(embedding, metadata)
+
+    def add_segments_batch(self, prices_list: List[np.ndarray], order_books: List[Dict[str, Any]], metadatas: List[Dict[str, Any]]) -> List[int]:
+        """
+        Encode and index a batch of historical price segments.
+
+        Args:
+            prices_list (List[np.ndarray]): List of 1D arrays of price returns.
+            order_books (List[Dict[str, Any]]): List of order book dictionaries.
+            metadatas (List[Dict[str, Any]]): List of metadata dictionaries.
+
+        Returns:
+            List[int]: List of index positions of the added segments in the vector database.
+        """
+        embeddings = self.encode_segments_batch(prices_list, order_books)
+        ids = []
+        for emb, meta in zip(embeddings, metadatas):
+            idx_pos = self.index.add_segment(emb, meta)
+            ids.append(idx_pos)
+        return ids
 
     def build_index(self, n_trees: int = 10) -> None:
         """
