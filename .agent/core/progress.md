@@ -128,3 +128,4 @@
 - [x] Polish up the embed service, centralize pgvector database storage, and write comprehensive tests.
 - [x] Implement transparent historical candlestick query chunking on the frontend.
 - [x] Resolve the embed service missing model weights issue and ensure proper embedding comparisons.
+- [x] Implement backend database query chunking for candlestick data retrieval to prevent statement timeouts.

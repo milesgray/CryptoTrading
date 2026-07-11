@@ -527,18 +527,8 @@ class PricePostgresAdapter:
         if not matching_symbols:
             return []
             
-        query = '''
-            SELECT time as timestamp, close as price, metadata
-            FROM price_data
-            WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time <= $3
-            ORDER BY time ASC;
-        '''
-        async with get_connection() as conn:
-            rows = await conn.fetch(query, matching_symbols, start_time, end_time)
-            
-        if not rows:
-            return []
-            
+        logger.info(f"Retrieving candlestick data for {token} from {start_time} to {end_time} in chunks of 1 day (granularity={granularity}s)")
+        
         candle_map = {}
         def calc_second(doc_time):
             return doc_time.second - (doc_time.second % (granularity % 60)) if granularity % 60 > 0 else doc_time.second
@@ -547,53 +537,86 @@ class PricePostgresAdapter:
         def calc_hour(doc_time):
             return doc_time.hour - (doc_time.hour % (granularity // 3600)) if granularity // 3600 > 0 else doc_time.hour
 
-        for row in rows:
-            doc_time = row["timestamp"]
-            if doc_time.tzinfo is None:
-                doc_time = doc_time.replace(tzinfo=timezone.utc)
-            candle_time = doc_time.replace(
-                microsecond=0, 
-                second=calc_second(doc_time),
-                minute=calc_minute(doc_time),
-                hour=calc_hour(doc_time),
-            )
-            
-            if candle_time not in candle_map:
-                candle_map[candle_time] = {
-                    "timestamp": candle_time,
-                    "prices": [],
-                    "exchange_counts": [],
-                    "open": None,
-                    "high": float("-inf"),
-                    "low": float("inf"),
-                    "close": None,
-                    "volume": 0,
-                    "exchange_count": None,
-                    "order_book": {
-                        "bid_buckets": {},
-                        "ask_buckets": {},
-                        "bid_outliers": {},
-                        "ask_outliers": {},
-                    }
-                }
-            
-            price = row["price"]
-            candle_map[candle_time]["prices"].append(price)
-            metadata = row["metadata"] or {}
-            exchanges_count = metadata.get("exchanges_count", 0)
-            candle_map[candle_time]["exchange_counts"].append(exchanges_count)
-            
-            candle_map[candle_time]["high"] = max(candle_map[candle_time]["high"], price)
-            candle_map[candle_time]["low"] = min(candle_map[candle_time]["low"], price)
-            
-            if candle_map[candle_time]["open"] is None:
-                candle_map[candle_time]["open"] = price
-            
-            candle_map[candle_time]["close"] = price
-            
-            if include_book and "book" in metadata:
-                candle_map[candle_time]["order_book"] = {**candle_map[candle_time]["order_book"], **metadata["book"]}
+        chunk_duration = datetime.timedelta(days=1)
+        current_start = start_time
         
+        while current_start < end_time:
+            current_end = current_start + chunk_duration
+            is_last = current_end >= end_time
+            if is_last:
+                current_end = end_time
+                
+            if is_last:
+                query = '''
+                    SELECT time as timestamp, close as price, metadata
+                    FROM price_data
+                    WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time <= $3
+                    ORDER BY time ASC;
+                '''
+            else:
+                query = '''
+                    SELECT time as timestamp, close as price, metadata
+                    FROM price_data
+                    WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time < $3
+                    ORDER BY time ASC;
+                '''
+                
+            async with get_connection() as conn:
+                rows = await conn.fetch(query, matching_symbols, current_start, current_end)
+                
+            if rows:
+                for row in rows:
+                    doc_time = row["timestamp"]
+                    if doc_time.tzinfo is None:
+                        doc_time = doc_time.replace(tzinfo=timezone.utc)
+                    candle_time = doc_time.replace(
+                        microsecond=0, 
+                        second=calc_second(doc_time),
+                        minute=calc_minute(doc_time),
+                        hour=calc_hour(doc_time),
+                    )
+                    
+                    if candle_time not in candle_map:
+                        candle_map[candle_time] = {
+                            "timestamp": candle_time,
+                            "prices": [],
+                            "exchange_counts": [],
+                            "open": None,
+                            "high": float("-inf"),
+                            "low": float("inf"),
+                            "close": None,
+                            "volume": 0,
+                            "exchange_count": None,
+                            "order_book": {
+                                "bid_buckets": {},
+                                "ask_buckets": {},
+                                "bid_outliers": {},
+                                "ask_outliers": {},
+                            }
+                        }
+                    
+                    price = row["price"]
+                    candle_map[candle_time]["prices"].append(price)
+                    metadata = row["metadata"] or {}
+                    exchanges_count = metadata.get("exchanges_count", 0)
+                    candle_map[candle_time]["exchange_counts"].append(exchanges_count)
+                    
+                    candle_map[candle_time]["high"] = max(candle_map[candle_time]["high"], price)
+                    candle_map[candle_time]["low"] = min(candle_map[candle_time]["low"], price)
+                    
+                    if candle_map[candle_time]["open"] is None:
+                        candle_map[candle_time]["open"] = price
+                    
+                    candle_map[candle_time]["close"] = price
+                    
+                    if include_book and "book" in metadata:
+                        candle_map[candle_time]["order_book"] = {**candle_map[candle_time]["order_book"], **metadata["book"]}
+            
+            current_start = current_end
+
+        if not candle_map:
+            return []
+            
         candlestick_data = []
         for candle_time, candle in sorted(candle_map.items()):
             if candle["exchange_counts"]:
