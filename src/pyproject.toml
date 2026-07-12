@@ -1,6 +1,6 @@
 [project]
 name = "cryptotrading"
-version = "0.1.3"
+version = "0.1.4"
 description = "Crypto trading services"
 authors = [
     { name = "Miles", email = "miles@resatiate.com" }
@@ -34,6 +34,7 @@ dependencies = [
     "tqdm>=4.68.3",
     "pmdarima>=2.1.1",
     "numba>=0.66.0",
+    "transformers>=5.13.1",
 ]
 
 [build-system]
