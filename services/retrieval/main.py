@@ -389,6 +389,19 @@ async def forecast(
         logger.error(f"Error in forecast endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/rebuild")
+async def rebuild_index(symbol: str = "BTC"):
+    """Clear the forecaster cache for a symbol, forcing it to reload fresh DB data on next query."""
+    token = symbol.split("/")[0] if "/" in symbol else symbol
+    async with cache_lock:
+        keys_to_remove = [k for k in forecasters_cache.keys() if k[0] == token]
+        for k in keys_to_remove:
+            del forecasters_cache[k]
+    logger.info(f"Cleared forecaster cache for token {token} to trigger rebuild on next query.")
+    return {"success": True, "cleared_configs": len(keys_to_remove)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

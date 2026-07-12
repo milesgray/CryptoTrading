@@ -40,11 +40,49 @@ const RetrievalVisualizer = ({ token }) => {
   // Real-time tracking of actual prices vs forecast
   const [queryEndTime, setQueryEndTime] = useState(null);
   const [liveActualPrices, setLiveActualPrices] = useState([]);
+  const [archiveStatus, setArchiveStatus] = useState('idle'); // 'idle', 'saving', 'saved', 'error'
+
+  const queryPricesRef = useRef([]);
+  const liveActualPricesRef = useRef([]);
+  const archiveStatusRef = useRef('idle');
+  const tokenRef = useRef(token);
+  const frequencyRef = useRef(frequency);
+
+  // Keep refs synchronized
+  useEffect(() => { tokenRef.current = token; }, [token]);
+  useEffect(() => { frequencyRef.current = frequency; }, [frequency]);
+  useEffect(() => { queryPricesRef.current = queryPrices; }, [queryPrices]);
+  useEffect(() => { liveActualPricesRef.current = liveActualPrices; }, [liveActualPrices]);
+  useEffect(() => { archiveStatusRef.current = archiveStatus; }, [archiveStatus]);
 
   // Fetch forecast and segment data
   const fetchForecastData = useCallback(async () => {
     if (!token) return;
     
+    // Auto-archive active tracking session before loading new forecast if sufficient data has elapsed
+    const currentPrices = queryPricesRef.current;
+    const actualPrices = liveActualPricesRef.current;
+    const currentStatus = archiveStatusRef.current;
+    
+    if (currentPrices.length > 0 && actualPrices.length > 0 && currentStatus === 'idle') {
+      const validPrices = actualPrices.filter(p => p !== null && p !== undefined);
+      if (validPrices.length >= 5) {
+        console.log(`[RetrievalVisualizer] Auto-archiving active tracking run of ${validPrices.length} steps for ${tokenRef.current}...`);
+        fetch('/api/retrieval/setup/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: tokenRef.current,
+            timeframe: frequencyRef.current,
+            prices: currentPrices,
+            actual_future_prices: validPrices,
+            leverage: 1.0
+          })
+        }).catch(err => console.error('[RetrievalVisualizer] Auto-archive failed:', err));
+      }
+    }
+    
+    setArchiveStatus('idle');
     setLoading(true);
     setError(null);
     try {
@@ -507,15 +545,80 @@ const RetrievalVisualizer = ({ token }) => {
 
   }, [queryPrices, queryCandles, retrievedData, activeToggles, segmentLength, frequency, liveActualPrices]);
 
-  // Clean up chart on unmount
+  // Clean up chart and auto-archive on unmount
   useEffect(() => {
     return () => {
+      // Auto-archive active session on unmount
+      const currentPrices = queryPricesRef.current;
+      const actualPrices = liveActualPricesRef.current;
+      const currentStatus = archiveStatusRef.current;
+      
+      if (currentPrices.length > 0 && actualPrices.length > 0 && currentStatus === 'idle') {
+        const validPrices = actualPrices.filter(p => p !== null && p !== undefined);
+        if (validPrices.length >= 5) {
+          console.log(`[RetrievalVisualizer] Auto-archiving active tracking run on unmount...`);
+          const payloadStr = JSON.stringify({
+            symbol: tokenRef.current,
+            timeframe: frequencyRef.current,
+            prices: currentPrices,
+            actual_future_prices: validPrices,
+            leverage: 1.0
+          });
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon('/api/retrieval/setup/add', payloadStr);
+          } else {
+            fetch('/api/retrieval/setup/add', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: payloadStr
+            }).catch(err => console.error(err));
+          }
+        }
+      }
+
       if (chartInstance.current) {
         chartInstance.current.dispose();
         chartInstance.current = null;
       }
     };
   }, []);
+
+  // Auto-archive when the forecast window is fully completed
+  useEffect(() => {
+    if (liveActualPrices.length === 0 || archiveStatus !== 'idle') return;
+
+    const isComplete = liveActualPrices.every(p => p !== null && p !== undefined);
+    if (isComplete) {
+      const saveComplete = async () => {
+        setArchiveStatus('saving');
+        try {
+          const response = await fetch('/api/retrieval/setup/add', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              symbol: token,
+              timeframe: frequency,
+              prices: queryPrices,
+              actual_future_prices: liveActualPrices,
+              leverage: 1.0
+            })
+          });
+          if (response.ok) {
+            setArchiveStatus('saved');
+            console.log('[RetrievalVisualizer] Full tracking run archived to database.');
+          } else {
+            setArchiveStatus('error');
+          }
+        } catch (error) {
+          setArchiveStatus('error');
+          console.error('[RetrievalVisualizer] Error saving full setup:', error);
+        }
+      };
+      saveComplete();
+    }
+  }, [liveActualPrices, queryPrices, archiveStatus, token, frequency]);
 
   // Compute Summary Statistics based on active (checked) segments
   const getSummaryStats = () => {
@@ -759,8 +862,11 @@ const RetrievalVisualizer = ({ token }) => {
                   {trackingStats.directionMatches ? '✓' : '✗'}
                 </div>
                 <div>
-                  <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider font-mono">
-                    LIVE FORECAST TRACKING ({trackingStats.elapsedSteps} / {trackingStats.totalSteps} steps)
+                  <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider font-mono flex items-center gap-1.5 flex-wrap">
+                    <span>LIVE FORECAST TRACKING ({trackingStats.elapsedSteps} / {trackingStats.totalSteps} steps)</span>
+                    {archiveStatus === 'saving' && <span className="text-amber-500 animate-pulse font-extrabold">(Archiving to DB...)</span>}
+                    {archiveStatus === 'saved' && <span className="text-emerald-400 font-extrabold">(Archived to DB ✅)</span>}
+                    {archiveStatus === 'error' && <span className="text-rose-500 font-extrabold">(DB Sync Failed ❌)</span>}
                   </span>
                   <h3 className={`text-base font-extrabold tracking-tight ${
                     trackingStats.directionMatches ? 'text-emerald-400' : 'text-rose-400'

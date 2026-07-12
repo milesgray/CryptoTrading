@@ -1,25 +1,26 @@
-# Active Context: Retrieval Chart Live Tracking
+# Active Context: Online Learning & Setup Archiver
 
 ## Quick Reference
-- **Feature**: Retrieval Chart Live Tracking
+- **Feature**: Online Learning & Setup Archiver
 - **Branch**: `feature/retrieval-live-tracking`
-- **Plan File**: `.agent/plans/retrieval-live-tracking-plan.md`
-- **Status**: Completed & Verified ✅
+- **Plan File**: `.agent/plans/online-learning-plan.md`
+- **Status**: Execution Phase 🛠️
 
 ## Executive Summary
-Hooked the Pattern Matching & Retrieval Forecast chart into the WebSocket price updates. It displays in real-time how the actual prices coming in compare to the retrieved similar historical patterns and the consensus prediction in the forecast region.
+Implementing dynamic archiving of completed or partially completed forecast runs. When the forecast window completes (or is reset), the frontend sends the price returns and actual outcome to the serve proxy. The backend embeds the history, inserts the setup into PostgreSQL pgvector table, and rebuilds the retrieval index cache dynamically to increase search accuracy.
 
-## Key Files Modified
-- [RetrievalVisualizer.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/RetrievalVisualizer.jsx): Added WebSocket hook, mapped ticks to forecast bins, rendered actual prices line, and added comparison metrics tracking UI card.
-
-## Verification & Validation
-- **Production Compilation**: Successfully built using `npm run build` in the `frontend` directory.
-- **WebSocket updates**: Integrated with the unified price update system matching exchange logs.
+## Key Files to Modify
+- [services/embed/server.py](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/server.py): Add `/setup/add` endpoint.
+- [services/retrieval/main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/main.py): Add `/rebuild` endpoint to clear forecaster cache.
+- [services/serve/routers/retrieval.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/routers/retrieval.py): Add `/setup/add` proxy endpoint.
+- [frontend/src/components/RetrievalVisualizer.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/RetrievalVisualizer.jsx): Hook up auto-save triggers and status alerts.
 
 ## Acceptance Criteria
-- [x] Real-time price updates overlay on forecast steps as a growing line.
-- [x] Auto-reset tracking data when a new query is run.
-- [x] Displays live accuracy metrics card (Confirming/Diverging).
-- [x] No compilation/bundling errors.
+- [ ] Embed service inserts a StoredTradeSetup into pgvector or numpy store.
+- [ ] Retrieval service successfully flushes cache of the given symbol.
+- [ ] Serve router exposes `/api/retrieval/setup/add` proxy.
+- [ ] Frontend triggers setup archive when forecast window is completed or reset.
+- [ ] Frontend displays dynamic database archival success alerts.
+
 
 

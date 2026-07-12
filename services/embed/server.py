@@ -51,6 +51,22 @@ class BatchEmbedRequest(BaseModel):
 class BatchEmbedResponse(BaseModel):
     embeddings: List[List[float]]
 
+class AddSetupRequest(BaseModel):
+    symbol: str
+    timeframe: str
+    prices: List[float]
+    direction: int
+    profit_pct: float
+    leverage: float
+    hold_duration: int
+    entry_timestamp: float
+    entry_price: float
+    exit_price: float
+
+class AddSetupResponse(BaseModel):
+    success: bool
+    id: int
+
 class SearchRequest(BaseModel):
     prices: List[float] = Field(..., description="Price window to match")
     k: int = Field(default=10, ge=1, le=100)
@@ -560,6 +576,79 @@ async def embed_prices_batch(request: BatchEmbedRequest):
         embeddings = np.empty((0, state.embedding_dim))
 
     return BatchEmbedResponse(embeddings=embeddings.tolist())
+
+
+@app.post("/setup/add", response_model=AddSetupResponse)
+async def add_setup(request: AddSetupRequest):
+    """Insert a new trade setup into the database dynamically."""
+    if state.store is None:
+        raise HTTPException(503, "Store not available")
+    
+    if len(request.prices) < 2:
+        raise HTTPException(400, "Need at least 2 prices to generate embedding")
+        
+    # 1. Generate embedding for the historical price window
+    prices = np.array(request.prices, dtype=np.float32)
+    normalized = normalize_price_window(prices)
+    
+    target_len = state.window_size - 1
+    if len(normalized) < target_len:
+        normalized = np.pad(normalized, (target_len - len(normalized), 0), mode='edge')
+    elif len(normalized) > target_len:
+        normalized = normalized[-target_len:]
+        
+    with torch.no_grad():
+        x = torch.from_numpy(normalized).float().unsqueeze(0).to(state.device)
+        embedding = state.encoder(x).cpu().numpy()[0]
+        
+    # 2. Re-pad/crop original prices to window_size for storage
+    raw_prices = prices
+    target_store_len = state.window_size
+    if len(raw_prices) < target_store_len:
+        raw_prices = np.pad(raw_prices, (target_store_len - len(raw_prices), 0), mode='edge')
+    elif len(raw_prices) > target_store_len:
+        raw_prices = raw_prices[-target_store_len:]
+        
+    # 3. Create StoredTradeSetup
+    stored = StoredTradeSetup(
+        id=None,
+        embedding=embedding,
+        direction=request.direction,
+        profit_pct=request.profit_pct,
+        leverage=request.leverage,
+        hold_duration=request.hold_duration,
+        entry_timestamp=request.entry_timestamp,
+        entry_price=request.entry_price,
+        exit_price=request.exit_price,
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        window_size=state.window_size,
+        price_window=raw_prices
+    )
+    
+    # 4. Insert into store
+    if isinstance(state.store, TradeEmbeddingDB):
+        setup_id = await state.store.insert_setup(stored)
+    else:
+        # NumpyVectorStore implementation: StoredTradeSetup from database.numpy_store
+        from database.numpy_store import StoredTradeSetup as NumpyStoredTradeSetup
+        numpy_stored = NumpyStoredTradeSetup(
+            id=0,
+            direction=stored.direction,
+            profit_pct=stored.profit_pct,
+            leverage=stored.leverage,
+            hold_duration=stored.hold_duration,
+            entry_timestamp=stored.entry_timestamp,
+            entry_price=stored.entry_price,
+            exit_price=stored.exit_price,
+            symbol=stored.symbol,
+            timeframe=stored.timeframe,
+            window_size=stored.window_size
+        )
+        setup_id = state.store.add(embedding, numpy_stored, raw_prices)
+        state.store.save()
+        
+    return AddSetupResponse(success=True, id=setup_id)
 
 
 @app.post("/search", response_model=SearchResponse)

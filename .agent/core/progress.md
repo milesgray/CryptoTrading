@@ -165,4 +165,9 @@
 - [x] Implement a Live Performance Tracking card displaying elapsed steps, price error, and direction matching status (Confirming vs Diverging).
 - [x] Reset and clear live tracking data automatically when new forecast queries are run.
 
-
+### Phase 24: Online Learning & Setup Archiver (Completed ✅)
+- [x] Add `/setup/add` endpoint to embed service (`services/embed/server.py`) to dynamically insert new setups with 128D embeddings into pgvector.
+- [x] Add `/rebuild` endpoint to retrieval service (`services/retrieval/main.py`) to invalidate and flush cached forecasters by symbol.
+- [x] Implement `/setup/add` proxy endpoint in API serve router (`services/serve/routers/retrieval.py`) to process and route setups and trigger cache rebuilds.
+- [x] Implement robust frontend lifecycle auto-archiving (`RetrievalVisualizer.jsx`) supporting full completion saves, interruption saves, and unmount cleanups via refs.
+- [x] Add real-time database sync status badges (`Archiving...`, `Archived ✅`, `Failed ❌`) to the live performance tracking card.

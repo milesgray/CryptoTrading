@@ -35,7 +35,89 @@ class SearchResultItem(BaseModel):
     duration: int
     symbol: str
 
+class StoreSetupRequest(BaseModel):
+    symbol: str
+    timeframe: str
+    prices: List[float]
+    actual_future_prices: List[float]
+    leverage: Optional[float] = 1.0
+
 # --- Endpoints ---
+@router.post("/setup/add")
+async def add_realized_setup(request: StoreSetupRequest):
+    """
+    Store a realized forecast run as a new historical setup.
+    Proxies to embed service for embedding and database insertion,
+    then clears retrieval service forecaster cache to rebuild.
+    """
+    if not request.prices or not request.actual_future_prices:
+        raise HTTPException(status_code=400, detail="Prices and actual future prices cannot be empty")
+        
+    entry_price = float(request.prices[-1])
+    exit_price = float(request.actual_future_prices[-1])
+    
+    if entry_price <= 0:
+        raise HTTPException(status_code=400, detail="Invalid entry price")
+        
+    profit_pct = ((exit_price - entry_price) / entry_price) * 100
+    direction = 1 if profit_pct >= 0 else -1
+    hold_duration = len(request.actual_future_prices)
+    
+    # Calculate approximate entry timestamp based on hold duration and timeframe
+    tf_seconds = 60
+    tf = request.timeframe.lower()
+    if tf.endswith('m'):
+        try:
+            tf_seconds = int(tf[:-1]) * 60
+        except ValueError:
+            pass
+    elif tf.endswith('h'):
+        try:
+            tf_seconds = int(tf[:-1]) * 3600
+        except ValueError:
+            pass
+            
+    entry_timestamp = datetime.now().timestamp() - (hold_duration * tf_seconds)
+    
+    # 1. Proxy to embed service to save setup
+    embed_url = os.getenv("EMBED_SERVICE_URL", "http://localhost:8301")
+    retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://retrieval:8000")
+    
+    payload = {
+        "symbol": request.symbol,
+        "timeframe": request.timeframe,
+        "prices": request.prices,
+        "direction": direction,
+        "profit_pct": profit_pct,
+        "leverage": request.leverage or 1.0,
+        "hold_duration": hold_duration,
+        "entry_timestamp": entry_timestamp,
+        "entry_price": entry_price,
+        "exit_price": exit_price
+    }
+    
+    setup_id = None
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(f"{embed_url}/setup/add", json=payload)
+            response.raise_for_status()
+            res_data = response.json()
+            setup_id = res_data.get("id")
+    except Exception as e:
+        logger.error(f"Failed to save setup in embed service: {e}")
+        raise HTTPException(status_code=502, detail=f"Embed service database insertion failed: {e}")
+        
+    # 2. Proxy to retrieval service to invalidate forecaster cache and trigger index rebuild
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            rebuild_res = await client.post(f"{retrieval_url}/rebuild?symbol={request.symbol}")
+            rebuild_res.raise_for_status()
+    except Exception as e:
+        logger.warning(f"Failed to clear forecaster cache in retrieval service: {e}")
+        
+    return {"success": True, "id": setup_id, "profit_pct": profit_pct, "direction": direction}
+
+
 @router.get("/forecast")
 async def forecast(
     symbol: str = "BTC",
