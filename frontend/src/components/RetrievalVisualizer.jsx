@@ -236,29 +236,28 @@ const RetrievalVisualizer = ({ token }) => {
         return lastQueryPrice + standardized * scaleMultiplier;
       });
 
-      // Construct forecasted candles continuing from history's last close
-      const retrievedCandles = Array(segmentLength).fill('-');
-      let prevClose = lastQueryPrice;
+      // Construct forecasted line continuing from history's last close
+      const retrievedLineData = Array(segmentLength - 1).fill('-');
+      retrievedLineData.push(lastQueryPrice);
       for (let t = 0; t < forecastLength; t++) {
-        const currentClose = alignedForecast[t];
-        const open = prevClose;
-        const close = currentClose;
-        const high = Math.max(open, close) + close * avgRelUpper;
-        const low = Math.min(open, close) - close * avgRelLower;
-        retrievedCandles.push([open, close, low, high]);
-        prevClose = currentClose;
+        retrievedLineData.push(alignedForecast[t]);
       }
+
+      const color = colors[segment.index % colors.length];
 
       series.push({
         name: `Pattern #${segment.index + 1}`,
-        type: 'candlestick',
-        data: retrievedCandles,
+        type: 'line',
+        data: retrievedLineData,
+        smooth: true,
+        showSymbol: false,
+        lineStyle: {
+          width: 1.5,
+          color: color,
+          opacity: 0.45
+        },
         itemStyle: {
-          color: '#22d3ee',         // Bullish fill (Cyan)
-          color0: '#0891b2',        // Bearish fill (Dark Cyan)
-          borderColor: '#22d3ee',   // Bullish border
-          borderColor0: '#0891b2',  // Bearish border
-          opacity: 0.35             // Partially opaque
+          color: color
         },
         zIndex: 2
       });

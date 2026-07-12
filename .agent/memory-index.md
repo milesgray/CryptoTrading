@@ -119,13 +119,14 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **task-log_2026-07-11-16-47_candlestick-volume-fix.md**: `.agent/task-logs/task-log_2026-07-11-16-47_candlestick-volume-fix.md`
 - **task-log_2026-07-12-03-25_fix-echarts-null-candlestick.md**: `.agent/task-logs/task-log_2026-07-12-03-25_fix-echarts-null-candlestick.md`
 - **task-log_2026-07-12-07-20_retrieval-scaling-fix.md**: `.agent/task-logs/task-log_2026-07-12-07-20_retrieval-scaling-fix.md`
+- **task-log_2026-07-12-14-45_retrieval-overlap-fix.md**: `.agent/task-logs/task-log_2026-07-12-14-45_retrieval-overlap-fix.md`
 
 ## Memory System Status
 
 ### Overall Health
 - **Status**: Synchronized
-- **Last Check**: 2026-07-12 07:22:00 CST
-- **Files Tracked**: 6 core files + 8 plans + 17 task logs
+- **Last Check**: 2026-07-12 14:45:00 CST
+- **Files Tracked**: 6 core files + 8 plans + 18 task logs
 - **Integrity**: All systems updated and synchronized
 
 

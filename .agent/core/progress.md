@@ -151,3 +151,10 @@
 - [x] Scale the retrieved historical cycles and consensus projection using the dynamic standard deviation instead of a hardcoded 1.5% multiplier.
 - [x] Enforce a minimum multiplier floor (0.05% of price) and maximum ceiling (2.0% of price) to handle extremely flat or volatile segments.
 - [x] Resolve visual squishing on the y-axis, ensuring both preceding and retrieved candles are displayed at a similar, readable size.
+
+### Phase 22: Retrieval Chart Overlap Resolution (Completed ✅)
+- [x] Convert individual retrieved pattern segments from overlapping candlestick series to smooth line series.
+- [x] Align and connect the line series to start seamlessly at the last price point of the historical candlestick series.
+- [x] Synchronize the pattern line colors on the chart with the colors specified in the sidebar legend.
+- [x] Keep the Consensus Projection as a candlestick series to preserve the bullish/bearish candle direction visual cues.
+
