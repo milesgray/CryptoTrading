@@ -99,6 +99,7 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **order-book-rework-plan.md**: `.agent/plans/order-book-rework-plan.md`
 - **polish-embed-service-plan.md**: `.agent/plans/polish-embed-service-plan.md`
 - **move-pgvector-store-plan.md**: `.agent/plans/move-pgvector-store-plan.md`
+- **retrieval-live-tracking-plan.md**: `.agent/plans/retrieval-live-tracking-plan.md`
 
 ### task-logs/
 - **task-log_2026-06-22-05-56_postgres-migration.md**: `.agent/task-logs/task-log_2026-06-22-05-56_postgres-migration.md`
@@ -120,13 +121,14 @@ This file serves as the master index for the CryptoTrading memory system, provid
 - **task-log_2026-07-12-03-25_fix-echarts-null-candlestick.md**: `.agent/task-logs/task-log_2026-07-12-03-25_fix-echarts-null-candlestick.md`
 - **task-log_2026-07-12-07-20_retrieval-scaling-fix.md**: `.agent/task-logs/task-log_2026-07-12-07-20_retrieval-scaling-fix.md`
 - **task-log_2026-07-12-14-45_retrieval-overlap-fix.md**: `.agent/task-logs/task-log_2026-07-12-14-45_retrieval-overlap-fix.md`
+- **task-log_2026-07-12-14-56_retrieval-live-tracking.md**: `.agent/task-logs/task-log_2026-07-12-14-56_retrieval-live-tracking.md`
 
 ## Memory System Status
 
 ### Overall Health
 - **Status**: Synchronized
-- **Last Check**: 2026-07-12 14:45:00 CST
-- **Files Tracked**: 6 core files + 8 plans + 18 task logs
+- **Last Check**: 2026-07-12 14:56:00 CST
+- **Files Tracked**: 6 core files + 9 plans + 19 task logs
 - **Integrity**: All systems updated and synchronized
 
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import * as echarts from 'echarts';
-import { getCandlestickData } from '../services/api';
+import { getCandlestickData, webSocketService } from '../services/api';
 import _ from 'lodash';
 
 const getScaleMultiplier = (queryPrices, lastQueryPrice) => {
@@ -36,6 +36,10 @@ const RetrievalVisualizer = ({ token }) => {
   
   // Checkbox toggles for each retrieved segment
   const [activeToggles, setActiveToggles] = useState({});
+
+  // Real-time tracking of actual prices vs forecast
+  const [queryEndTime, setQueryEndTime] = useState(null);
+  const [liveActualPrices, setLiveActualPrices] = useState([]);
 
   // Fetch forecast and segment data
   const fetchForecastData = useCallback(async () => {
@@ -82,6 +86,8 @@ const RetrievalVisualizer = ({ token }) => {
         }
         setQueryPrices(recentPrices);
         setQueryCandles(slicedCandles);
+        const lastCandle = slicedCandles[slicedCandles.length - 1];
+        setQueryEndTime(new Date(lastCandle.timestamp).getTime());
       } else {
         throw new Error("No recent price history found to establish current pattern baseline.");
       }
@@ -111,6 +117,11 @@ const RetrievalVisualizer = ({ token }) => {
         initialToggles[seg.id || seg.index] = true;
       });
       setActiveToggles(initialToggles);
+
+      // Initialize live tracking prices array
+      const forecastLengths = processedSegments.map(s => (s.prices || []).length);
+      const computedForecastLength = forecastLengths.length > 0 ? Math.min(...forecastLengths) : segmentLength;
+      setLiveActualPrices(Array(computedForecastLength).fill(null));
       
     } catch (err) {
       console.error(err);
@@ -132,6 +143,51 @@ const RetrievalVisualizer = ({ token }) => {
   useEffect(() => {
     fetchForecastData();
   }, [token, k, frequency, segmentLength, fetchForecastData]);
+
+  // Hook into live WebSocket updates for comparing actual values against forecast in real-time
+  useEffect(() => {
+    if (!token || !queryEndTime) return;
+
+    const freqToSec = {
+      '1m': 60,
+      '5m': 300,
+      '15m': 900,
+      '1h': 3600
+    };
+    const granularitySec = freqToSec[frequency] || 60;
+
+    const handlePriceUpdate = (priceData) => {
+      if (!priceData || priceData.price === undefined) return;
+
+      const tickTime = new Date(priceData.timestamp || Date.now()).getTime();
+      const diffMs = tickTime - queryEndTime;
+
+      if (diffMs <= 0) {
+        // Price update corresponds to the query window or before, ignore
+        return;
+      }
+
+      // Calculate step index in the forecast window
+      const stepIndex = Math.floor(diffMs / (granularitySec * 1000));
+
+      setLiveActualPrices(prev => {
+        if (stepIndex >= 0 && stepIndex < prev.length) {
+          const nextPrices = [...prev];
+          nextPrices[stepIndex] = parseFloat(priceData.price);
+          return nextPrices;
+        }
+        return prev;
+      });
+    };
+
+    console.log(`[RetrievalVisualizer] Subscribing to live updates for ${token} to track forecast performance`);
+    const unsubscribe = webSocketService.onPriceUpdate(handlePriceUpdate);
+
+    return () => {
+      console.log(`[RetrievalVisualizer] Unsubscribing from live updates for ${token}`);
+      unsubscribe();
+    };
+  }, [token, queryEndTime, frequency]);
 
   // Recalculate and render the chart whenever active segments or data changes
   useEffect(() => {
@@ -220,6 +276,60 @@ const RetrievalVisualizer = ({ token }) => {
 
     const lastQueryPrice = queryPrices[queryPrices.length - 1] || 0;
     const scaleMultiplier = getScaleMultiplier(queryPrices, lastQueryPrice);
+
+    // Build the Actual Price series line from live price stream
+    const actualLineData = Array(segmentLength - 1).fill('-');
+    actualLineData.push(lastQueryPrice);
+
+    let lastValidIdx = -1;
+    for (let i = liveActualPrices.length - 1; i >= 0; i--) {
+      if (liveActualPrices[i] !== null && liveActualPrices[i] !== undefined) {
+        lastValidIdx = i;
+        break;
+      }
+    }
+
+    for (let t = 0; t < forecastLength; t++) {
+      if (t <= lastValidIdx) {
+        let val = liveActualPrices[t];
+        if (val === null || val === undefined) {
+          let prevVal = lastQueryPrice;
+          for (let j = t - 1; j >= 0; j--) {
+            if (liveActualPrices[j] !== null && liveActualPrices[j] !== undefined) {
+              prevVal = liveActualPrices[j];
+              break;
+            }
+          }
+          val = prevVal;
+        }
+        actualLineData.push(val);
+      } else {
+        actualLineData.push('-');
+      }
+    }
+
+    const hasActualPrice = actualLineData.some(val => val !== '-');
+    if (hasActualPrice) {
+      series.push({
+        name: 'Actual Price (Live)',
+        type: 'line',
+        data: actualLineData,
+        smooth: true,
+        showSymbol: true,
+        symbolSize: 6,
+        lineStyle: {
+          width: 3.5,
+          color: '#f43f5e',
+          shadowColor: 'rgba(244, 63, 94, 0.4)',
+          shadowBlur: 10,
+          shadowOffsetY: 2
+        },
+        itemStyle: {
+          color: '#f43f5e'
+        },
+        zIndex: 20
+      });
+    }
 
     // 2. Add retrieved patterns (only if checked/active)
     activeSegments.forEach((segment) => {
@@ -395,7 +505,7 @@ const RetrievalVisualizer = ({ token }) => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
 
-  }, [queryPrices, queryCandles, retrievedData, activeToggles, segmentLength, frequency]);
+  }, [queryPrices, queryCandles, retrievedData, activeToggles, segmentLength, frequency, liveActualPrices]);
 
   // Clean up chart on unmount
   useEffect(() => {
@@ -482,6 +592,56 @@ const RetrievalVisualizer = ({ token }) => {
 
   const stats = getSummaryStats();
   const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
+
+  const getTrackingStats = () => {
+    const lastQueryPrice = queryPrices[queryPrices.length - 1] || 0;
+    if (lastQueryPrice === 0 || liveActualPrices.length === 0) return null;
+
+    let lastValidIdx = -1;
+    for (let i = liveActualPrices.length - 1; i >= 0; i--) {
+      if (liveActualPrices[i] !== null && liveActualPrices[i] !== undefined) {
+        lastValidIdx = i;
+        break;
+      }
+    }
+
+    if (lastValidIdx === -1) return null;
+
+    const actualPrice = liveActualPrices[lastValidIdx];
+    const actualReturn = ((actualPrice - lastQueryPrice) / lastQueryPrice) * 100;
+
+    const activeSegments = retrievedData.filter(seg => activeToggles[seg.id || seg.index]);
+    if (activeSegments.length === 0) return null;
+
+    const scaleMultiplier = getScaleMultiplier(queryPrices, lastQueryPrice);
+    
+    let sum = 0;
+    activeSegments.forEach(seg => {
+      const prices = seg.prices || [];
+      const meanSeg = prices.reduce((a, b) => a + b, 0) / prices.length;
+      const stdSeg = Math.sqrt(prices.reduce((a, b) => a + Math.pow(b - meanSeg, 2), 0) / prices.length) || 1e-8;
+      
+      const alignedPrice = lastQueryPrice + ((prices[lastValidIdx] - meanSeg) / stdSeg) * scaleMultiplier;
+      sum += alignedPrice;
+    });
+    const consensusPrice = sum / activeSegments.length;
+    const predictedReturn = ((consensusPrice - lastQueryPrice) / lastQueryPrice) * 100;
+
+    const errorPct = Math.abs((actualPrice - consensusPrice) / consensusPrice) * 100;
+    const directionMatches = (actualReturn >= 0 && predictedReturn >= 0) || (actualReturn < 0 && predictedReturn < 0);
+
+    return {
+      elapsedSteps: lastValidIdx + 1,
+      totalSteps: liveActualPrices.length,
+      actualPrice,
+      actualReturn,
+      predictedReturn,
+      errorPct,
+      directionMatches
+    };
+  };
+
+  const trackingStats = getTrackingStats();
 
   return (
     <div className="bg-slate-900/30 p-6 rounded-2xl border border-slate-800 backdrop-blur-md flex flex-col gap-6">
@@ -586,6 +746,54 @@ const RetrievalVisualizer = ({ token }) => {
               </span>
             </div>
           </div>
+
+          {/* Live Performance Tracking Card */}
+          {trackingStats && (
+            <div className="flex flex-col sm:flex-row gap-4 p-4 border border-indigo-900/40 rounded-xl bg-gradient-to-r from-indigo-950/20 to-slate-950/60 items-center justify-between shadow-md">
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold border shadow-sm ${
+                  trackingStats.directionMatches 
+                    ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/20 shadow-emerald-950/20' 
+                    : 'bg-rose-950/40 text-rose-400 border-rose-500/20 shadow-rose-950/20'
+                }`}>
+                  {trackingStats.directionMatches ? '✓' : '✗'}
+                </div>
+                <div>
+                  <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider font-mono">
+                    LIVE FORECAST TRACKING ({trackingStats.elapsedSteps} / {trackingStats.totalSteps} steps)
+                  </span>
+                  <h3 className={`text-base font-extrabold tracking-tight ${
+                    trackingStats.directionMatches ? 'text-emerald-400' : 'text-rose-400'
+                  }`}>
+                    {trackingStats.directionMatches ? 'CONFIRMING FORECAST (UP/DOWN MATCH)' : 'DIVERGING FROM FORECAST'}
+                  </h3>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 w-full sm:w-auto font-mono text-xs border-t sm:border-t-0 sm:border-l border-slate-800/80 pt-2 sm:pt-0 sm:pl-6">
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-500">Actual Price:</span>
+                  <span className="text-slate-350 font-semibold">${trackingStats.actualPrice.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-500">Actual Return:</span>
+                  <span className={`font-semibold ${trackingStats.actualReturn >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {trackingStats.actualReturn >= 0 ? '+' : ''}{trackingStats.actualReturn.toFixed(2)}%
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-500">Consensus Pred:</span>
+                  <span className={`font-semibold ${trackingStats.predictedReturn >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {trackingStats.predictedReturn >= 0 ? '+' : ''}{trackingStats.predictedReturn.toFixed(2)}%
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-500">Mean Abs Error:</span>
+                  <span className="text-slate-350 font-semibold">{trackingStats.errorPct.toFixed(2)}%</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right: Settings & Toggles */}

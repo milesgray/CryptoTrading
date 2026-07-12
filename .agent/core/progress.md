@@ -158,3 +158,11 @@
 - [x] Synchronize the pattern line colors on the chart with the colors specified in the sidebar legend.
 - [x] Keep the Consensus Projection as a candlestick series to preserve the bullish/bearish candle direction visual cues.
 
+### Phase 23: Retrieval Chart Live Tracking (Completed ✅)
+- [x] Hook the Pattern Matching & Retrieval Forecast chart into the WebSocket price update stream.
+- [x] Slice incoming price ticks into forecast steps and render a growing actual price line in the forecast window.
+- [x] Style the actual price line with a neon rose glow (#f43f5e) and dynamic endpoint marker.
+- [x] Implement a Live Performance Tracking card displaying elapsed steps, price error, and direction matching status (Confirming vs Diverging).
+- [x] Reset and clear live tracking data automatically when new forecast queries are run.
+
+
