@@ -143,3 +143,5 @@
 - [x] Apply changes to MongoDB and PostgreSQL adapters in `src/cryptotrading/data/price.py` and `services/serve/data.py`.
 - [x] Verify correct non-zero sum of tick volumes on historic queries.
 
+### Phase 20: ECharts Candlestick null Data Crash Fix (Completed ✅)
+- [x] Fix the frontend blank white page crash by replacing padding `null` values with ECharts-compliant placeholder string `'-'` in the forecasting candlestick chart series.

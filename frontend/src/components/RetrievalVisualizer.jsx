@@ -185,7 +185,7 @@ const RetrievalVisualizer = ({ token }) => {
     // Pad historical candle data with nulls for the forecast steps
     const paddedHistoricalData = [...historicalCandleData];
     for (let i = 0; i < forecastLength; i++) {
-      paddedHistoricalData.push(null);
+      paddedHistoricalData.push('-');
     }
 
     // 1. Historical baseline series
@@ -223,7 +223,7 @@ const RetrievalVisualizer = ({ token }) => {
       });
 
       // Construct forecasted candles continuing from history's last close
-      const retrievedCandles = Array(segmentLength).fill(null);
+      const retrievedCandles = Array(segmentLength).fill('-');
       let prevClose = lastQueryPrice;
       for (let t = 0; t < forecastLength; t++) {
         const currentClose = alignedForecast[t];
@@ -269,7 +269,7 @@ const RetrievalVisualizer = ({ token }) => {
           consensusPrices.push(sum / activeSegments.length);
         }
 
-        const consensusCandles = Array(segmentLength).fill(null);
+        const consensusCandles = Array(segmentLength).fill('-');
         let consensusPrevClose = lastQueryPrice;
         for (let t = 0; t < forecastLength; t++) {
           const currentClose = consensusPrices[t];
