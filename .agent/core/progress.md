@@ -145,3 +145,9 @@
 
 ### Phase 20: ECharts Candlestick null Data Crash Fix (Completed ✅)
 - [x] Fix the frontend blank white page crash by replacing padding `null` values with ECharts-compliant placeholder string `'-'` in the forecasting candlestick chart series.
+
+### Phase 21: Retrieval Forecast Sizing Optimization (Completed ✅)
+- [x] Calculate the preceding query price series standard deviation dynamically.
+- [x] Scale the retrieved historical cycles and consensus projection using the dynamic standard deviation instead of a hardcoded 1.5% multiplier.
+- [x] Enforce a minimum multiplier floor (0.05% of price) and maximum ceiling (2.0% of price) to handle extremely flat or volatile segments.
+- [x] Resolve visual squishing on the y-axis, ensuring both preceding and retrieved candles are displayed at a similar, readable size.

@@ -3,6 +3,20 @@ import * as echarts from 'echarts';
 import { getCandlestickData } from '../services/api';
 import _ from 'lodash';
 
+const getScaleMultiplier = (queryPrices, lastQueryPrice) => {
+  if (!queryPrices || queryPrices.length === 0 || lastQueryPrice === 0) {
+    return lastQueryPrice * 0.015; // fallback
+  }
+  const meanQuery = queryPrices.reduce((a, b) => a + b, 0) / queryPrices.length;
+  const varianceQuery = queryPrices.reduce((a, b) => a + Math.pow(b - meanQuery, 2), 0) / queryPrices.length;
+  const stdQuery = Math.sqrt(varianceQuery);
+  
+  // Floor at 0.05% of last price, ceiling at 2.0% of last price to handle extreme conditions
+  const minMultiplier = lastQueryPrice * 0.0005;
+  const maxMultiplier = lastQueryPrice * 0.02;
+  return Math.max(minMultiplier, Math.min(maxMultiplier, stdQuery));
+};
+
 const RetrievalVisualizer = ({ token }) => {
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
@@ -205,6 +219,7 @@ const RetrievalVisualizer = ({ token }) => {
     ];
 
     const lastQueryPrice = queryPrices[queryPrices.length - 1] || 0;
+    const scaleMultiplier = getScaleMultiplier(queryPrices, lastQueryPrice);
 
     // 2. Add retrieved patterns (only if checked/active)
     activeSegments.forEach((segment) => {
@@ -215,8 +230,7 @@ const RetrievalVisualizer = ({ token }) => {
       const meanSeg = prices.reduce((a, b) => a + b, 0) / prices.length;
       const stdSeg = Math.sqrt(prices.reduce((a, b) => a + Math.pow(b - meanSeg, 2), 0) / prices.length) || 1e-8;
       
-      // Standardize and rescale using a 1.5% volatility multiplier
-      const scaleMultiplier = lastQueryPrice * 0.015;
+      // Standardize and rescale using the dynamic query-based volatility scale
       const alignedForecast = prices.map(p => {
         const standardized = (p - meanSeg) / stdSeg;
         return lastQueryPrice + standardized * scaleMultiplier;
@@ -261,7 +275,6 @@ const RetrievalVisualizer = ({ token }) => {
             const prices = seg.prices || [];
             const meanSeg = prices.reduce((a, b) => a + b, 0) / prices.length;
             const stdSeg = Math.sqrt(prices.reduce((a, b) => a + Math.pow(b - meanSeg, 2), 0) / prices.length) || 1e-8;
-            const scaleMultiplier = lastQueryPrice * 0.015;
             
             const alignedPrice = lastQueryPrice + ((prices[t] - meanSeg) / stdSeg) * scaleMultiplier;
             sum += alignedPrice;
@@ -429,13 +442,14 @@ const RetrievalVisualizer = ({ token }) => {
 
     // Next Candle Color Prediction (Up/Down consensus on the very first forecasted step)
     let upTicks = 0;
+    const scaleMultiplier = getScaleMultiplier(queryPrices, lastQueryPrice);
+    
     activeSegments.forEach(seg => {
       const prices = seg.prices || [];
       if (prices.length === 0) return;
       
       const meanSeg = prices.reduce((a, b) => a + b, 0) / prices.length;
       const stdSeg = Math.sqrt(prices.reduce((a, b) => a + Math.pow(b - meanSeg, 2), 0) / prices.length) || 1e-8;
-      const scaleMultiplier = lastQueryPrice * 0.015;
       
       const firstAlignedPrice = lastQueryPrice + ((prices[0] - meanSeg) / stdSeg) * scaleMultiplier;
       if (firstAlignedPrice >= lastQueryPrice) {
