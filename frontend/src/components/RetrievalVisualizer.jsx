@@ -375,12 +375,14 @@ const RetrievalVisualizer = ({ token }) => {
       if (prices.length === 0) return;
 
       // Rescale and align segment to start exactly at the last historical price point
+      const histPrices = segment.historical_prices || [];
+      const histLast = histPrices.length > 0 ? histPrices[histPrices.length - 1] : (prices[0] || 1);
       const meanSeg = prices.reduce((a, b) => a + b, 0) / prices.length;
       const stdSeg = Math.sqrt(prices.reduce((a, b) => a + Math.pow(b - meanSeg, 2), 0) / prices.length) || 1e-8;
       
-      // Standardize and rescale using the dynamic query-based volatility scale
+      // Standardize and rescale using the dynamic query-based volatility scale relative to history's last close
       const alignedForecast = prices.map(p => {
-        const standardized = (p - meanSeg) / stdSeg;
+        const standardized = (p - histLast) / stdSeg;
         return lastQueryPrice + standardized * scaleMultiplier;
       });
 
@@ -420,10 +422,12 @@ const RetrievalVisualizer = ({ token }) => {
           let sum = 0;
           activeSegments.forEach(seg => {
             const prices = seg.prices || [];
+            const histPrices = seg.historical_prices || [];
+            const histLast = histPrices.length > 0 ? histPrices[histPrices.length - 1] : (prices[0] || 1);
             const meanSeg = prices.reduce((a, b) => a + b, 0) / prices.length;
             const stdSeg = Math.sqrt(prices.reduce((a, b) => a + Math.pow(b - meanSeg, 2), 0) / prices.length) || 1e-8;
             
-            const alignedPrice = lastQueryPrice + ((prices[t] - meanSeg) / stdSeg) * scaleMultiplier;
+            const alignedPrice = lastQueryPrice + ((prices[t] - histLast) / stdSeg) * scaleMultiplier;
             sum += alignedPrice;
           });
           consensusPrices.push(sum / activeSegments.length);
@@ -661,10 +665,12 @@ const RetrievalVisualizer = ({ token }) => {
       const prices = seg.prices || [];
       if (prices.length === 0) return;
       
+      const histPrices = seg.historical_prices || [];
+      const histLast = histPrices.length > 0 ? histPrices[histPrices.length - 1] : (prices[0] || 1);
       const meanSeg = prices.reduce((a, b) => a + b, 0) / prices.length;
       const stdSeg = Math.sqrt(prices.reduce((a, b) => a + Math.pow(b - meanSeg, 2), 0) / prices.length) || 1e-8;
       
-      const firstAlignedPrice = lastQueryPrice + ((prices[0] - meanSeg) / stdSeg) * scaleMultiplier;
+      const firstAlignedPrice = lastQueryPrice + ((prices[0] - histLast) / stdSeg) * scaleMultiplier;
       if (firstAlignedPrice >= lastQueryPrice) {
         upTicks++;
       }
@@ -722,10 +728,12 @@ const RetrievalVisualizer = ({ token }) => {
     let sum = 0;
     activeSegments.forEach(seg => {
       const prices = seg.prices || [];
+      const histPrices = seg.historical_prices || [];
+      const histLast = histPrices.length > 0 ? histPrices[histPrices.length - 1] : (prices[0] || 1);
       const meanSeg = prices.reduce((a, b) => a + b, 0) / prices.length;
       const stdSeg = Math.sqrt(prices.reduce((a, b) => a + Math.pow(b - meanSeg, 2), 0) / prices.length) || 1e-8;
       
-      const alignedPrice = lastQueryPrice + ((prices[lastValidIdx] - meanSeg) / stdSeg) * scaleMultiplier;
+      const alignedPrice = lastQueryPrice + ((prices[lastValidIdx] - histLast) / stdSeg) * scaleMultiplier;
       sum += alignedPrice;
     });
     const consensusPrice = sum / activeSegments.length;
