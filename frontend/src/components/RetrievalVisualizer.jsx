@@ -565,7 +565,8 @@ const RetrievalVisualizer = ({ token }) => {
             leverage: 1.0
           });
           if (navigator.sendBeacon) {
-            navigator.sendBeacon('/api/retrieval/setup/add', payloadStr);
+            const blob = new Blob([payloadStr], { type: 'application/json' });
+            navigator.sendBeacon('/api/retrieval/setup/add', blob);
           } else {
             fetch('/api/retrieval/setup/add', {
               method: 'POST',

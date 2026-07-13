@@ -98,7 +98,7 @@ async def add_realized_setup(request: StoreSetupRequest):
     
     setup_id = None
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.post(f"{embed_url}/setup/add", json=payload)
             response.raise_for_status()
             res_data = response.json()
@@ -109,7 +109,7 @@ async def add_realized_setup(request: StoreSetupRequest):
         
     # 2. Proxy to retrieval service to invalidate forecaster cache and trigger index rebuild
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             rebuild_res = await client.post(f"{retrieval_url}/rebuild?symbol={request.symbol}")
             rebuild_res.raise_for_status()
     except Exception as e:
