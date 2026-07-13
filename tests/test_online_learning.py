@@ -24,6 +24,7 @@ def clean_imports(service_name):
             del sys.modules[mod]
 
 def test_embed_service_add_setup(tmp_path):
+    """Test that the embed service correctly generates an embedding for a price window and inserts it into the VectorStore."""
     clean_imports("embed")
     from services.embed.server import app as embed_app, state as embed_state
     from services.embed.models.encoder import PriceWindowEncoder
@@ -66,6 +67,7 @@ def test_embed_service_add_setup(tmp_path):
     assert data["id"] == 0
 
 def test_retrieval_rebuild():
+    """Test that the retrieval service correctly invalidates and clears the cached forecasters index for a specific symbol."""
     clean_imports("retrieval")
     from services.retrieval.main import app as retrieval_app, forecasters_cache
 
@@ -86,6 +88,7 @@ def test_retrieval_rebuild():
     assert ("ETH", 60, 60) in forecasters_cache
 
 def test_serve_add_setup_proxy():
+    """Test that the serve router proxies the setup archiving request to the embed service, computes returns/directions, and triggers retrieval cache rebuilds."""
     clean_imports("serve")
     from services.serve.routers.retrieval import router as serve_retrieval_router
     from fastapi import FastAPI

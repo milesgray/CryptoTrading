@@ -67,6 +67,7 @@ const RetrievalVisualizer = ({ token }) => {
     if (currentPrices.length > 0 && actualPrices.length > 0 && currentStatus === 'idle') {
       const validPrices = actualPrices.filter(p => p !== null && p !== undefined);
       if (validPrices.length >= 5) {
+        archiveStatusRef.current = 'saving'; // synchronously prevent duplicate archive triggers
         console.log(`[RetrievalVisualizer] Auto-archiving active tracking run of ${validPrices.length} steps for ${tokenRef.current}...`);
         fetch('/api/retrieval/setup/add', {
           method: 'POST',

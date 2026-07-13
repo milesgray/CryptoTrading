@@ -89,7 +89,7 @@ async def add_realized_setup(request: StoreSetupRequest):
         "prices": request.prices,
         "direction": direction,
         "profit_pct": profit_pct,
-        "leverage": request.leverage or 1.0,
+        "leverage": request.leverage,
         "hold_duration": hold_duration,
         "entry_timestamp": entry_timestamp,
         "entry_price": entry_price,
