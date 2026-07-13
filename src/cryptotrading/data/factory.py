@@ -1,9 +1,11 @@
 import logging
 from cryptotrading.config import DB_BACKEND
+from cryptotrading.data.price import PriceAdapter
+from cryptotrading.data.book import OrderBookAdapter
 
 logger = logging.getLogger(__name__)
 
-def get_price_adapter(backend=None):
+def get_price_adapter(backend: str = None) -> PriceAdapter:
     """Retrieve the price adapter matching the active DB_BACKEND configuration."""
     if backend is None:
         backend = DB_BACKEND
@@ -16,7 +18,7 @@ def get_price_adapter(backend=None):
         logger.info("Initializing PostgreSQL Price Adapter")
         return PricePostgresAdapter()
 
-def get_order_book_adapter(backend=None):
+def get_order_book_adapter(backend: str = None) -> OrderBookAdapter:   
     """Retrieve the order book adapter matching the active DB_BACKEND configuration."""
     if backend is None:
         backend = DB_BACKEND

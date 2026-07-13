@@ -10,7 +10,7 @@ Provides shape-similarity and frequency-domain forecasting classes:
 """
 
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any
 from encoder import RetrievalServiceEncoder
 
 class RetrievalForecaster:

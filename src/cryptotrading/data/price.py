@@ -2,6 +2,7 @@ import logging
 import datetime
 from datetime import timezone
 from typing import Optional, Any
+from abc import ABC, abstractmethod
 
 from pymongo import ASCENDING, DESCENDING
 
@@ -18,7 +19,69 @@ from cryptotrading.config import (
 
 logger = logging.getLogger(__name__)
 
-class PriceMongoAdapter:
+class PriceAdapter(ABC):
+    @abstractmethod
+    async def store_price_data(
+        self, 
+        symbol: str, 
+        index_price: float, 
+        book: dict,            
+        raw_data: list[ExchangeRawOrderBook], 
+        verbose: bool = False
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_price_data(
+        self, 
+        symbol: str, 
+        start_time: datetime.datetime, 
+        end_time: datetime.datetime, 
+        limit: int = 100,
+        page: int = 1,
+        sort: str = "desc"
+    ) -> list[dict]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_price_data_count(
+        self, 
+        symbol: str, 
+        start_time: datetime.datetime, 
+        end_time: datetime.datetime
+    ) -> int:
+        raise NotImplementedError
+    
+    @abstractmethod
+    async def get_prices(
+        self, 
+        symbol: str, 
+        start_time: datetime, 
+        end_time: datetime, 
+        count: int = None,
+        chunk_size: int = 1000):
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_latest_price(
+        self, 
+        token: str) -> Optional[dict[str, Any]]:        
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_candlestick_data(
+        self,
+        token: str,
+        start_time: datetime,
+        end_time: datetime,
+        granularity: int,
+        include_book: bool = False
+    ) -> list[CandlestickData]: 
+        raise NotImplementedError
+    
+    
+
+class PriceMongoAdapter(PriceAdapter):
     def __init__(self):
         self.db = get_db()
 
@@ -152,7 +215,6 @@ class PriceMongoAdapter:
             logger.error(f"Failed to get price data: {str(e)}")
             return []
         
-
     async def get_latest_price(self, token: str) -> Optional[dict[str, Any]]:
         """Retrieves the latest index price for a given token."""
         try:
@@ -381,7 +443,7 @@ class PriceMongoAdapter:
                 raise Exception(f"Database error: {e}")
 
 
-class PricePostgresAdapter:
+class PricePostgresAdapter(PriceAdapter):
     def __init__(self):
         pass
 

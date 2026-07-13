@@ -2,6 +2,7 @@ import logging
 import datetime as dt
 from datetime import datetime, timezone
 from typing import Any, Optional, Union
+from abc import ABC, abstractmethod
 
 from cryptotrading.data.postgres import get_connection, init_pool, _pool, resolve_matching_symbols
 
@@ -26,7 +27,51 @@ from cryptotrading.util.book import order_book_to_df
 
 logger = logging.getLogger(__name__)
 
-class OrderBookMongoAdapter:
+class OrderBookAdapter(ABC):
+    @abstractmethod
+    async def store_exchange_order_book(
+        self, 
+        symbol: str,            
+        raw_data: list[Union[ExchangeRawOrderBook, dict]], 
+        verbose: bool = False
+    ) -> None:        
+        raise NotImplementedError
+    
+    @abstractmethod
+    async def store_composite_order_book_data(
+        self, 
+        symbol: str,            
+        raw_data: list[Union[TransformedOrderBookData, dict]], 
+        verbose: bool = False
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def store_transformed_order_book_data(
+        self, 
+        symbol: str, 
+        book: dict, 
+        verbose: bool=False
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_orderbook_data(
+        self, 
+        symbol: str, 
+        start_time: datetime, 
+        end_time: datetime, 
+        verbose: bool = False,
+        include_book: bool = False,
+        count: int = None,
+        chunk_size: int = 1000
+    ) -> list[dict]:
+        raise NotImplementedError
+
+
+    
+
+class OrderBookMongoAdapter(OrderBookAdapter):
     def __init__(self):
         self.db = get_db()
 
