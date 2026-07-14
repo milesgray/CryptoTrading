@@ -1,26 +1,22 @@
-# Active Context: Online Learning & Setup Archiver
+# Active Context: Chronos Embedding Integration
 
 ## Quick Reference
-- **Feature**: Online Learning & Setup Archiver
-- **Branch**: `feature/retrieval-live-tracking`
-- **Plan File**: `.agent/plans/online-learning-plan.md`
-- **Status**: Execution Phase 🛠️
+- **Feature**: Chronos Embedding Integration
+- **Branch**: `feature/chronos-embedding-fix`
+- **Plan File**: `.agent/plans/chronos-embedding-plan.md`
+- **Status**: Completed ✅
 
 ## Executive Summary
-Implementing dynamic archiving of completed or partially completed forecast runs. When the forecast window completes (or is reset), the frontend sends the price returns and actual outcome to the serve proxy. The backend embeds the history, inserts the setup into PostgreSQL pgvector table, and rebuilds the retrieval index cache dynamically to increase search accuracy.
+Integrated Amazon Chronos (`chronos-t5-base`) into the Trade Setup Embedding service. Resolved critical model initialization, tensor type-casting (bfloat16 to float32 on CPU), and API-to-model dimension mismatch errors. Replaced direct encoder calls with a unified `generate_embedding` method on AppState and TradePipeline, ensuring full backward compatibility for both production and unit tests.
 
-## Key Files to Modify
-- [services/embed/server.py](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/server.py): Add `/setup/add` endpoint.
-- [services/retrieval/main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/main.py): Add `/rebuild` endpoint to clear forecaster cache.
-- [services/serve/routers/retrieval.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/routers/retrieval.py): Add `/setup/add` proxy endpoint.
-- [frontend/src/components/RetrievalVisualizer.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/RetrievalVisualizer.jsx): Hook up auto-save triggers and status alerts.
+## Key Files Modified
+- [services/embed/pipeline.py](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/pipeline.py): Fixed model initialization and created `generate_embedding`.
+- [services/embed/server.py](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/server.py): Fixed startup instantiations and routed endpoints through AppState `generate_embedding`.
+- [services/embed/README.md](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/README.md): Documented use of `"use_chronos"`, `"chronos_model_id"`, and `"chronos_torch_dtype"`.
 
-## Acceptance Criteria
-- [ ] Embed service inserts a StoredTradeSetup into pgvector or numpy store.
-- [ ] Retrieval service successfully flushes cache of the given symbol.
-- [ ] Serve router exposes `/api/retrieval/setup/add` proxy.
-- [ ] Frontend triggers setup archive when forecast window is completed or reset.
-- [ ] Frontend displays dynamic database archival success alerts.
+## Next Steps
+- Enable `"use_chronos": true` in production config file if combined 896D embeddings are desired.
+- Set `"embedding_dim": 896` in `config.json` if Chronos is enabled.
 
 
 

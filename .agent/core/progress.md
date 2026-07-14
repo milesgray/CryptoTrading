@@ -171,3 +171,13 @@
 - [x] Implement `/setup/add` proxy endpoint in API serve router (`services/serve/routers/retrieval.py`) to process and route setups and trigger cache rebuilds.
 - [x] Implement robust frontend lifecycle auto-archiving (`RetrievalVisualizer.jsx`) supporting full completion saves, interruption saves, and unmount cleanups via refs.
 - [x] Add real-time database sync status badges (`Archiving...`, `Archived ✅`, `Failed ❌`) to the live performance tracking card.
+
+### Phase 25: Chronos Embedding Integration (Completed ✅)
+- [x] Integrate Amazon Chronos (`chronos-t5-base` in `bfloat16`) to the embed service pipeline and server.
+- [x] Fix invalid `ChronosPipeline` constructor call to use `ChronosPipeline.from_pretrained(...)`.
+- [x] Implement a unified `generate_embedding(self, x)` in `TradePipeline` and fallback in `AppState` to support both CNN encoder and optional Chronos embeddings (combined 896D).
+- [x] Add cast to `.float()` before NumPy conversion to support `bfloat16` tensors on CPU and fix copy-construction warning.
+- [x] Replace all direct `state.encoder` embedding calls in endpoints with unified `state.generate_embedding` to ensure correct Chronos integration.
+- [x] Document `"use_chronos"`, `"chronos_model_id"`, and `"chronos_torch_dtype"` configuration parameters and their embedding dimension consequences in `README.md`.
+- [x] Pass all pytest test cases in `tests/test_embed_service.py` and `tests/test_pgvector_store.py`.
+

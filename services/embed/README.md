@@ -194,9 +194,15 @@ Create `config.json` in the api directory:
     "db_port": 5432,
     "db_name": "trade_embeddings",
     "db_user": "postgres",
-    "db_password": "postgres"
+    "db_password": "postgres",
+    "use_chronos": false,
+    "chronos_model_id": "amazon/chronos-t5-base",
+    "chronos_torch_dtype": "bfloat16"
 }
 ```
+
+> [!NOTE]
+> If `"use_chronos": true` is enabled, the 768-dimensional Chronos model embeddings are concatenated with the 128-dimensional CNN encoder embeddings, resulting in an `embedding_dim` of `896`. Ensure `"embedding_dim": 896` is set in the config file in this case.
 
 ## Embedding Details
 

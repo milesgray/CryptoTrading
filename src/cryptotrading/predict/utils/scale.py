@@ -154,3 +154,41 @@ class RangeScaler(object):
         x = x.view(s)
         return x
     
+
+
+def min_max_scale(tensor, min_val, max_val):
+    tensor_min = torch.min(tensor)
+    tensor_max = torch.max(tensor)
+    scaled_tensor = (tensor - tensor_min) / (tensor_max - tensor_min) * (max_val - min_val) + min_val
+    return scaled_tensor
+
+def normalize(tensor, mean, std):
+    return (tensor - mean) / std
+
+def denormalize_predictions(predictions, mean_std_values):
+    denormalized_predictions = []
+    for idx, prediction in enumerate(predictions):
+        mean, std = mean_std_values[idx]
+        prediction = prediction * std + mean
+        prediction = torch.nan_to_num(prediction, nan=0.0)
+        denormalized_predictions.append(prediction.cpu().numpy())
+
+    return denormalized_predictions
+
+def normalize_context(context_tensor_matrix):
+    mean_std_values = []
+    normalized_context = []
+    for idx, context_tensor in enumerate(context_tensor_matrix):
+        context_tensor = torch.tensor(context_tensor, dtype=torch.float32)
+      
+        mask = ~torch.isnan(context_tensor)
+        context_mean = context_tensor[mask].mean()
+        context_std = torch.sqrt(((context_tensor[mask] - context_mean) ** 2).mean()) + 1e-7
+        context_tensor = normalize(context_tensor, context_mean, context_std)    
+        
+        normalized_context.append(context_tensor)
+        mean_std_values.append((context_mean, context_std))
+
+    return normalized_context, mean_std_values
+
+

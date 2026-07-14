@@ -9,7 +9,7 @@ This module orchestrates:
 5. Generating embeddings for all setups
 6. Storing everything in PostgreSQL with pgvector
 """
-
+import torch
 import numpy as np
 from pathlib import Path
 from typing import Optional, List, Tuple    
@@ -17,12 +17,14 @@ import logging
 import json
 
 from cryptotrading.trade.oracle import DPOracle, LeveragedDPOracle
+from cryptotrading.predict.utils.scale import normalize_context
 from models.encoder import (
     PriceWindowEncoder, 
     TradeSetup, 
     extract_trade_setups
 )
 from models.trainer import EncoderTrainer
+from models.chronos import ChronosPipeline
 from database.numpy_store import NumpyVectorStore, StoredTradeSetup
 
 logging.basicConfig(level=logging.INFO)
@@ -41,19 +43,27 @@ class TradePipeline:
         max_leverage: float = 20.0,
         transaction_cost: float = 0.001,
         store_path: str = "vector_store",
-        oracle_type: str = "leveraged"
+        oracle_type: str = "leveraged",
+        device: str = "cpu",
+        chronos_model_id: str = "amazon/chronos-t5-base",
+        chronos_torch_dtype: str = "bfloat16"
     ):
         self.window_size = window_size
         self.embedding_dim = embedding_dim
         self.max_leverage = max_leverage
         self.transaction_cost = transaction_cost
         self.store_path = store_path
+        self.oracle_type = oracle_type
+        self.device = device
+        self.chronos_model_id = chronos_model_id
+        self.chronos_torch_dtype = chronos_torch_dtype
         
         # Components (initialized lazily)
         self.oracle: Optional[DPOracle | LeveragedDPOracle] = None
         self.encoder: Optional[PriceWindowEncoder] = None
         self.trainer: Optional[EncoderTrainer] = None
         self.store: Optional[NumpyVectorStore] = None
+        self.chronos: Optional[ChronosPipeline] = None
         
     def initialize_oracle(self):
         """Initialize the DP oracle"""
@@ -68,21 +78,34 @@ class TradePipeline:
                 transaction_cost=self.transaction_cost
             )
         logger.info("Oracle initialized")
+
+    def initialize_chronos(self):
+        """Initialize Chronos."""
+        import torch
+        # Map torch dtype string to torch object
+        dtype = torch.bfloat16
+        if self.chronos_torch_dtype == "float16":
+            dtype = torch.float16
+        elif self.chronos_torch_dtype == "float32":
+            dtype = torch.float32
+
+        self.chronos = ChronosPipeline.from_pretrained(
+            self.chronos_model_id,
+            torch_dtype=dtype
+        )
+        self.chronos.model.to(self.device)
+        logger.info(f"Chronos model {self.chronos_model_id} initialized on {self.device}")
         
     def initialize_encoder(self, model_path: Optional[Path] = None):
         """Initialize or load the encoder"""
-        import torch
-        
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        
         self.encoder = PriceWindowEncoder(
             window_size=self.window_size - 1,
             embedding_dim=self.embedding_dim
-        ).to(device)
+        ).to(self.device)
         
         if model_path and model_path.exists():
             self.encoder.load_state_dict(
-                torch.load(model_path, map_location=device)
+                torch.load(model_path, map_location=self.device)
             )
             logger.info(f"Encoder loaded from {model_path}")
         else:
@@ -169,32 +192,71 @@ class TradePipeline:
         
         return history
     
+    def generate_embedding(self, x: np.ndarray) -> np.ndarray:
+        """
+        Generate embedding for a normalized price window or a batch of windows.
+        
+        Args:
+            x: 1D array of shape (window_size - 1,) or 2D array of shape (batch, window_size - 1)
+            
+        Returns:
+            np.ndarray: Embedding vector(s)
+        """
+        if self.encoder is None:
+            raise ValueError("Encoder not initialized")
+            
+        self.encoder.eval()
+        device = next(self.encoder.parameters()).device
+        
+        # Determine if input is 1D or 2D
+        is_single = x.ndim == 1
+        if is_single:
+            x_batch = np.expand_dims(x, axis=0)
+        else:
+            x_batch = x
+            
+        with torch.no_grad():
+            x_tensor = torch.from_numpy(x_batch).float().to(device)
+            # 1. Generate CNN encoder embedding
+            emb = self.encoder(x_tensor).cpu().numpy()
+            
+            # 2. Generate Chronos embedding if chronos is enabled
+            if self.chronos is not None:
+                # Prepare context as a list of 1D arrays
+                context = list(x_batch)
+                # Normalize context to remove DC offset / scale
+                context, _ = normalize_context(context)
+                
+                # Get chronos embeddings (returns Tuple[embeddings, tokenizer_state])
+                chronos_tensor, _ = self.chronos.embed(context)
+                
+                # Mean pool along sequence length (dim=1) and cast to float32 (for numpy compatibility)
+                chronos_emb = chronos_tensor.mean(dim=1).float().cpu().numpy()
+                
+                # Concatenate along feature dimension
+                emb = np.concatenate([emb, chronos_emb], axis=1)
+                
+        if is_single:
+            return emb[0]
+        return emb
+
     def generate_embeddings(
         self,
         setups: List[TradeSetup]
     ) -> np.ndarray:
         """Generate embeddings for all setups"""
-        import torch
-        
         if self.encoder is None:
             raise ValueError("Encoder not initialized")
-        
-        self.encoder.eval()
-        device = next(self.encoder.parameters()).device
-        
+            
         embeddings = []
         batch_size = 256
         
         for i in range(0, len(setups), batch_size):
             batch = setups[i:i + batch_size]
             windows = np.stack([s.price_window for s in batch])
-            
-            with torch.no_grad():
-                x = torch.from_numpy(windows).float().to(device)
-                emb = self.encoder(x).cpu().numpy()
-            
+            emb = self.generate_embedding(windows)
             embeddings.append(emb)
-        
+            
         embeddings = np.vstack(embeddings)
         logger.info(f"Generated {len(embeddings)} embeddings")
         

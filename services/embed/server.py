@@ -27,6 +27,7 @@ import torch
 import logging
 
 from models.encoder import PriceWindowEncoder, normalize_price_window, extract_trade_setups
+from pipeline import TradePipeline
 from database.numpy_store import NumpyVectorStore
 from database.pgvector_store import TradeEmbeddingDB, StoredTradeSetup
 from cryptotrading.trade.oracle import LeveragedDPOracle
@@ -107,6 +108,7 @@ class SearchResponse(BaseModel):
 
 class AppState:
     def __init__(self):
+        self.pipeline: Optional[TradePipeline] = None
         self.encoder: Optional[PriceWindowEncoder] = None
         self.store: Optional[NumpyVectorStore] = None
         self.device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -115,6 +117,27 @@ class AppState:
         self.config: Dict[str, Any] = {}
         self.active_connections: List[WebSocket] = []
         self.price_buffers: Dict[str, deque] = {}
+
+    def generate_embedding(self, x: np.ndarray) -> np.ndarray:
+        if self.pipeline is not None:
+            return self.pipeline.generate_embedding(x)
+        
+        if self.encoder is None:
+            raise ValueError("Neither pipeline nor encoder is initialized")
+        
+        is_single = x.ndim == 1
+        if is_single:
+            x_batch = np.expand_dims(x, axis=0)
+        else:
+            x_batch = x
+            
+        with torch.no_grad():
+            x_tensor = torch.from_numpy(x_batch).float().to(self.device)
+            emb = self.encoder(x_tensor).cpu().numpy()
+            
+        if is_single:
+            return emb[0]
+        return emb
 
 
 app = FastAPI(
@@ -330,6 +353,7 @@ async def auto_populate_db():
             # Load trained weights
             state.encoder = trainer.encoder
             state.encoder.eval()
+            state.pipeline.encoder = state.encoder
             logger.info(f"Saved trained encoder weights to {model_path}")
             
         # 3. Generate embeddings and insert into vector store
@@ -345,9 +369,7 @@ async def auto_populate_db():
             for i in range(0, len(setups), batch_size):
                 batch = setups[i:i + batch_size]
                 windows = np.stack([s.price_window for s in batch])
-                with torch.no_grad():
-                    x = torch.from_numpy(windows).float().to(device)
-                    emb = state.encoder(x).cpu().numpy()
+                emb = state.generate_embedding(windows)
                 embeddings.append(emb)
                 
             if embeddings:
@@ -432,37 +454,40 @@ async def startup():
     
     # Load config
     config_path = Path("config.json")
-    if config_path.exists():
-        with open(config_path) as f:
-            state.config = json.load(f)
-    else:
-        state.config = {
-            'model_path': 'models/trained/encoder.pt',
-            'store_path': 'vector_store',
-            'window_size': 100,
-            'embedding_dim': 128
-        }
+    if not config_path.exists():
+        with open(config_path, 'w') as f:
+            json.dump({
+                'model_path': 'models/trained/encoder.pt',
+                'store_path': 'vector_store',
+                'window_size': 100,
+                'embedding_dim': 128
+            }, f)
     
+    with open(config_path) as f:
+        state.config = json.load(f)
+
     state.window_size = state.config.get('window_size', 100)
     state.embedding_dim = state.config.get('embedding_dim', 128)
     
     # Initialize encoder
-    state.encoder = PriceWindowEncoder(
-        window_size=state.window_size - 1,
-        embedding_dim=state.embedding_dim
-    ).to(state.device)
+    state.pipeline = TradePipeline(
+        window_size=state.window_size,
+        embedding_dim=state.embedding_dim,
+        device=state.device,
+        chronos_model_id=state.config.get('chronos_model_id', 'amazon/chronos-t5-base'),
+        chronos_torch_dtype=state.config.get('chronos_torch_dtype', 'bfloat16')
+    )
     
+    # Load encoder weights
     model_path = Path(state.config.get('model_path', 'models/trained/encoder.pt'))
-    if model_path.exists():
-        state.encoder.load_state_dict(
-            torch.load(model_path, map_location=state.device)
-        )
-        logger.info(f"Loaded encoder from {model_path}")
-    else:
-        logger.warning(f"No trained model at {model_path}, using random weights")
+    state.pipeline.initialize_encoder(model_path)
+    state.encoder = state.pipeline.encoder
     
-    state.encoder.eval()
-    
+    # Initialize Chronos if requested in config
+    if state.config.get('use_chronos', False):
+        logger.info("Initializing Chronos model...")
+        state.pipeline.initialize_chronos()
+
     # Initialize vector store
     db_backend = os.getenv("DB_BACKEND", "numpy").lower()
     if db_backend == "postgres":
@@ -524,9 +549,7 @@ async def embed_prices(request: EmbedRequest):
     elif len(normalized) > target_len:
         normalized = normalized[-target_len:]
     
-    with torch.no_grad():
-        x = torch.from_numpy(normalized).float().unsqueeze(0).to(state.device)
-        embedding = state.encoder(x).cpu().numpy()[0]
+    embedding = state.generate_embedding(normalized)
     
     return EmbedResponse(
         embedding=embedding.tolist(),
@@ -565,10 +588,8 @@ async def embed_prices_batch(request: BatchEmbedRequest):
     
     for i in range(0, len(x_batch), batch_size):
         sub_batch = x_batch[i:i + batch_size]
-        with torch.no_grad():
-            x = torch.from_numpy(sub_batch).float().to(device)
-            emb = state.encoder(x).cpu().numpy()
-        embeddings.append(emb)
+        embedding = state.generate_embedding(sub_batch)
+        embeddings.append(embedding)
 
     if embeddings:
         embeddings = np.vstack(embeddings)
@@ -597,9 +618,7 @@ async def add_setup(request: AddSetupRequest):
     elif len(normalized) > target_len:
         normalized = normalized[-target_len:]
         
-    with torch.no_grad():
-        x = torch.from_numpy(normalized).float().unsqueeze(0).to(state.device)
-        embedding = state.encoder(x).cpu().numpy()[0]
+    embedding = state.generate_embedding(normalized)
         
     # 2. Re-pad/crop original prices to window_size for storage
     raw_prices = prices
@@ -669,9 +688,7 @@ async def search_similar(request: SearchRequest):
     elif len(normalized) > target_len:
         normalized = normalized[-target_len:]
     
-    with torch.no_grad():
-        x = torch.from_numpy(normalized).float().unsqueeze(0).to(state.device)
-        query_embedding = state.encoder(x).cpu().numpy()[0]
+    query_embedding = state.generate_embedding(normalized)
     
     if isinstance(state.store, TradeEmbeddingDB):
         results = await state.store.search_similar(
@@ -845,9 +862,7 @@ async def websocket_live(websocket: WebSocket, symbol: str):
                     prices = np.array([p[0] for p in buffer])
                     normalized = normalize_price_window(prices)
                     
-                    with torch.no_grad():
-                        x = torch.from_numpy(normalized).float().unsqueeze(0).to(state.device)
-                        query_embedding = state.encoder(x).cpu().numpy()[0]
+                    query_embedding = state.generate_embedding(normalized)
                     
                     if state.store:
                         if isinstance(state.store, TradeEmbeddingDB):
