@@ -1,8 +1,8 @@
 import torch
 from torch import nn
-from layers.Transformer_EncDec import Encoder, EncoderLayer
-from layers.SelfAttention_Family import FullAttention, AttentionLayer
-from layers.Embed import PatchEmbedding
+from cryptotrading.predict.layers.Transformer_EncDec import Encoder, EncoderLayer
+from cryptotrading.predict.layers.SelfAttention_Family import FullAttention, AttentionLayer
+from cryptotrading.predict.layers.Embed import PatchEmbedding
 from chronos import BaseChronosPipeline
 
 
