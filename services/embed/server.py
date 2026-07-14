@@ -488,19 +488,23 @@ async def startup():
     # Initialize Chronos if requested in config
     if state.config.get('use_chronos', False):
         logger.info("Initializing Chronos model...")
-        state.pipeline.initialize_chronos()
-        
-        # Resolve Chronos dimension dynamically
-        chronos_model = state.pipeline.chronos.model.model
-        if hasattr(chronos_model.config, "d_model"):
-            chronos_dim = chronos_model.config.d_model
-        elif hasattr(chronos_model.config, "hidden_size"):
-            chronos_dim = chronos_model.config.hidden_size
-        else:
-            chronos_dim = 768
+        try:
+            state.pipeline.initialize_chronos()
             
-        state.embedding_dim = cnn_dim + chronos_dim
-        logger.info(f"Chronos enabled. Adjusted embedding dimension: {state.embedding_dim} ({cnn_dim} CNN + {chronos_dim} Chronos)")
+            # Resolve Chronos dimension dynamically
+            chronos_model = state.pipeline.chronos.model.model
+            if hasattr(chronos_model.config, "d_model"):
+                chronos_dim = chronos_model.config.d_model
+            elif hasattr(chronos_model.config, "hidden_size"):
+                chronos_dim = chronos_model.config.hidden_size
+            else:
+                chronos_dim = 768
+                
+            state.embedding_dim = cnn_dim + chronos_dim
+            logger.info(f"Chronos enabled. Adjusted embedding dimension: {state.embedding_dim} ({cnn_dim} CNN + {chronos_dim} Chronos)")
+        except Exception as e:
+            logger.error(f"Failed to initialize Chronos model: {e}. Continuing with CNN-only embeddings (dim={cnn_dim}).")
+            state.pipeline.chronos = None
 
     # Initialize vector store
     db_backend = os.getenv("DB_BACKEND", "numpy").lower()
