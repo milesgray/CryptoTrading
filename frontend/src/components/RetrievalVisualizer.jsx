@@ -243,15 +243,16 @@ const RetrievalVisualizer = ({ token }) => {
     const activeSegments = retrievedData.filter(seg => activeToggles[seg.id || seg.index]);
     const forecastLength = activeSegments.length > 0
       ? Math.min(...activeSegments.map(s => (s.prices || []).length))
-      : segmentLength; // fallback
+      : queryCandles.length; // fallback
 
     const stepUnit = frequency.endsWith('m') ? 'm' : 'h';
     const stepMultiplier = parseInt(frequency) || 1;
 
-    // X-axis: segmentLength historical steps + forecastLength forecasted steps
+    // X-axis: histLength historical steps + forecastLength forecasted steps
     const xAxisData = [];
-    for (let i = 0; i < segmentLength; i++) {
-      xAxisData.push(`-${(segmentLength - i) * stepMultiplier}${stepUnit}`);
+    const histLength = queryCandles.length;
+    for (let i = 0; i < histLength; i++) {
+      xAxisData.push(`-${(histLength - i) * stepMultiplier}${stepUnit}`);
     }
     for (let i = 1; i <= forecastLength; i++) {
       xAxisData.push(`+${i * stepMultiplier}${stepUnit}`);
@@ -317,7 +318,7 @@ const RetrievalVisualizer = ({ token }) => {
     const scaleMultiplier = getScaleMultiplier(queryPrices, lastQueryPrice);
 
     // Build the Actual Price series line from live price stream
-    const actualLineData = Array(segmentLength - 1).fill('-');
+    const actualLineData = Array(histLength - 1).fill('-');
     actualLineData.push(lastQueryPrice);
 
     let lastValidIdx = -1;
@@ -388,7 +389,7 @@ const RetrievalVisualizer = ({ token }) => {
       });
 
       // Construct forecasted line continuing from history's last close
-      const retrievedLineData = Array(segmentLength - 1).fill('-');
+      const retrievedLineData = Array(histLength - 1).fill('-');
       retrievedLineData.push(lastQueryPrice);
       for (let t = 0; t < forecastLength; t++) {
         retrievedLineData.push(alignedForecast[t]);
@@ -434,7 +435,7 @@ const RetrievalVisualizer = ({ token }) => {
           consensusPrices.push(sum / activeSegments.length);
         }
 
-        const consensusCandles = Array(segmentLength).fill('-');
+        const consensusCandles = Array(histLength).fill('-');
         let consensusPrevClose = lastQueryPrice;
         for (let t = 0; t < forecastLength; t++) {
           const currentClose = consensusPrices[t];

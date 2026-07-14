@@ -198,8 +198,24 @@ async def build_index_for_combination(token: str, granularity_sec: int, window_s
     frame_size = max(4, frame_size)
     hop_size = max(1, frame_size // 4)
     
-    logger.info(f"Initializing encoder with window_size={window_size}, n_fft={n_fft}, frame_size={frame_size}, hop_size={hop_size}, horizon={horizon}")
-    encoder = RetrievalServiceEncoder(window_size=window_size, n_fft=n_fft, dim=184)
+    # Determine local dimension: n_fft + (n_fft // 2 + 1) + 3 (orderbook) + 4 (timeseries)
+    local_dim = n_fft + (n_fft // 2 + 1) + 3 + 4
+    
+    # Try to query embed service dimension dynamically, fall back to 128
+    embed_dim = 128
+    import os
+    import httpx
+    embed_url = os.getenv("EMBED_SERVICE_URL", "http://embed:8301")
+    try:
+        resp = httpx.get(f"{embed_url}/health", timeout=2.0)
+        if resp.status_code == 200:
+            embed_dim = resp.json().get("embedding_dim", 128)
+    except Exception as e:
+        logger.warning(f"Could not fetch health from embed service at {embed_url}: {e}. Defaulting to 128.")
+        
+    combined_dim = embed_dim + local_dim
+    logger.info(f"Initializing encoder with window_size={window_size}, n_fft={n_fft}, frame_size={frame_size}, hop_size={hop_size}, horizon={horizon}, combined_dim={combined_dim} ({embed_dim} embed + {local_dim} local)")
+    encoder = RetrievalServiceEncoder(window_size=window_size, n_fft=n_fft, dim=combined_dim, embed_service_url=embed_url)
     
     # Build sliding window segments in batch
     prices_list = []

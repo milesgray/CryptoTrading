@@ -24,7 +24,10 @@ const CandlestickChart = ({ token }) => {
   const [error, setError] = useState(null);
   const [startDate, setStartDate] = useState(subDays(new Date(), 7)); // Default: 7 days ago
   const [endDate, setEndDate] = useState(new Date());
-  const [granularity, setGranularity] = useState(3600); // Default: 1 hour
+  const [granularity, setGranularity] = useState(300); // Default: 5 minutes (300 seconds)
+  const isCustomRangeRef = useRef(false);
+  const loadedStartRef = useRef(null);
+  const isFetchingHistoryRef = useRef(false);
   const [isLiveUpdating, setIsLiveUpdating] = useState(false); // Start with live updates disabled
   const [latestPrice, setLatestPrice] = useState(null);
   const [latestTimestamp, setLatestTimestamp] = useState(null);
@@ -244,9 +247,13 @@ const CandlestickChart = ({ token }) => {
     setLoading(true);
     setError(null);
 
+    const isCustom = isCustomRangeRef.current;
+    const queryEnd = isCustom ? endDate : new Date();
+    const queryStart = isCustom ? startDate : new Date(queryEnd.getTime() - 400 * granularity * 1000);
+
     try {
-      console.log('Fetching candlestick data...', { token, startDate, endDate, granularity });
-      const data = await getCandlestickData(token, startDate, endDate, granularity);
+      console.log('Fetching candlestick data...', { token, start: queryStart, end: queryEnd, granularity });
+      const data = await getCandlestickData(token, queryStart, queryEnd, granularity);
       console.log('Received data from API:', data ? `Array(${data.length})` : 'null');
 
       if (!data || !Array.isArray(data) || data.length === 0) {
@@ -274,6 +281,13 @@ const CandlestickChart = ({ token }) => {
       // Store the data for later use
       chartData.current = mappedData;
 
+      // Set the loadedStartRef.current
+      if (mappedData.length > 0) {
+        loadedStartRef.current = mappedData[0].x;
+      } else {
+        loadedStartRef.current = queryStart.getTime();
+      }
+
       // Mark historical data as loaded and enable live updates
       setHistoricalDataLoaded(true);
       setIsLiveUpdating(true);
@@ -288,6 +302,74 @@ const CandlestickChart = ({ token }) => {
       setLoading(false);
     }
   }, [token, startDate, endDate, granularity]);
+
+  const fetchMoreHistory = useCallback(async (minVisibleTime) => {
+    if (isFetchingHistoryRef.current || !loadedStartRef.current || !token || isCustomRangeRef.current) return;
+    
+    // Check if the user is close to the start of loaded data (within 50 candles)
+    const thresholdMs = 50 * granularity * 1000;
+    if (minVisibleTime > loadedStartRef.current + thresholdMs) {
+      return; // Not close enough yet
+    }
+
+    isFetchingHistoryRef.current = true;
+    console.log('[CandlestickChart] User is panning close to loaded history limit. Fetching more history...');
+    
+    // Fetch next previous chunk: 400 candles before loadedStartRef.current
+    const end = new Date(loadedStartRef.current);
+    const start = new Date(end.getTime() - 400 * granularity * 1000);
+    
+    try {
+      const data = await getCandlestickData(token, start, end, granularity);
+      if (data && data.length > 0) {
+        console.log(`[CandlestickChart] Fetched ${data.length} historical candles.`);
+        
+        // Format data
+        const mappedData = data.map(item => ({
+          x: new Date(item.timestamp).getTime(),
+          open: parseFloat(item.open),
+          high: parseFloat(item.high),
+          low: parseFloat(item.low),
+          close: parseFloat(item.close),
+          volume: parseFloat(item.volume) || 0
+        }));
+
+        // Merge with existing chart data
+        // Filter out any duplicates
+        const existingMap = new Map(chartData.current.map(item => [item.x, item]));
+        mappedData.forEach(item => {
+          existingMap.set(item.x, item);
+        });
+        const mergedData = Array.from(existingMap.values()).sort((a, b) => a.x - b.x);
+        chartData.current = mergedData;
+
+        // Update AnyChart data table
+        if (dataTable.current?.table) {
+          dataTable.current.table.addData(mappedData);
+        }
+
+        // Update the loadedStartRef.current to the oldest candle in the merged set
+        if (mergedData.length > 0) {
+          loadedStartRef.current = mergedData[0].x;
+        } else {
+          loadedStartRef.current = start.getTime();
+        }
+      } else {
+        // No more history available, move the start reference back so we don't keep polling
+        console.log('[CandlestickChart] No more historical data returned from API.');
+        loadedStartRef.current = loadedStartRef.current - 1000 * thresholdMs;
+      }
+    } catch (err) {
+      console.error('[CandlestickChart] Error fetching historical chunk:', err);
+    } finally {
+      isFetchingHistoryRef.current = false;
+    }
+  }, [token, granularity]);
+
+  const fetchMoreHistoryRef = useRef(fetchMoreHistory);
+  useEffect(() => {
+    fetchMoreHistoryRef.current = fetchMoreHistory;
+  }, [fetchMoreHistory]);
 
 
 
@@ -418,6 +500,24 @@ const CandlestickChart = ({ token }) => {
         stockChart.container(chartContainer.current);
         stockChart.draw();
 
+        // Select the visible range (last 200 candles) by default
+        if (!isCustomRangeRef.current && formattedData.length > 200) {
+          const visibleStart = formattedData[formattedData.length - 200].x;
+          const visibleEnd = formattedData[formattedData.length - 1].x;
+          stockChart.selectRange(visibleStart, visibleEnd);
+        }
+
+        // Attach propertyChange listener to xScale to track zooming and panning
+        const xScale = stockChart.xScale();
+        xScale.listen('propertyChange', (e) => {
+          if (e.propertyName === 'minimum') {
+            const min = xScale.getMinimum();
+            if (fetchMoreHistoryRef.current) {
+              fetchMoreHistoryRef.current(min);
+            }
+          }
+        });
+
         // Save chart reference for cleanup
         chart.current = stockChart;
         console.log('Chart rendered successfully');
@@ -490,14 +590,17 @@ const CandlestickChart = ({ token }) => {
   }, [isLiveUpdating, token, initializeChart]);
 
   const handleStartDateChange = (event) => {
+    isCustomRangeRef.current = true;
     setStartDate(new Date(event.target.value));
   };
 
   const handleEndDateChange = (event) => {
+    isCustomRangeRef.current = true;
     setEndDate(new Date(event.target.value));
   };
 
   const handleGranularityChange = (event) => {
+    isCustomRangeRef.current = false;
     setGranularity(parseInt(event.target.value, 10));
   };
 
@@ -539,7 +642,7 @@ const CandlestickChart = ({ token }) => {
             <input
               type="date"
               id="start-date"
-              value={format(startDate, 'yyyy-MM-dd')}
+              value={format(isCustomRangeRef.current ? startDate : (loadedStartRef.current ? new Date(loadedStartRef.current) : startDate), 'yyyy-MM-dd')}
               onChange={handleStartDateChange}
               className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-slate-700 font-mono"
             />
@@ -549,7 +652,7 @@ const CandlestickChart = ({ token }) => {
             <input
               type="date"
               id="end-date"
-              value={format(endDate, 'yyyy-MM-dd')}
+              value={format(isCustomRangeRef.current ? endDate : (chartData.current.length > 0 ? new Date(chartData.current[chartData.current.length - 1].x) : endDate), 'yyyy-MM-dd')}
               onChange={handleEndDateChange}
               className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-slate-700 font-mono"
             />

@@ -33,7 +33,7 @@ class RetrievalServiceEncoder:
         Args:
             window_size (int): Size of the rolling price window. Defaults to 60.
             n_fft (int): Number of FFT bins for the handcrafted encoder. Defaults to 32.
-            dim (int): Vector dimension of the index. Defaults to 184 (128 from embed + 56 local).
+            dim (int): Vector dimension of the index. Defaults to 184.
             embed_service_url (str, optional): Target URL for the embed service.
                 If not specified, reads from the EMBED_SERVICE_URL environment variable,
                 defaulting to 'http://localhost:8301'.
@@ -43,16 +43,26 @@ class RetrievalServiceEncoder:
         self.dim = dim
         self.is_built = False
         self.embed_service_url = embed_service_url or os.getenv("EMBED_SERVICE_URL", "http://localhost:8301")
+        
+        # Determine deep learning embedding dimension dynamically
+        self.embed_dim = 128
+        try:
+            response = httpx.get(f"{self.embed_service_url}/health", timeout=2.0)
+            if response.status_code == 200:
+                self.embed_dim = response.json().get("embedding_dim", 128)
+                logger.info(f"Dynamically determined embed service embedding dimension: {self.embed_dim}")
+        except Exception as e:
+            logger.warning(f"Could not connect to embed service to determine dimension: {e}. Defaulting to 128.")
 
     def encode_segment(self, prices: np.ndarray, order_book: Dict[str, Any]) -> np.ndarray:
         """
         Encode a price segment and order book structure into a combined representation vector.
 
-        This method generates a combined vector by concatenating the 128D deep learning
-        representation from the Embed Service (retrieved over HTTP) with the 56D local
-        handcrafted spectral and order book imbalance features, resulting in a 184D vector.
+        This method generates a combined vector by concatenating the self.embed_dim deep learning
+        representation from the Embed Service (retrieved over HTTP) with the local
+        handcrafted spectral and order book imbalance features, resulting in a combined vector.
 
-        If the requested index dimension is not 184, or if the HTTP call to the embed service
+        If the requested index dimension is not expected, or if the HTTP call to the embed service
         fails, the method falls back to using the local handcrafted encoder output (padded
         or truncated to the target dimension).
 
@@ -63,12 +73,14 @@ class RetrievalServiceEncoder:
         Returns:
             np.ndarray: A 1D float32 array representing the segment embedding.
         """
-        # Calculate local handcrafted representation (dimension 56)
+        # Calculate local handcrafted representation
         local_emb = self.encoder.encode(prices, order_book)
+        local_dim = len(local_emb)
+        expected_combined_dim = self.embed_dim + local_dim
         
-        # If the requested dimension is NOT the combined dimension of 184,
+        # If the requested dimension is NOT the combined dimension,
         # fall back to local handcrafted representation (padded or truncated to target dim)
-        if self.dim != 184:
+        if self.dim != expected_combined_dim:
             if len(local_emb) < self.dim:
                 return np.pad(local_emb, (0, self.dim - len(local_emb)), 'constant')
             elif len(local_emb) > self.dim:
@@ -81,17 +93,15 @@ class RetrievalServiceEncoder:
             if response.status_code == 200:
                 data = response.json()
                 embed_emb = np.array(data["embedding"], dtype=np.float32)
-                # Concatenate 128D embed representation + 56D local representation
+                # Concatenate embed representation + local representation
                 return np.concatenate([embed_emb, local_emb])
             else:
                 logger.warning(f"Embed service returned {response.status_code}, falling back to padded local representation.")
-        except (httpx.ConnectError, httpx.ConnectTimeout) as ce:
-            logger.warning(f"Embed service connection failed: {ce}. Falling back to padded local representation.")
         except Exception as e:
             logger.error(f"Error encoding segment via embed service: {e}. Falling back to padded local representation.")
             
-        # Padded local fallback to fit dim 184
-        return np.pad(local_emb, (0, 184 - len(local_emb)), 'constant')
+        # Padded local fallback to fit self.dim
+        return np.pad(local_emb, (0, self.dim - len(local_emb)), 'constant')
 
     def encode_segments_batch(self, prices_list: List[np.ndarray], order_books: List[Dict[str, Any]]) -> List[np.ndarray]:
         """
@@ -110,8 +120,10 @@ class RetrievalServiceEncoder:
 
         # Calculate local handcrafted representations
         local_embs = [self.encoder.encode(prices_list[i], order_books[i]) for i in range(n)]
+        local_dim = len(local_embs[0]) if n > 0 else 0
+        expected_combined_dim = self.embed_dim + local_dim
 
-        if self.dim != 184:
+        if self.dim != expected_combined_dim:
             res = []
             for local_emb in local_embs:
                 if len(local_emb) < self.dim:
@@ -123,7 +135,7 @@ class RetrievalServiceEncoder:
             return res
 
         # Call the batch embed endpoint
-        embeddings_128 = []
+        embeddings_embed = []
         batch_size = 500  # Batch size for HTTP requests
 
         try:
@@ -136,24 +148,24 @@ class RetrievalServiceEncoder:
                     embs = data.get("embeddings", [])
                     if len(embs) == len(sub_prices):
                         for emb in embs:
-                            embeddings_128.append(np.array(emb, dtype=np.float32))
+                            embeddings_embed.append(np.array(emb, dtype=np.float32))
                     else:
                         logger.warning(f"Embed service returned {len(embs)} embeddings for {len(sub_prices)} requests. Using fallback.")
                         for _ in range(len(sub_prices)):
-                            embeddings_128.append(np.zeros(128, dtype=np.float32))
+                            embeddings_embed.append(np.zeros(self.embed_dim, dtype=np.float32))
                 else:
                     logger.warning(f"Embed service batch returned {response.status_code}, falling back to padded local representation for this batch.")
                     for _ in range(i, min(i + batch_size, n)):
-                        embeddings_128.append(np.zeros(128, dtype=np.float32))
+                        embeddings_embed.append(np.zeros(self.embed_dim, dtype=np.float32))
         except Exception as e:
             logger.error(f"Error encoding segments batch via embed service: {e}. Falling back to padded local representation.")
-            while len(embeddings_128) < n:
-                embeddings_128.append(np.zeros(128, dtype=np.float32))
+            while len(embeddings_embed) < n:
+                embeddings_embed.append(np.zeros(self.embed_dim, dtype=np.float32))
 
-        # Concatenate 128D embed representation + 56D local representation
+        # Concatenate embed representation + local representation
         combined_embs = []
         for i in range(n):
-            combined_embs.append(np.concatenate([embeddings_128[i], local_embs[i]]))
+            combined_embs.append(np.concatenate([embeddings_embed[i], local_embs[i]]))
 
         return combined_embs
 

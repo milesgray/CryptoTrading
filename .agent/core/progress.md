@@ -181,3 +181,11 @@
 - [x] Document `"use_chronos"`, `"chronos_model_id"`, and `"chronos_torch_dtype"` configuration parameters and their embedding dimension consequences in `README.md`.
 - [x] Pass all pytest test cases in `tests/test_embed_service.py` and `tests/test_pgvector_store.py`.
 
+### Phase 26: Lazy Candlestick Loading & Overlay Alignment Fix (Completed ✅)
+- [x] Make the main candlestick chart default to 5-minute granularity.
+- [x] Load 400 candles initially but default zoom to the last 200 candles.
+- [x] Implement lazy background fetching of historical candlestick chunks when panning near the loaded boundary.
+- [x] Fix the transition misalignment/overlapping bug in the retrieval forecast chart.
+- [x] Fix the "Embedding dimension != index dimension" ValueError by dynamically calculating dimensions based on n_fft and embed service configuration.
+
+

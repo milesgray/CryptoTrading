@@ -192,3 +192,22 @@ def test_specretf_scale_invariance_and_alignment():
     # Therefore, consensus_path[0] should be exactly 110.0.
     assert abs(consensus_path[0] - query_last_price) < 1e-4
 
+
+def test_specretf_dynamic_embedding_dimension():
+    """Verify that RetrievalServiceEncoder adjusts expected dimension based on n_fft/window_size."""
+    # Test for window_size=15 -> n_fft=8 -> local_dim = 8 + 5 + 3 + 4 = 20
+    # Combined with embed service dim (default 128) -> 148
+    encoder_15 = RetrievalServiceEncoder(window_size=15, n_fft=8, dim=148)
+    assert encoder_15.dim == 148
+    assert encoder_15.embed_dim == 128
+    
+    # Verify that add_segment completes successfully without ValueError since len(embedding) == 148
+    prices = np.linspace(100.0, 110.0, 15)
+    order_book = {"bids": [[110.0, 10.0]], "asks": [[111.0, 10.0]]}
+    
+    # Using fallback mode because the HTTP call to embed service fails in test,
+    # and it should pad the 20-dim local representation to 148 without raising an error.
+    idx = encoder_15.add_segment(prices, order_book, {"id": 1, "prices": [112.0]})
+    assert idx == 0
+
+

@@ -460,7 +460,8 @@ async def startup():
                 'model_path': 'models/trained/encoder.pt',
                 'store_path': 'vector_store',
                 'window_size': 100,
-                'embedding_dim': 128
+                'embedding_dim': 128,
+                'use_chronos': True,
             }, f)
     
     with open(config_path) as f:

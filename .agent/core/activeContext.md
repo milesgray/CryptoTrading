@@ -1,22 +1,35 @@
-# Active Context: Chronos Embedding Integration
+# Active Context: Lazy Candlestick Loading & Overlay Alignment Fix
 
 ## Quick Reference
-- **Feature**: Chronos Embedding Integration
-- **Branch**: `feature/chronos-embedding-fix`
-- **Plan File**: `.agent/plans/chronos-embedding-plan.md`
+- **Feature**: Lazy Candlestick Loading & Overlay Alignment Fix
+- **Branch**: `feature/lazy-candlestick-loading`
+- **Plan File**: `.agent/plans/lazy-candlestick-loading-plan.md`
 - **Status**: Completed ✅
 
 ## Executive Summary
-Integrated Amazon Chronos (`chronos-t5-base`) into the Trade Setup Embedding service. Resolved critical model initialization, tensor type-casting (bfloat16 to float32 on CPU), and API-to-model dimension mismatch errors. Replaced direct encoder calls with a unified `generate_embedding` method on AppState and TradePipeline, ensuring full backward compatibility for both production and unit tests.
+Optimizing the main candlestick chart to load the last 200 visible candles (plus 200 preemptively) at a default of 5-minute granularity on startup. Dynamic background history fetching is triggered when the user pans near the loaded historical limit using AnyChart's xScale listener. We also resolve the overlapping/misaligned series bug in the Retrieval Forecast visualizer by using the actual query dataset length instead of transient setting state. Finally, we resolved an "Embedding dimension != index dimension" ValueError in the retrieval service by dynamically querying the active embedding dimension from the embed service health endpoint and calculating local handcrafted dimensions dynamically based on window_size.
 
-## Key Files Modified
-- [services/embed/pipeline.py](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/pipeline.py): Fixed model initialization and created `generate_embedding`.
-- [services/embed/server.py](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/server.py): Fixed startup instantiations and routed endpoints through AppState `generate_embedding`.
-- [services/embed/README.md](file:///home/miles/Development/notebooks/CryptoTrading/services/embed/README.md): Documented use of `"use_chronos"`, `"chronos_model_id"`, and `"chronos_torch_dtype"`.
+## Tech Stack for This Feature
+- **React**: Component UI state, effect synchronization, and event binding.
+- **AnyChart (Stock)**: Main price charting, dynamic data tables, and scale property change listeners.
+- **ECharts**: Forecast matching overlay rendering.
+- **Python / FastAPI**: Core embedding and pattern matching backend.
 
-## Next Steps
-- Enable `"use_chronos": true` in production config file if combined 896D embeddings are desired.
-- Set `"embedding_dim": 896` in `config.json` if Chronos is enabled.
+## Key Files to Create/Modify
+- [frontend/src/components/CandlestickChart.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/CandlestickChart.jsx): Change default granularity, initial range calculation, call selectRange to focus the view, and listen to xScale change events to trigger background fetches.
+- [frontend/src/components/RetrievalVisualizer.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/RetrievalVisualizer.jsx): Use `queryCandles.length` instead of state-based `segmentLength` in series rendering arrays to align series correctly and eliminate overlaps.
+- [services/retrieval/encoder.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/encoder.py): Determine the embed service dimension dynamically from `/health` and calculate combined dimension sizes based on active parameters.
+- [services/retrieval/main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/main.py): Dynamically calculate and pass combined dimensions when initializing vector indexes.
 
+## Critical Implementation Details
+1. **Background Pagination**: Use xScale `propertyChange` checking `minimum` to dynamically trigger fetches without resetting full-screen loader states.
+2. **Data Deduplication**: Keep loaded data elements unique by indexing with millisecond timestamps and sorting chronologically before updating the AnyChart data table.
+3. **Decoupled Render Scales**: Align series shapes on the forecast chart to the actual baseline length in the local scope rather than the global configuration state.
+4. **Dynamic Dimension Matching**: Concatenating neural embeddings with handcrafted local features requires dynamically computing local spectral/orderbook feature shapes using `n_fft` parameters to set the correct Annoy index dimensions.
 
-
+## Acceptance Criteria
+- [x] Main candlestick chart defaults to 5-min granularity.
+- [x] Loads 400 candles on startup but zooms to the last 200 candles.
+- [x] Panning left loads previous chunks silently in the background.
+- [x] Retrieval forecast chart has zero overlap between historical series and projections.
+- [x] Retrieval service dynamically computes index dimensions to prevent ValueError crashes on window size changes.
