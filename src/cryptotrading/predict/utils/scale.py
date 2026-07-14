@@ -179,7 +179,7 @@ def normalize_context(context_tensor_matrix):
     mean_std_values = []
     normalized_context = []
     for idx, context_tensor in enumerate(context_tensor_matrix):
-        context_tensor = torch.tensor(context_tensor, dtype=torch.float32)
+        context_tensor = torch.as_tensor(context_tensor, dtype=torch.float32)
       
         mask = ~torch.isnan(context_tensor)
         context_mean = context_tensor[mask].mean()
