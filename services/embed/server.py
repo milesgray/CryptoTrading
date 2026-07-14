@@ -467,12 +467,13 @@ async def startup():
         state.config = json.load(f)
 
     state.window_size = state.config.get('window_size', 100)
-    state.embedding_dim = state.config.get('embedding_dim', 128)
+    cnn_dim = state.config.get('embedding_dim', 128)
+    state.embedding_dim = cnn_dim
     
     # Initialize encoder
     state.pipeline = TradePipeline(
         window_size=state.window_size,
-        embedding_dim=state.embedding_dim,
+        embedding_dim=cnn_dim,
         device=state.device,
         chronos_model_id=state.config.get('chronos_model_id', 'amazon/chronos-t5-base'),
         chronos_torch_dtype=state.config.get('chronos_torch_dtype', 'bfloat16')
@@ -487,6 +488,18 @@ async def startup():
     if state.config.get('use_chronos', False):
         logger.info("Initializing Chronos model...")
         state.pipeline.initialize_chronos()
+        
+        # Resolve Chronos dimension dynamically
+        chronos_model = state.pipeline.chronos.model.model
+        if hasattr(chronos_model.config, "d_model"):
+            chronos_dim = chronos_model.config.d_model
+        elif hasattr(chronos_model.config, "hidden_size"):
+            chronos_dim = chronos_model.config.hidden_size
+        else:
+            chronos_dim = 768
+            
+        state.embedding_dim = cnn_dim + chronos_dim
+        logger.info(f"Chronos enabled. Adjusted embedding dimension: {state.embedding_dim} ({cnn_dim} CNN + {chronos_dim} Chronos)")
 
     # Initialize vector store
     db_backend = os.getenv("DB_BACKEND", "numpy").lower()
