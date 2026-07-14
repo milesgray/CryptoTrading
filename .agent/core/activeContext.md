@@ -33,3 +33,9 @@ Optimizing the main candlestick chart to load the last 200 visible candles (plus
 - [x] Panning left loads previous chunks silently in the background.
 - [x] Retrieval forecast chart has zero overlap between historical series and projections.
 - [x] Retrieval service dynamically computes index dimensions to prevent ValueError crashes on window size changes.
+- [x] Fix synchronous blocking calls in FastAPI services (main.py and encoder.py).
+- [x] Fix frontend request flood by implementing a 10s cooldown upon candlestick data fetch failures.
+
+## Next Steps
+- Verify the fixes in a live development setup.
+- Merge the Pull Request `#69` into main.
