@@ -7,3 +7,15 @@ mse:0.13536088168621063, mae:0.2875780165195465
 test_raft_eval_run  
 mse:0.0538807287812233, mae:0.18606926500797272
 
+short_term_forecast_test_http_linear_Linear_custom_ftS_sl24_ll12_pl12_dm16_nh8_el2_dl1_df2048_expand2_dc4_fc1_ebtimeF_dtTrue_test_0  
+mse:0.640235424041748, mae:0.6637154817581177
+
+test_raft_eval_run  
+mse:0.07053028047084808, mae:0.20496921241283417
+
+short_term_forecast_test_http_linear_Linear_custom_ftS_sl24_ll12_pl12_dm16_nh8_el2_dl1_df2048_expand2_dc4_fc1_ebtimeF_dtTrue_test_0  
+mse:0.6773214936256409, mae:0.7186217904090881
+
+test_raft_eval_run  
+mse:0.09839103370904922, mae:0.25183379650115967
+

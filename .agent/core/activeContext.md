@@ -15,13 +15,15 @@ Implementing the paper's Retrieval Augmented Forecasting (RAF) framework in the 
 
 ## Key Files Created/Modified
 - [services/retrieval/forecaster.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/forecaster.py): Implemented the `ChronosRAFForecaster` class.
-- [services/retrieval/main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/main.py): Loaded the pre-trained `ChronosPipeline` on startup, cached forecasters dynamically by symbol, and updated `/forecast` to support `method="raf"`.
+- [services/retrieval/main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/main.py): Loaded the pre-trained `ChronosPipeline` on startup, cached forecasters dynamically by symbol, updated `/forecast` to support `method="raf"`, and optimized the historical bootstrap to run chunked `executemany` bulk inserts.
 - [tests/test_raf_forecaster.py](file:///home/miles/Development/notebooks/CryptoTrading/tests/test_raf_forecaster.py): Wrote unit tests confirming offset alignment, normalization, and predictions.
 
 ## Critical Implementation Details
 1. **Separate Normalization**: Query context and retrieved segments are normalized separately to mitigate distribution shifts.
 2. **Boundary Continuity**: Additive offset is computed as `z_orig[0] - z_ret[-1]` to shift the retrieved sequence and eliminate visual/mathematical jumps at the boundary.
 3. **輕量級 Chronos**: Defaults to `amazon/chronos-t5-mini` which has a ~35MB footprint and fast CPU generation times, perfect for robust zero-shot forecasting.
+4. **Optimized Bootstrap Inserts**: Replaced single-row startup inserts under a transaction with a chunked bulk insert (`executemany` in batches of 1,000) to avoid database lock contention.
 
 ## Next Steps
+- Deploy and verify the database timeout fix on the server.
 - Verify the new RAF predictions render in the live frontend candlestick consensus chart series.

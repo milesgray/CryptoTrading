@@ -133,28 +133,35 @@ async def bootstrap_historical_data(price_adapter, symbol: str, days: int = 7):
     logger.info(f"Fetched {len(all_candles)} candles from CCXT. Inserting into Postgres...")
 
     inserted_count = 0
-    async with get_connection() as conn:
-        async with conn.transaction():
-            for candle in all_candles:
-                ts_ms, open_p, high_p, low_p, close_p, volume = candle
-                dt_val = datetime.datetime.fromtimestamp(ts_ms / 1000, tz=datetime.timezone.utc)
-                token = symbol.split("/")[0] if "/" in symbol else symbol
-                
-                metadata = {
-                    "token": token,
-                    "symbol": symbol,
-                    "type": "index_price",
-                    "price": close_p,
-                    "exchanges_count": 1,
-                    "bootstrapped": True
-                }
+    batch_size = 1000
+    
+    # Prepare all the records
+    records = []
+    for candle in all_candles:
+        ts_ms, open_p, high_p, low_p, close_p, volume = candle
+        dt_val = datetime.datetime.fromtimestamp(ts_ms / 1000, tz=datetime.timezone.utc)
+        token = symbol.split("/")[0] if "/" in symbol else symbol
+        
+        metadata = {
+            "token": token,
+            "symbol": symbol,
+            "type": "index_price",
+            "price": close_p,
+            "exchanges_count": 1,
+            "bootstrapped": True
+        }
+        records.append((dt_val, symbol, 'index', open_p, high_p, low_p, close_p, volume, metadata))
 
-                await conn.execute('''
-                    INSERT INTO price_data (time, symbol, exchange, open, high, low, close, volume, metadata)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    ON CONFLICT (time, symbol, exchange) DO NOTHING;
-                ''', dt_val, symbol, 'index', open_p, high_p, low_p, close_p, volume, metadata)
-                inserted_count += 1
+    async with get_connection() as conn:
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            await conn.executemany('''
+                INSERT INTO price_data (time, symbol, exchange, open, high, low, close, volume, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ON CONFLICT (time, symbol, exchange) DO NOTHING;
+            ''', batch)
+            inserted_count += len(batch)
+            logger.info(f"Inserted batch of {len(batch)} candles ({inserted_count}/{len(records)})")
 
     logger.info(f"Successfully processed {inserted_count} candles for {symbol} (with ON CONFLICT DO NOTHING).")
 
