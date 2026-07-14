@@ -12,6 +12,8 @@ Provides shape-similarity and frequency-domain forecasting classes:
 import numpy as np
 from typing import Dict, Any
 from encoder import RetrievalServiceEncoder
+import torch
+from chronos import ChronosPipeline
 
 class RetrievalForecaster:
     """
@@ -469,6 +471,173 @@ class SpecReTFForecaster:
             "retrieved": processed_retrieved,
             "prediction": pred_price,
             "consensus_path": y_hat_final.tolist(),
+            "expected_return": expected_return,
+            "bull_ratio": bull_ratio,
+            "volatility": volatility,
+            "direction": "BULLISH" if expected_return >= 0 else "BEARISH"
+        }
+
+
+class ChronosRAFForecaster:
+    """
+    Chronos-based Retrieval Augmented Forecasting (RAF) framework.
+
+    Implements the exact query augmentation and forecasting mechanisms from the paper:
+    1. Retrieve the top-k best-matching historical segments.
+    2. Separately apply instance normalization (zero mean, unit variance) to the original
+       context and retrieved time series (which contains retrieved context + retrieved future).
+    3. Enforce continuity at the join by applying an additive offset to the retrieved
+       segment so that its last value matches the first value of the context.
+    4. Concatenate the adjusted retrieved segment(s) and the normalized original context.
+    5. Pass the augmented time series to the Chronos model to predict the future window.
+    6. Denormalize the generated predictions using the original context's mean and std.
+    """
+
+    def __init__(self, encoder_service: RetrievalServiceEncoder, chronos_pipeline: ChronosPipeline):
+        """
+        Initialize the ChronosRAFForecaster.
+
+        Args:
+            encoder_service (RetrievalServiceEncoder): Vector encoder service instance.
+            chronos_pipeline (ChronosPipeline): Pre-trained Chronos pipeline instance.
+        """
+        self.encoder_service = encoder_service
+        self.chronos_pipeline = chronos_pipeline
+
+    def forecast(
+        self, 
+        prices: np.ndarray, 
+        order_book: Dict[str, Any], 
+        k: int = 1
+    ) -> Dict[str, Any]:
+        """
+        Generate similarity-augmented future price projections using the Chronos RAF framework.
+
+        Args:
+            prices (np.ndarray): 1D array of query price history.
+            order_book (Dict[str, Any]): Dictionary containing order book bids/asks.
+            k (int): Number of nearest neighbors to retrieve. Defaults to 1 (paper standard).
+
+        Returns:
+            Dict[str, Any]: Forecast statistics and consensus path.
+        """
+        if len(prices) == 0:
+            raise ValueError("prices array must not be empty")
+
+        # 1. Retrieve top-k similar historical segments
+        retrieved = self.encoder_service.retrieve_segments(prices, order_book, k=k)
+        
+        if not retrieved:
+            raise ValueError("No matching historical segments found in index.")
+
+        # 2. Separate instance normalization & continuity offset alignment
+        # Normalize original query context x_orig: z_orig = (x_orig - mean_orig) / std_orig
+        query_mean = float(np.mean(prices))
+        query_std = float(np.std(prices))
+        if query_std < 1e-8:
+            query_std = 1.0
+        z_orig = (prices - query_mean) / query_std
+
+        # Process and normalize retrieved segments
+        aligned_segments = []
+        processed_retrieved = []
+        for idx, seg in enumerate(retrieved):
+            hist_prices = seg.get("historical_prices")
+            future_prices = seg.get("prices")
+            if hist_prices is None or future_prices is None:
+                raise ValueError(f"Historical match segment {idx} is malformed or missing required price data.")
+            
+            h_arr = np.array(hist_prices, dtype=np.float32)
+            f_arr = np.array(future_prices, dtype=np.float32)
+            
+            # Combine to form the retrieved series of length C+H
+            ret_series = np.concatenate([h_arr, f_arr])
+            ret_mean = np.mean(ret_series)
+            ret_std = np.std(ret_series)
+            if ret_std < 1e-8:
+                ret_std = 1.0
+            
+            # Instance normalization of the retrieved series
+            z_ret = (ret_series - ret_mean) / ret_std
+            aligned_segments.append(z_ret)
+
+            # Compute similarity metrics for response metadata using Pearson Correlation
+            q_mean, q_std = np.mean(prices), np.std(prices)
+            h_mean, h_std = np.mean(h_arr), np.std(h_arr)
+            if q_std > 1e-8 and h_std > 1e-8:
+                min_len = min(len(prices), len(h_arr))
+                q_norm = (prices[:min_len] - q_mean) / q_std
+                h_norm = (h_arr[:min_len] - h_mean) / h_std
+                correlation = float(np.corrcoef(q_norm, h_norm)[0, 1])
+                if np.isnan(correlation):
+                    correlation = 0.0
+            else:
+                correlation = 0.0
+            similarity = 0.5 * (correlation + 1.0)
+            
+            start_p = float(f_arr[0]) if len(f_arr) > 0 else 1.0
+            end_p = float(f_arr[-1]) if len(f_arr) > 0 else 1.0
+            pct_return = float(((end_p - start_p) / start_p) * 100)
+            
+            seg_copy = {
+                "id": int(seg.get("id", idx)),
+                "historical_prices": hist_prices,
+                "prices": future_prices,
+                "order_book": seg.get("order_book", {}),
+                "similarity": float(similarity),
+                "pctReturn": pct_return,
+                "direction": "BULLISH" if pct_return >= 0 else "BEARISH"
+            }
+            processed_retrieved.append(seg_copy)
+
+        # Enforce continuity starting from z_orig (right to left)
+        current_context = z_orig
+        adjusted_segments = []
+        for z_ret in reversed(aligned_segments):
+            offset = current_context[0] - z_ret[-1]
+            z_ret_adj = z_ret + offset
+            adjusted_segments.insert(0, z_ret_adj)
+            current_context = z_ret_adj
+
+        # Concatenate adjusted retrieved segments and normalized original context to construct the RAF query
+        raf_query_parts = adjusted_segments + [z_orig]
+        s_raf = np.concatenate(raf_query_parts)
+
+        # 3. Model Inference (Chronos)
+        horizon = min(len(s["prices"]) for s in processed_retrieved)
+        
+        # Prepare context tensor for Chronos
+        s_raf_tensor = torch.tensor(s_raf, dtype=torch.float32)
+        
+        # Run prediction on ChronosPipeline
+        with torch.no_grad():
+            samples = self.chronos_pipeline.predict(
+                [s_raf_tensor],
+                prediction_length=horizon,
+                limit_prediction_length=False
+            ) # shape: (1, num_samples, horizon)
+        
+        samples_np = samples[0].cpu().numpy() # shape: (num_samples, horizon)
+        
+        # 4. Denormalize prediction using original context's mean and std
+        denorm_samples = samples_np * query_std + query_mean
+        
+        # Consensus path is the median of predictions
+        consensus_path = np.median(denorm_samples, axis=0)
+        
+        # 5. Compute aggregate metrics
+        query_last_price = float(prices[-1])
+        pred_price = float(consensus_path[-1]) if len(consensus_path) > 0 else query_last_price
+        expected_return = ((pred_price - query_last_price) / query_last_price) * 100
+        
+        bullish_count = sum(1 for s in processed_retrieved if s["pctReturn"] >= 0)
+        bull_ratio = (bullish_count / len(processed_retrieved)) * 100 if processed_retrieved else 50.0
+        volatility = float(np.std([s["pctReturn"] for s in processed_retrieved])) if processed_retrieved else 0.0
+        
+        return {
+            "retrieved": processed_retrieved,
+            "prediction": pred_price,
+            "consensus_path": consensus_path.tolist(),
             "expected_return": expected_return,
             "bull_ratio": bull_ratio,
             "volatility": volatility,

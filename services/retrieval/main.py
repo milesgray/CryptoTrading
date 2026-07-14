@@ -7,13 +7,17 @@ segments using neural embeddings, and serves shape-similarity forecasting querie
 """
 
 import datetime
+import datetime
 import logging
 import asyncio
 import numpy as np
+import os
+import torch
 from typing import Dict, Any
 from fastapi import FastAPI, HTTPException
 from encoder import RetrievalServiceEncoder
-from forecaster import SpecReTFForecaster
+from forecaster import SpecReTFForecaster, ChronosRAFForecaster
+from chronos import ChronosPipeline
 from cryptotrading.data.factory import get_price_adapter
 from cryptotrading.config import SYMBOLS
 
@@ -27,9 +31,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Initialize encoder and forecaster with dim=184 for combined embedding compatibility (128D deep learning + 56D local features)
+# Initialize encoder and forecasters with dim=184 for combined embedding compatibility (128D deep learning + 56D local features)
 encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=184, embed_dim=128)
 forecaster = SpecReTFForecaster(encoder_service, frame_size=16, hop_size=4)
+raf_forecaster = None
+chronos_pipeline = None
+CHRONOS_MODEL_ID = os.getenv("CHRONOS_MODEL_ID", "amazon/chronos-t5-mini")
 
 async def bootstrap_historical_data(price_adapter, symbol: str, days: int = 7):
     """
@@ -256,21 +263,30 @@ async def build_index_for_combination(token: str, granularity_sec: int, window_s
         
     encoder.build_index(n_trees=10)
     
-    new_forecaster = SpecReTFForecaster(
+    specretf_forecaster = SpecReTFForecaster(
         encoder_service=encoder,
         frame_size=frame_size,
         hop_size=hop_size,
         horizon=horizon
     )
-    return new_forecaster
+    
+    raf_forecaster = ChronosRAFForecaster(
+        encoder_service=encoder,
+        chronos_pipeline=chronos_pipeline
+    )
+    
+    return {
+        "specretf": specretf_forecaster,
+        "raf": raf_forecaster
+    }
 
-async def get_forecaster(token: str, granularity_sec: int, window_size: int) -> SpecReTFForecaster:
+async def get_forecaster(token: str, granularity_sec: int, window_size: int, method: str = "raf") -> Any:
     key = (token, granularity_sec, window_size)
     async with cache_lock:
         if key not in forecasters_cache:
-            forecaster_instance = await build_index_for_combination(token, granularity_sec, window_size)
-            forecasters_cache[key] = forecaster_instance
-        return forecasters_cache[key]
+            forecasters_dict = await build_index_for_combination(token, granularity_sec, window_size)
+            forecasters_cache[key] = forecasters_dict
+        return forecasters_cache[key][method]
 
 @app.on_event("startup")
 async def startup_event():
@@ -284,6 +300,22 @@ async def startup_event():
     If bootstrapping fails or database is empty, the service aborts startup with an
     exception (no mock data fallback is permitted).
     """
+    global chronos_pipeline, encoder_service, forecaster, raf_forecaster
+    
+    # 1. Initialize Chronos pipeline first (needed by forecasters during build_index)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    logger.info(f"Loading Chronos pipeline for RAF from {CHRONOS_MODEL_ID} on device {device}...")
+    try:
+        chronos_pipeline = ChronosPipeline.from_pretrained(
+            CHRONOS_MODEL_ID,
+            torch_dtype=torch.float32,
+        )
+        chronos_pipeline.model.to(device)
+        logger.info("Chronos pipeline loaded successfully.")
+    except Exception as e:
+        logger.error(f"Failed to load Chronos pipeline: {e}", exc_info=True)
+        raise e
+
     logger.info("Initializing database adapters...")
     price_adapter = get_price_adapter()
     await price_adapter.initialize()
@@ -296,21 +328,26 @@ async def startup_event():
             logger.error(f"Failed to bootstrap historical data for {symbol}: {e}", exc_info=True)
     
     # Build default index for each configured symbol at (60, 60)
-    global encoder_service, forecaster
     default_forecaster = None
+    default_raf_forecaster = None
     for symbol in SYMBOLS:
         token = symbol.split("/")[0] if "/" in symbol else symbol
         try:
             logger.info(f"Pre-building default retrieval index for {token}...")
-            f_inst = await get_forecaster(token, granularity_sec=60, window_size=60)
+            # Build and cache both SpecReTF and RAF forecasters
+            await get_forecaster(token, granularity_sec=60, window_size=60, method="specretf")
+            await get_forecaster(token, granularity_sec=60, window_size=60, method="raf")
+            
             if token == "BTC":
-                default_forecaster = f_inst
+                default_forecaster = await get_forecaster(token, granularity_sec=60, window_size=60, method="specretf")
+                default_raf_forecaster = await get_forecaster(token, granularity_sec=60, window_size=60, method="raf")
         except Exception as e:
             logger.error(f"Failed to build startup index for {token}: {e}", exc_info=True)
             raise e
             
-    if default_forecaster:
+    if default_forecaster and default_raf_forecaster:
         forecaster = default_forecaster
+        raf_forecaster = default_raf_forecaster
         encoder_service = default_forecaster.encoder_service
     else:
         logger.warning("BTC default forecaster not pre-built, globals left as is.")
@@ -320,7 +357,8 @@ async def forecast(
     symbol: str = "BTC",
     k: int = 5,
     granularity: str = "1m",
-    window_size: int = 60
+    window_size: int = 60,
+    method: str = "raf"
 ) -> Dict[str, Any]:
     """
     Get matching historical patterns and compute a consensus forecast.
@@ -334,15 +372,19 @@ async def forecast(
         k (int): Number of matches to retrieve. Defaults to 5.
         granularity (str): The candlestick interval (e.g. '1m', '5m', '15m', '1h'). Defaults to '1m'.
         window_size (int): Temporal window width of sequence. Defaults to 60.
+        method (str): Forecasting method ('raf' or 'specretf'). Defaults to 'raf'.
 
     Returns:
         Dict[str, Any]: Forecast predictions, consensus path, and similarity stats.
 
     Raises:
-        HTTPException (400): If there is insufficient live query data.
+        HTTPException (400): If there is insufficient live query data or invalid method.
         HTTPException (500): For general retrieval and forecasting processing failures.
     """
     try:
+        if method not in ("raf", "specretf"):
+            raise HTTPException(status_code=400, detail=f"Invalid forecasting method: {method}")
+
         price_adapter = get_price_adapter()
         await price_adapter.initialize()
         
@@ -398,7 +440,7 @@ async def forecast(
         if not current_order_book or not current_order_book.get("bids"):
             current_order_book = {"bids": [[current_prices[-1], 1.0]], "asks": [[current_prices[-1] + 1.0, 1.0]]}
         
-        dyn_forecaster = await get_forecaster(token, granularity_sec, window_size)
+        dyn_forecaster = await get_forecaster(token, granularity_sec, window_size, method=method)
         return dyn_forecaster.forecast(current_prices, current_order_book, k=k)
     except HTTPException as he:
         raise he

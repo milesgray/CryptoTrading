@@ -40,6 +40,7 @@ services:
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
             - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8301}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+            - DATABASE_STATEMENT_TIMEOUT=180000
         depends_on:
             - timescaledb
             - embed

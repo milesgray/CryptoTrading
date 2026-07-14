@@ -161,8 +161,10 @@ async def setup_connection(conn: Connection):
     # Set timezone to UTC
     await conn.execute('SET TIME ZONE UTC')
     
-    # Set statement timeout to 30 seconds
-    await conn.execute('SET statement_timeout = 30000')
+    # Set statement timeout to 30 seconds (or custom via env)
+    import os
+    stmt_timeout = os.getenv('DATABASE_STATEMENT_TIMEOUT', '30000')
+    await conn.execute(f'SET statement_timeout = {stmt_timeout}')
     
     # Ensure search_path is set correctly
     await conn.execute('SET search_path TO public')

@@ -188,4 +188,10 @@
 - [x] Fix the transition misalignment/overlapping bug in the retrieval forecast chart.
 - [x] Fix the "Embedding dimension != index dimension" ValueError by dynamically calculating dimensions based on n_fft and embed service configuration.
 
+### Phase 27: Chronos Retrieval Augmented Forecasting (RAF) Framework (Completed ✅)
+- [x] Implement `ChronosRAFForecaster` in `forecaster.py` supporting separate instance normalization, join continuity offset alignment, sequence concatenation, and denormalized consensus outputs.
+- [x] Integrate global Chronos pipeline loading on startup and dict-based caches for SpecReTF and RAF forecaster models.
+- [x] Update forecast FastAPI endpoint to support configurable `method` parameter (defaulting to `"raf"`).
+- [x] Create `test_raf_forecaster.py` and verify all test suites succeed.
+
 
