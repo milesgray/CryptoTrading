@@ -28,6 +28,7 @@ const CandlestickChart = ({ token }) => {
   const isCustomRangeRef = useRef(false);
   const loadedStartRef = useRef(null);
   const isFetchingHistoryRef = useRef(false);
+  const lastFetchFailedRef = useRef(0);
   const [isLiveUpdating, setIsLiveUpdating] = useState(false); // Start with live updates disabled
   const [latestPrice, setLatestPrice] = useState(null);
   const [latestTimestamp, setLatestTimestamp] = useState(null);
@@ -306,6 +307,11 @@ const CandlestickChart = ({ token }) => {
   const fetchMoreHistory = useCallback(async (minVisibleTime) => {
     if (isFetchingHistoryRef.current || !loadedStartRef.current || !token || isCustomRangeRef.current) return;
     
+    // Cooldown check (e.g. 10 seconds) to prevent spamming if the API is failing
+    if (Date.now() - lastFetchFailedRef.current < 10000) {
+      return;
+    }
+    
     // Check if the user is close to the start of loaded data (within 50 candles)
     const thresholdMs = 50 * granularity * 1000;
     if (minVisibleTime > loadedStartRef.current + thresholdMs) {
@@ -361,6 +367,7 @@ const CandlestickChart = ({ token }) => {
       }
     } catch (err) {
       console.error('[CandlestickChart] Error fetching historical chunk:', err);
+      lastFetchFailedRef.current = Date.now();
     } finally {
       isFetchingHistoryRef.current = false;
     }

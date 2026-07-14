@@ -28,7 +28,7 @@ app = FastAPI(
 )
 
 # Initialize encoder and forecaster with dim=184 for combined embedding compatibility (128D deep learning + 56D local features)
-encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=184)
+encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=184, embed_dim=128)
 forecaster = SpecReTFForecaster(encoder_service, frame_size=16, hop_size=4)
 
 async def bootstrap_historical_data(price_adapter, symbol: str, days: int = 7):
@@ -207,15 +207,16 @@ async def build_index_for_combination(token: str, granularity_sec: int, window_s
     import httpx
     embed_url = os.getenv("EMBED_SERVICE_URL", "http://embed:8301")
     try:
-        resp = httpx.get(f"{embed_url}/health", timeout=2.0)
-        if resp.status_code == 200:
-            embed_dim = resp.json().get("embedding_dim", 128)
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{embed_url}/health", timeout=2.0)
+            if resp.status_code == 200:
+                embed_dim = resp.json().get("embedding_dim", 128)
     except Exception as e:
         logger.warning(f"Could not fetch health from embed service at {embed_url}: {e}. Defaulting to 128.")
         
     combined_dim = embed_dim + local_dim
     logger.info(f"Initializing encoder with window_size={window_size}, n_fft={n_fft}, frame_size={frame_size}, hop_size={hop_size}, horizon={horizon}, combined_dim={combined_dim} ({embed_dim} embed + {local_dim} local)")
-    encoder = RetrievalServiceEncoder(window_size=window_size, n_fft=n_fft, dim=combined_dim, embed_service_url=embed_url)
+    encoder = RetrievalServiceEncoder(window_size=window_size, n_fft=n_fft, dim=combined_dim, embed_service_url=embed_url, embed_dim=embed_dim)
     
     # Build sliding window segments in batch
     prices_list = []

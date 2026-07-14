@@ -26,7 +26,7 @@ class RetrievalServiceEncoder:
     Combines deep learning embeddings from the Embed Service with local handcrafted features.
     """
     
-    def __init__(self, window_size: int = 60, n_fft: int = 32, dim: int = 184, embed_service_url: str = None):
+    def __init__(self, window_size: int = 60, n_fft: int = 32, dim: int = 184, embed_service_url: str = None, embed_dim: int = None):
         """
         Initialize the RetrievalServiceEncoder.
 
@@ -37,6 +37,8 @@ class RetrievalServiceEncoder:
             embed_service_url (str, optional): Target URL for the embed service.
                 If not specified, reads from the EMBED_SERVICE_URL environment variable,
                 defaulting to 'http://localhost:8301'.
+            embed_dim (int, optional): The embedding dimension from the embed service.
+                If not specified, queries it dynamically from the embed service.
         """
         self.encoder = RetrievalEncoder(window_size=window_size, n_fft=n_fft)
         self.index = VectorIndex(dim=dim)
@@ -44,15 +46,19 @@ class RetrievalServiceEncoder:
         self.is_built = False
         self.embed_service_url = embed_service_url or os.getenv("EMBED_SERVICE_URL", "http://localhost:8301")
         
-        # Determine deep learning embedding dimension dynamically
-        self.embed_dim = 128
-        try:
-            response = httpx.get(f"{self.embed_service_url}/health", timeout=2.0)
-            if response.status_code == 200:
-                self.embed_dim = response.json().get("embedding_dim", 128)
-                logger.info(f"Dynamically determined embed service embedding dimension: {self.embed_dim}")
-        except Exception as e:
-            logger.warning(f"Could not connect to embed service to determine dimension: {e}. Defaulting to 128.")
+        # Determine deep learning embedding dimension dynamically if not provided
+        if embed_dim is not None:
+            self.embed_dim = embed_dim
+            logger.info(f"RetrievalServiceEncoder initialized with embed_dim: {self.embed_dim}")
+        else:
+            self.embed_dim = 128
+            try:
+                response = httpx.get(f"{self.embed_service_url}/health", timeout=2.0)
+                if response.status_code == 200:
+                    self.embed_dim = response.json().get("embedding_dim", 128)
+                    logger.info(f"Dynamically determined embed service embedding dimension: {self.embed_dim}")
+            except Exception as e:
+                logger.warning(f"Could not connect to embed service to determine dimension: {e}. Defaulting to 128.")
 
     def encode_segment(self, prices: np.ndarray, order_book: Dict[str, Any]) -> np.ndarray:
         """
