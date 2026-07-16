@@ -652,13 +652,20 @@ class OrderBookPostgresAdapter:
             
         bucket_width = None
         if interval is not None:
+            seconds = 0.0
             if isinstance(interval, dt.timedelta):
-                bucket_width = f"{interval.total_seconds()} seconds"
+                seconds = interval.total_seconds()
             elif isinstance(interval, (int, float)):
-                bucket_width = f"{interval} seconds"
+                seconds = float(interval)
             elif isinstance(interval, str):
-                # Clean string for safety
-                bucket_width = "".join(c for c in interval if c.isalnum() or c in (' ', '-', '_', '.'))
+                clean_str = "".join(c for c in interval if c.isdigit() or c == '.')
+                try:
+                    seconds = float(clean_str)
+                except ValueError:
+                    seconds = 0.0
+            
+            if seconds > 1.0:
+                bucket_width = f"{seconds} seconds"
 
         async with get_connection() as conn:
             if bucket_width is not None:
