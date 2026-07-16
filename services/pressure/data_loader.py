@@ -131,7 +131,15 @@ class OrderBookDataLoader:
         self.detected_gaps = []
         
         try:
-            snapshots = await self.orderbook_adapter.get_orderbook_data(token, start_time, end_time)
+            # Pass downsampling interval if supported by the adapter
+            import inspect
+            sig = inspect.signature(self.orderbook_adapter.get_orderbook_data)
+            if 'interval' in sig.parameters:
+                snapshots = await self.orderbook_adapter.get_orderbook_data(
+                    token, start_time, end_time, interval=self.expected_interval_seconds
+                )
+            else:
+                snapshots = await self.orderbook_adapter.get_orderbook_data(token, start_time, end_time)
             self.quality_metrics.total_records = len(snapshots)
             
             if validate_data:

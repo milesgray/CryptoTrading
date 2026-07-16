@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any
 from urllib.parse import urlparse, parse_qs
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(verbose=True)
 
 logger = logging.getLogger(__name__)
 

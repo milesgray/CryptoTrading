@@ -643,20 +643,66 @@ class OrderBookPostgresAdapter:
         self,
         token: str,
         start_time: datetime,
-        end_time: datetime
+        end_time: datetime,
+        interval: Optional[Union[float, dt.timedelta, str]] = None
     ) -> list[OrderBookSnapshot]:
         matching_symbols = await resolve_matching_symbols(token)
         if not matching_symbols:
             return []
             
-        query = '''
-            SELECT time as timestamp, close as midpoint, metadata
-            FROM price_data
-            WHERE symbol = ANY($1) AND exchange = 'composite' AND time >= $2 AND time <= $3
-            ORDER BY time ASC;
-        '''
+        bucket_width = None
+        if interval is not None:
+            if isinstance(interval, dt.timedelta):
+                bucket_width = f"{interval.total_seconds()} seconds"
+            elif isinstance(interval, (int, float)):
+                bucket_width = f"{interval} seconds"
+            elif isinstance(interval, str):
+                # Clean string for safety
+                bucket_width = "".join(c for c in interval if c.isalnum() or c in (' ', '-', '_', '.'))
+
         async with get_connection() as conn:
-            rows = await conn.fetch(query, matching_symbols, start_time, end_time)
+            if bucket_width is not None:
+                if len(matching_symbols) == 1:
+                    query = f'''
+                        SELECT 
+                            time_bucket('{bucket_width}'::interval, time) as timestamp, 
+                            last(close, time) as midpoint, 
+                            last(metadata, time) as metadata
+                        FROM price_data
+                        WHERE symbol = $1 AND exchange = 'composite' AND time >= $2 AND time <= $3
+                        GROUP BY timestamp, symbol
+                        ORDER BY timestamp ASC;
+                    '''
+                    rows = await conn.fetch(query, matching_symbols[0], start_time, end_time)
+                else:
+                    query = f'''
+                        SELECT 
+                            time_bucket('{bucket_width}'::interval, time) as timestamp, 
+                            last(close, time) as midpoint, 
+                            last(metadata, time) as metadata
+                        FROM price_data
+                        WHERE symbol = ANY($1) AND exchange = 'composite' AND time >= $2 AND time <= $3
+                        GROUP BY timestamp, symbol
+                        ORDER BY timestamp ASC;
+                    '''
+                    rows = await conn.fetch(query, matching_symbols, start_time, end_time)
+            else:
+                if len(matching_symbols) == 1:
+                    query = '''
+                        SELECT time as timestamp, close as midpoint, metadata
+                        FROM price_data
+                        WHERE symbol = $1 AND exchange = 'composite' AND time >= $2 AND time <= $3
+                        ORDER BY time ASC;
+                    '''
+                    rows = await conn.fetch(query, matching_symbols[0], start_time, end_time)
+                else:
+                    query = '''
+                        SELECT time as timestamp, close as midpoint, metadata
+                        FROM price_data
+                        WHERE symbol = ANY($1) AND exchange = 'composite' AND time >= $2 AND time <= $3
+                        ORDER BY time ASC;
+                    '''
+                    rows = await conn.fetch(query, matching_symbols, start_time, end_time)
             
         snapshots = []
         for r in rows:

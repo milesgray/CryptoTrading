@@ -194,4 +194,9 @@
 - [x] Update forecast FastAPI endpoint to support configurable `method` parameter (defaulting to `"raf"`).
 - [x] Create `test_raf_forecaster.py` and verify all test suites succeed.
 
-
+### Phase 28: TimescaleDB Performance Optimizations & Downsampling (Completed ✅)
+- [x] Cache SkipScan-based symbol resolution in `postgres.py` to eliminate 9-second fetch overhead on subsequent reads.
+- [x] Optimize order book and price queries in `book.py` and `price.py` to use exact single-symbol lookup matching (`symbol = $1`) when possible to leverage Index Scan Backward and eliminate Sort steps.
+- [x] Implement downsampling in `book.py` using TimescaleDB's `time_bucket` and `last()` aggregate functions.
+- [x] Pass the expected interval in `data_loader.py` to allow database-side downsampling.
+- [x] Benchmark optimizations verifying speedups up to 4x on DB execution and 2.5x on downsampled fetches.

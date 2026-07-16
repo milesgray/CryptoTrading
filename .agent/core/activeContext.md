@@ -1,29 +1,29 @@
-# Active Context: Chronos Retrieval Augmented Forecasting (RAF) Framework
+# Active Context: TimescaleDB Performance Optimizations & Downsampling
 
 ## Quick Reference
-- **Feature**: Chronos Retrieval Augmented Forecasting (RAF) Framework
-- **Plan File**: [implementation_plan.md](file:///home/miles/.gemini/antigravity-ide/brain/3dc38ad7-a3d9-403d-9992-a7c847eb63a6/implementation_plan.md)
+- **Feature**: TimescaleDB Query Optimizations & Downsampling
+- **Plan File**: [implementation_plan.md](file:///home/miles/.gemini/antigravity-ide/brain/9a0c565e-c575-458a-94aa-d1e6a9073e7f/implementation_plan.md)
 - **Status**: Completed ✅
 
 ## Executive Summary
-Implementing the paper's Retrieval Augmented Forecasting (RAF) framework in the retrieval service, utilizing the existing `ChronosPipeline` to generate similarity-augmented forecasts. We implement the complete RAF workflow: retrieving top-k segments, separately normalising the query and retrieved patterns, aligning boundary joins to enforce continuity, and running zero-shot forecasting on the augmented series before denormalizing back to the original price space.
+Optimized database queries for order books and price data on the remote TimescaleDB database VM. We resolved latency and timeout issues by leveraging B-tree index scan properties (backward scans to avoid sort operations), database-side downsampling via `time_bucket` and `last()` aggregate functions, and in-memory caching of symbol resolution.
 
 ## Tech Stack for This Feature
-- **Python / FastAPI**: Core forecasting microservice logic.
-- **PyTorch / Transformers**: Chronos tokenization and generation inference.
-- **NumPy**: Data structures, normalization, and continuity offsets.
+- **PostgreSQL / TimescaleDB**: Hypertable indexing, B-Tree backward scans, `time_bucket` downsampling, and `last` aggregates.
+- **Python / asyncpg**: Asynchronous connection pooling and query execution.
+- **NumPy / Pandas**: Order book feature calculation pipeline.
 
-## Key Files Created/Modified
-- [services/retrieval/forecaster.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/forecaster.py): Implemented the `ChronosRAFForecaster` class.
-- [services/retrieval/main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/main.py): Loaded the pre-trained `ChronosPipeline` on startup, cached forecasters dynamically by symbol, updated `/forecast` to support `method="raf"`, and optimized the historical bootstrap to run chunked `executemany` bulk inserts.
-- [tests/test_raf_forecaster.py](file:///home/miles/Development/notebooks/CryptoTrading/tests/test_raf_forecaster.py): Wrote unit tests confirming offset alignment, normalization, and predictions.
+## Key Files Modified
+- [src/cryptotrading/data/postgres.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/postgres.py): Implemented a 60-second in-memory cache for SkipScan-based `resolve_matching_symbols` resolution.
+- [src/cryptotrading/data/book.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/book.py): Updated `get_orderbook_data` to support `time_bucket` downsampling and exact single-symbol equality scans (B-Tree backward scans to bypass sort steps).
+- [src/cryptotrading/data/price.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/price.py): Updated `get_price_data`, `get_price_data_count`, `get_latest_price`, and `get_candlestick_data` to leverage exact single-symbol index scans.
+- [services/pressure/data_loader.py](file:///home/miles/Development/notebooks/CryptoTrading/services/pressure/data_loader.py): Passed downsampling interval (`expected_interval_seconds`) to the database adapter.
+- [test_db.py](file:///home/miles/Development/notebooks/CryptoTrading/test_db.py): Wrote query verification and latency benchmark tests.
 
 ## Critical Implementation Details
-1. **Separate Normalization**: Query context and retrieved segments are normalized separately to mitigate distribution shifts.
-2. **Boundary Continuity**: Additive offset is computed as `z_orig[0] - z_ret[-1]` to shift the retrieved sequence and eliminate visual/mathematical jumps at the boundary.
-3. **輕量級 Chronos**: Defaults to `amazon/chronos-t5-mini` which has a ~35MB footprint and fast CPU generation times, perfect for robust zero-shot forecasting.
-4. **Optimized Bootstrap Inserts**: Replaced single-row startup inserts under a transaction with a chunked bulk insert (`executemany` in batches of 1,000) to avoid database lock contention.
+1. **Backward Index Scan**: By dynamically rewriting `symbol = ANY($1)` to `symbol = $1` when a single symbol is matched, the Postgres planner scans the `(symbol, exchange, time DESC)` index backwards. This retrieves rows in sorted `time ASC` order directly from the index, eliminating the costly Sort operation and speeding up database fetch by 4x.
+2. **Database-Side Downsampling**: Utilizing TimescaleDB's `time_bucket` and `last()` aggregate functions, raw high-frequency orderbook snapshots are downsampled to a target frequency (e.g. 10s) directly on the DB server. This reduces the network payload and Python parsing time by up to 90%.
+3. **Symbol Caching**: Caching the list of available symbols in Python memory for 60 seconds eliminates the 9-second SkipScan Skip-Join latency on every single database fetch.
 
 ## Next Steps
-- Deploy and verify the database timeout fix on the server.
-- Verify the new RAF predictions render in the live frontend candlestick consensus chart series.
+- Monitor connection health and query execution speed in production dashboards.

@@ -496,16 +496,25 @@ class PricePostgresAdapter(PriceAdapter):
         if not matching_symbols:
             return []
             
-        query = f'''
-            SELECT time as timestamp, close as price, metadata
-            FROM price_data
-            WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time <= $3
-            ORDER BY time {order_dir}
-            LIMIT $4 OFFSET $5;
-        '''
-        
         async with get_connection() as conn:
-            rows = await conn.fetch(query, matching_symbols, start_time, end_time, limit, offset)
+            if len(matching_symbols) == 1:
+                query = f'''
+                    SELECT time as timestamp, close as price, metadata
+                    FROM price_data
+                    WHERE symbol = $1 AND exchange = 'index' AND time >= $2 AND time <= $3
+                    ORDER BY time {order_dir}
+                    LIMIT $4 OFFSET $5;
+                '''
+                rows = await conn.fetch(query, matching_symbols[0], start_time, end_time, limit, offset)
+            else:
+                query = f'''
+                    SELECT time as timestamp, close as price, metadata
+                    FROM price_data
+                    WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time <= $3
+                    ORDER BY time {order_dir}
+                    LIMIT $4 OFFSET $5;
+                '''
+                rows = await conn.fetch(query, matching_symbols, start_time, end_time, limit, offset)
             
         results = []
         for r in rows:
@@ -527,12 +536,19 @@ class PricePostgresAdapter(PriceAdapter):
         if not matching_symbols:
             return 0
             
-        query = '''
-            SELECT COUNT(*) FROM price_data
-            WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time <= $3;
-        '''
         async with get_connection() as conn:
-            val = await conn.fetchval(query, matching_symbols, start_time, end_time)
+            if len(matching_symbols) == 1:
+                query = '''
+                    SELECT COUNT(*) FROM price_data
+                    WHERE symbol = $1 AND exchange = 'index' AND time >= $2 AND time <= $3;
+                '''
+                val = await conn.fetchval(query, matching_symbols[0], start_time, end_time)
+            else:
+                query = '''
+                    SELECT COUNT(*) FROM price_data
+                    WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time <= $3;
+                '''
+                val = await conn.fetchval(query, matching_symbols, start_time, end_time)
         return val or 0
 
     async def get_prices(
@@ -559,14 +575,23 @@ class PricePostgresAdapter(PriceAdapter):
         if not matching_symbols:
             return None
             
-        query = '''
-            SELECT time as timestamp, close as price, metadata
-            FROM price_data
-            WHERE symbol = ANY($1) AND exchange = 'index'
-            ORDER BY time DESC LIMIT 1;
-        '''
         async with get_connection() as conn:
-            row = await conn.fetchrow(query, matching_symbols)
+            if len(matching_symbols) == 1:
+                query = '''
+                    SELECT time as timestamp, close as price, metadata
+                    FROM price_data
+                    WHERE symbol = $1 AND exchange = 'index'
+                    ORDER BY time DESC LIMIT 1;
+                '''
+                row = await conn.fetchrow(query, matching_symbols[0])
+            else:
+                query = '''
+                    SELECT time as timestamp, close as price, metadata
+                    FROM price_data
+                    WHERE symbol = ANY($1) AND exchange = 'index'
+                    ORDER BY time DESC LIMIT 1;
+                '''
+                row = await conn.fetchrow(query, matching_symbols)
             
         if not row:
             return None
@@ -628,23 +653,19 @@ class PricePostgresAdapter(PriceAdapter):
             if is_last:
                 current_end = end_time
                 
-            if is_last:
-                query = '''
-                    SELECT time as timestamp, close as price, metadata
-                    FROM price_data
-                    WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time <= $3
-                    ORDER BY time ASC;
-                '''
-            else:
-                query = '''
-                    SELECT time as timestamp, close as price, metadata
-                    FROM price_data
-                    WHERE symbol = ANY($1) AND exchange = 'index' AND time >= $2 AND time < $3
-                    ORDER BY time ASC;
-                '''
-                
+            symbol_op = "= $1" if len(matching_symbols) == 1 else "= ANY($1)"
+            time_op = "<= $3" if is_last else "< $3"
+            
+            query = f'''
+                SELECT time as timestamp, close as price, metadata
+                FROM price_data
+                WHERE symbol {symbol_op} AND exchange = 'index' AND time >= $2 AND time {time_op}
+                ORDER BY time ASC;
+            '''
+            
             async with get_connection() as conn:
-                rows = await conn.fetch(query, matching_symbols, current_start, current_end)
+                param = matching_symbols[0] if len(matching_symbols) == 1 else matching_symbols
+                rows = await conn.fetch(query, param, current_start, current_end)
                 
             if rows:
                 for row in rows:
