@@ -13,7 +13,9 @@ import {
   getTrainingTasks,
   getTrainingTaskStatus,
   getTrainedModels,
-  runModelInference
+  runModelInference,
+  startPressureTraining,
+  getPressureTrainingStatus
 } from '../services/api';
 
 // ============================================================================
@@ -508,6 +510,55 @@ export const OrderBookPressurePanel = () => {
   const [recommendation, setRecommendation] = useState('STANDBY'); // Scalp Signal
   const [confidence, setConfidence] = useState(0.50); // Recommendation Confidence
 
+  // Training state
+  const [trainToken, setTrainToken] = useState('BTC');
+  const [hoursBack, setHoursBack] = useState(24.0);
+  const [epochs, setEpochs] = useState(10);
+  const [batchSize, setBatchSize] = useState(128);
+  const [trainStatus, setTrainStatus] = useState({
+    is_training: false,
+    current_step: "idle",
+    progress_percent: 0.0,
+    epoch: 0,
+    total_epochs: 0,
+    train_loss: 0.0,
+    val_loss: 0.0,
+    message: ""
+  });
+
+  // Poll pressure training status
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const status = await getPressureTrainingStatus();
+        if (status) {
+          setTrainStatus(status);
+        }
+      } catch (err) {
+        console.error("Error fetching pressure training status:", err);
+      }
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStartTraining = async () => {
+    try {
+      await startPressureTraining({
+        token: trainToken,
+        hours_back: hoursBack,
+        epochs,
+        batch_size: batchSize
+      });
+      const status = await getPressureTrainingStatus();
+      if (status) setTrainStatus(status);
+    } catch (err) {
+      alert(`Failed to start training: ${err.message}`);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -724,6 +775,107 @@ export const OrderBookPressurePanel = () => {
           </div>
         </div>
 
+      </div>
+
+      {/* Row 3: Pressure Model Training */}
+      <div className="bg-slate-900/30 p-6 rounded-2xl border border-slate-800 backdrop-blur-md flex flex-col gap-4">
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-base font-semibold text-slate-300 font-mono tracking-wide uppercase">Order Book Pressure Model Training</h3>
+          <span className="text-xs text-slate-500">Fine-tune the ResNet-MLP robust pressure predictor on historical orderbook snapshots</span>
+        </div>
+
+        {trainStatus.is_training ? (
+          <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-850 flex flex-col gap-4">
+            <div className="flex justify-between items-center text-xs font-mono text-slate-400">
+              <span className="text-indigo-400 font-bold uppercase">{trainStatus.current_step}</span>
+              <span>{trainStatus.progress_percent.toFixed(0)}%</span>
+            </div>
+            
+            <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
+              <div 
+                className="bg-indigo-500 h-full transition-all duration-300"
+                style={{ width: `${trainStatus.progress_percent}%` }}
+              />
+            </div>
+            
+            <div className="flex justify-between items-center text-xs text-slate-400 font-mono">
+              <span>{trainStatus.message}</span>
+              {trainStatus.epoch > 0 && (
+                <span>
+                  Epoch {trainStatus.epoch}/{trainStatus.total_epochs}
+                </span>
+              )}
+            </div>
+
+            {trainStatus.epoch > 0 && (
+              <div className="grid grid-cols-2 gap-4 border-t border-slate-900 pt-3 text-xs font-mono">
+                <div className="flex flex-col">
+                  <span className="text-slate-500 uppercase text-[9px]">Train Loss</span>
+                  <span className="text-slate-300 font-semibold">{trainStatus.train_loss.toFixed(6)}</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-slate-500 uppercase text-[9px]">Val Loss</span>
+                  <span className="text-slate-300 font-semibold">{trainStatus.val_loss.toFixed(6)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-850 flex flex-col gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono">Token</label>
+                <input 
+                  type="text" 
+                  value={trainToken} 
+                  onChange={(e) => setTrainToken(e.target.value)}
+                  className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded p-2 focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono">Hours Back</label>
+                <input 
+                  type="number" 
+                  value={hoursBack} 
+                  onChange={(e) => setHoursBack(parseFloat(e.target.value))}
+                  className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded p-2 focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono">Epochs</label>
+                <input 
+                  type="number" 
+                  value={epochs} 
+                  onChange={(e) => setEpochs(parseInt(e.target.value))}
+                  className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded p-2 focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono">Batch Size</label>
+                <input 
+                  type="number" 
+                  value={batchSize} 
+                  onChange={(e) => setBatchSize(parseInt(e.target.value))}
+                  className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded p-2 focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+            </div>
+
+            {trainStatus.message && (
+              <div className="text-xs text-slate-400 font-mono bg-slate-900/50 p-2.5 rounded border border-slate-850">
+                <span className="text-slate-500 font-bold uppercase text-[9px] block mb-1">Last Run Status</span>
+                {trainStatus.message}
+              </div>
+            )}
+
+            <button
+              onClick={handleStartTraining}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 transition-colors py-2 rounded font-semibold text-xs text-slate-200 flex items-center justify-center gap-2"
+            >
+              Start Training Run
+            </button>
+          </div>
+        )}
       </div>
 
     </div>

@@ -275,7 +275,7 @@ if __name__ == "__main__":
     print(f"Test range: {test_idx.start} to {test_idx.stop}")
 
     # Generate labels (only showing a few)
-    from .pressure_features import OrderBookSnapshot
+    from pressure_features import OrderBookSnapshot
 
     for i in list(train_idx)[:5]:
         # Create dummy orderbook

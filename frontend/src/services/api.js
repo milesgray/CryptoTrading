@@ -716,3 +716,23 @@ export const runModelInference = async (modelId, inputData) => {
     throw error;
   }
 };
+
+export const startPressureTraining = async (config) => {
+  try {
+    const response = await api.post('/pressure/train', config);
+    return response.data;
+  } catch (error) {
+    console.error('Error starting pressure training task:', error);
+    throw error;
+  }
+};
+
+export const getPressureTrainingStatus = async () => {
+  try {
+    const response = await api.get('/pressure/train/status');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching pressure training status:', error);
+    throw error;
+  }
+};

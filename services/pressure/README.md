@@ -11,6 +11,7 @@ The `pressure` service monitors **market pressure** (liquidity, volume, order fl
 ## Structure
 ```
 pressure/
+├── main.py              # FastAPI server and training console endpoints
 ├── data_loader.py       # Fetches and preprocesses market data
 ├── model.py             # Pressure detection logic
 ├── oracle.py            # Alert generation
@@ -34,12 +35,14 @@ pressure/
 3. Run the service:
    ```bash
    cd services/pressure
-   uv run python oracle.py  # Alert generation
+   uv run uvicorn main:app --host 0.0.0.0 --port 8000
    ```
 
-## Usage
-- Input: Real-time order book data (from `price` service).
-- Output: JSON alerts with pressure metrics (e.g., `{"pressure": "high", "confidence": 0.95}`).
+## API Endpoints
+- **`POST /features`**: Takes an order book snapshot and returns extracted & normalized feature arrays.
+- **`POST /predict`**: Takes an order book snapshot, runs featurization, and outputs buy/sell/total pressure predictions from the model.
+- **`POST /train`**: Triggers a background model training job on historical snapshots.
+- **`GET /train/status`**: Yields real-time training progress metrics (epochs, losses, progress percent).
 
 ## Development
 - Extend `src/cryptotrading/analysis` for new pressure metrics.

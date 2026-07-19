@@ -371,7 +371,7 @@ class PressureTrainer:
         config: TrainingConfig,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
-        from .model import get_model
+        from model import get_model
         self.model  = get_model(config).to(device)
         self.config = config
         self.device = device
@@ -574,7 +574,7 @@ class PressureTrainer:
             torch.save(checkpoint, best_path)
             logger.info(f"Saved best model with val_loss={val_loss:.6f}")
 
-    def train(self, train_loader: DataLoader, val_loader: DataLoader) -> Dict:
+    def train(self, train_loader: DataLoader, val_loader: DataLoader, progress_callback=None) -> Dict:
         """Main training loop"""
         logger.info(f"Starting training on {self.device}")
 
@@ -612,6 +612,14 @@ class PressureTrainer:
                 self.epochs_without_improvement += 1
 
             self.save_checkpoint(epoch + 1, val_loss, is_best)
+
+            if progress_callback:
+                progress_callback({
+                    "epoch": epoch + 1,
+                    "total_epochs": self.config.num_epochs,
+                    "train_loss": train_loss,
+                    "val_loss": val_loss
+                })
 
             # Early stopping
             if self.epochs_without_improvement >= self.config.patience:
@@ -654,7 +662,7 @@ def prepare_temporal_dataloaders(
         logger.info("Applied feature normalization")
 
     # FIX #6: Temporal split (not random!)
-    from .oracle import TemporalDatasetSplitter
+    from oracle import TemporalDatasetSplitter
 
     splitter = TemporalDatasetSplitter()
     train_idx, val_idx, test_idx = splitter.split_temporal(

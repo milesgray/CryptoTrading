@@ -213,4 +213,10 @@
 - [x] Fix HTTP 400 Bad Request error in retrieval forecast due to initial startup gaps by increasing the price data query lookback window multiplier from 2 to 12.
 - [x] Fix HTTP 502 Bad Gateway timeout error in serve proxy by increasing the HTTPX client timeout from 30 seconds to 90 seconds to tolerate Chronos forecasting CPU inference latency.
 
-
+### Phase 31: FastAPI Pressure Service & Frontend Integration (Completed ✅)
+- [x] Create FastAPI application wrapper (`main.py`) in `services/pressure/` with endpoints `/features` and `/predict`.
+- [x] Integrate asynchronous model training via `POST /train` (background task) and progress polling via `GET /train/status`.
+- [x] Fix relative imports in pressure submodules to support direct top-level absolute imports for container deployment and pytest.
+- [x] Define `VITE_PRESSURE_URL` proxy and environment settings in Vite and docker-compose configurations.
+- [x] Add dynamic model training console UI, parameter adjustments, and progress tracking inside the frontend's Order Book Pressure panel.
+- [x] Run and pass all tests inside `services/pressure/test_data_loader.py`.

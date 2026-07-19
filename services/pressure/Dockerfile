@@ -19,4 +19,4 @@ ENV PYTHONPATH=/app
 COPY ./src/cryptotrading ./cryptotrading/
 COPY ./services/pressure .
 
-CMD ["uv", "run", "python", "pressure_features.py"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

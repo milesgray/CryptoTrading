@@ -13,7 +13,7 @@ import numpy as np
 
 from cryptotrading.data.factory import get_order_book_adapter, get_price_adapter
 from cryptotrading.data.models import OrderBookSnapshot
-from .pressure_features import OrderBookFeaturizer, OrderBookSnapshot as PressureOrderBookSnapshot
+from pressure_features import OrderBookFeaturizer, OrderBookSnapshot as PressureOrderBookSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -131,10 +131,16 @@ class OrderBookDataLoader:
         self.detected_gaps = []
         
         try:
-            # Pass downsampling interval if supported by the adapter
             import inspect
-            sig = inspect.signature(self.orderbook_adapter.get_orderbook_data)
-            if 'interval' in sig.parameters:
+            has_interval = False
+            try:
+                sig = inspect.signature(self.orderbook_adapter.get_orderbook_data)
+                has_interval = 'interval' in sig.parameters
+            except (TypeError, ValueError):
+                # Handle Mocks and built-ins where inspect.signature fails
+                pass
+
+            if has_interval:
                 snapshots = await self.orderbook_adapter.get_orderbook_data(
                     token, start_time, end_time, interval=self.expected_interval_seconds
                 )
