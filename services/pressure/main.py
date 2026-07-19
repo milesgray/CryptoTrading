@@ -160,6 +160,11 @@ async def run_training_task(req: TrainRequest):
         
         if not snapshots or len(snapshots) < 100:
             logger.error("Not enough snapshots for training.")
+            training_status.update({
+                "is_training": False,
+                "current_step": "error",
+                "message": "Not enough snapshots for training."
+            })
             return
             
         logger.info("Fetching price history for oracle...")
