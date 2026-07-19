@@ -128,7 +128,7 @@ async def forecast(
     """Proxy to retrieval service with robust timeout and error handling."""
     retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://retrieval:8000")
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             response = await client.get(
                 f"{retrieval_url}/forecast?symbol={symbol}&k={k}&granularity={granularity}&window_size={window_size}"
             )

@@ -415,7 +415,7 @@ async def forecast(
             
         # Calculate time window to fetch live prices
         end_time = datetime.datetime.now(datetime.timezone.utc)
-        duration_sec = window_size * granularity_sec * 2
+        duration_sec = window_size * granularity_sec * 12
         start_time = end_time - datetime.timedelta(seconds=duration_sec)
         
         candles = await price_adapter.get_candlestick_data(

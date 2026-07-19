@@ -26,5 +26,5 @@ Optimized container builds and image sizes to prevent remote server CPU/disk bot
 3. **Symbol Resolution Self-Healing**: Fixed a startup race condition where database bootstrapping finished but the resolved symbols cache returned empty due to stale caching, causing `ValueError` during index pre-building. The cache now auto-refreshes if a lookup yields zero matches.
 
 ## Next Steps
-- Verify application functionality in the frontend dashboard.
-- Monitor disk space and memory utilization on the remote VM.
+- Monitor remote server resource usage under active predictions.
+- Verify frontend prediction dashboard rendering.

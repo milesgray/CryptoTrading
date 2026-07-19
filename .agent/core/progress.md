@@ -209,3 +209,8 @@
 - [x] Rebuild and run all containers sequentially on the remote server to prevent disk/CPU thrashing, successfully reducing compressed image sizes by up to 85%.
 - [x] Fix the symbol resolution database cache invalidation race condition inside `postgres.py` by implementing auto-refresh on missing symbol lookups.
 
+### Phase 30: Retrieval Forecast Window Alignment & Timeout Tolerance (Completed ✅)
+- [x] Fix HTTP 400 Bad Request error in retrieval forecast due to initial startup gaps by increasing the price data query lookback window multiplier from 2 to 12.
+- [x] Fix HTTP 502 Bad Gateway timeout error in serve proxy by increasing the HTTPX client timeout from 30 seconds to 90 seconds to tolerate Chronos forecasting CPU inference latency.
+
+
