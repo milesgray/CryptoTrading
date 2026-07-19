@@ -258,5 +258,7 @@ async def get_train_status():
 
 @app.post("/train")
 async def train_model_endpoint(request: TrainRequest, background_tasks: BackgroundTasks):
+    if training_status["is_training"]:
+        raise HTTPException(status_code=409, detail="Training task is already in progress.")
     background_tasks.add_task(run_training_task, request)
     return {"message": "Training task started in the background", "config": request.dict()}
