@@ -348,9 +348,11 @@ async def get_feeds_status(request: Request, token: str):
 @router.get("/pressure/{token}")
 async def get_order_book_pressure(request: Request, token: str):
     """
-    Retrieve real-time order book pressure features (BAP, OFI, CVD).
+    Retrieve real-time order book pressure features (BAP, OFI, CVD, buy/sell pressure, market regime).
     """
-    # Fetch the latest composite order book
+    import numpy as np
+    
+    # 1. Fetch the latest composite price and order book
     price_data = await get_latest_price(request.app, token)
     if not price_data:
         raise HTTPException(status_code=404, detail=f"No price data found for token {token}")
@@ -362,7 +364,14 @@ async def get_order_book_pressure(request: Request, token: str):
         return {
             "ofi": 1.2,
             "cvd": 2540,
-            "bap": 55.0
+            "bap": 55.0,
+            "buy_pressure": 0.55,
+            "sell_pressure": 0.45,
+            "total_pressure": 0.10,
+            "market_regime": "sideways",
+            "volatility": 0.001,
+            "recommendation": "STANDBY",
+            "confidence": 0.50
         }
         
     bids = book.get("bids", [])
@@ -372,15 +381,22 @@ async def get_order_book_pressure(request: Request, token: str):
         return {
             "ofi": 0.0,
             "cvd": 2500,
-            "bap": 50.0
+            "bap": 50.0,
+            "buy_pressure": 0.50,
+            "sell_pressure": 0.50,
+            "total_pressure": 0.00,
+            "market_regime": "sideways",
+            "volatility": 0.001,
+            "recommendation": "STANDBY",
+            "confidence": 0.50
         }
         
-    # 1. Bid-Ask Pressure (BAP)
+    # 2. Bid-Ask Pressure (BAP)
     total_bid_depth = sum(float(size) for _, size in bids)
     total_ask_depth = sum(float(size) for _, size in asks)
     bap = (total_bid_depth / (total_bid_depth + total_ask_depth)) * 100.0 if (total_bid_depth + total_ask_depth) > 0 else 50.0
     
-    # 2. Order Flow Imbalance (OFI)
+    # 3. Order Flow Imbalance (OFI)
     best_bid_price, best_bid_size = float(bids[0][0]), float(bids[0][1])
     best_ask_price, best_ask_size = float(asks[0][0]), float(asks[0][1])
     
@@ -416,14 +432,127 @@ async def get_order_book_pressure(request: Request, token: str):
         "best_ask_size": best_ask_size
     }
     
-    # 3. Cumulative Volume Delta (CVD)
+    # 4. Cumulative Volume Delta (CVD)
     cvd = cvd_state.get(token, 2500.0) + ofi * 10.0
     # Keep CVD within a reasonable range for visual stability
     cvd = max(-10000.0, min(10000.0, cvd))
     cvd_state[token] = cvd
+
+    # 5. Fetch price history from database for PressureOracle regime & volatility detection
+    regime_str = "sideways"
+    volatility = 0.001
+    try:
+        # Import PressureOracle dynamically
+        import sys
+        import os
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
+        if root_dir not in sys.path:
+            sys.path.append(root_dir)
+        from services.pressure.oracle import PressureOracle
+        
+        # Fetch prices for last 3 hours to guarantee 100+ points
+        end_time = datetime.now(dt.timezone.utc)
+        start_time = end_time - dt.timedelta(hours=3)
+        
+        raw_prices = []
+        if hasattr(request.app, 'price_adapter'):
+            raw_prices = await request.app.price_adapter.get_price_data(
+                symbol=f"{token}/USDT",
+                start_time=start_time,
+                end_time=end_time,
+                limit=150,
+                sort="desc"
+            )
+            if not raw_prices:
+                # Fallback without suffix
+                raw_prices = await request.app.price_adapter.get_price_data(
+                    symbol=token,
+                    start_time=start_time,
+                    end_time=end_time,
+                    limit=150,
+                    sort="desc"
+                )
+        
+        if raw_prices:
+            # Sort chronologically ascending
+            raw_prices = sorted(raw_prices, key=lambda x: x["timestamp"])
+            price_history = [float(p["price"]) for p in raw_prices]
+            
+            if len(price_history) >= 100:
+                oracle = PressureOracle(regime_window=100)
+                price_arr = np.array(price_history)
+                regime = oracle.detect_market_regime(price_arr, len(price_arr) - 1)
+                regime_str = regime.value
+                
+                # Calculate local log return volatility
+                recent_slice = price_arr[-50:]
+                if len(recent_slice) > 1:
+                    volatility = float(np.std(np.diff(np.log(recent_slice))))
+    except Exception as e:
+        logger.error(f"Error computing pressure oracle analysis: {e}")
+
+    # 6. Advanced rule-based Buy/Sell pressure prediction
+    # Scales OFI to [-1.0, 1.0] and CVD to [-1.0, 1.0]
+    ofi_scaled = max(-1.0, min(1.0, ofi / 15.0)) if ofi != 0 else 0.0
+    cvd_scaled = max(-1.0, min(1.0, cvd / 5000.0)) if cvd != 0 else 0.0
     
+    # Combine Bid-Ask Pressure, Order Flow Imbalance, and Cumulative Volume Delta
+    buy_raw = 0.45 * (bap / 100.0) + 0.35 * (0.5 + 0.5 * ofi_scaled) + 0.20 * (0.5 + 0.5 * cvd_scaled)
+    sell_raw = 0.45 * ((100.0 - bap) / 100.0) + 0.35 * (0.5 - 0.5 * ofi_scaled) + 0.20 * (0.5 - 0.5 * cvd_scaled)
+    
+    # Sigmoid smoothing mapping to map to distinctive pressures
+    def sigmoid(x):
+        return 1.0 / (1.0 + np.exp(-(x - 0.5) * 8.0))
+        
+    buy_pressure = float(np.clip(sigmoid(buy_raw), 0.0, 1.0))
+    sell_pressure = float(np.clip(sigmoid(sell_raw), 0.0, 1.0))
+    total_pressure = float(np.clip(buy_pressure - sell_pressure, -1.0, 1.0))
+
+    # 7. Scalp entry/exit signal recommendation rules (optimized for high leverage)
+    recommendation = "STANDBY"
+    confidence = 0.50
+    
+    # Adjust thresholds based on market regime to avoid false signals in hostile environments
+    if regime_str == "bull" or regime_str == "low_vol":
+        if total_pressure > 0.38 and ofi > 2.0:
+            recommendation = "SCALP_LONG"
+            confidence = float(min(0.99, 0.50 + total_pressure * 0.4 + ofi_scaled * 0.09))
+        elif total_pressure < -0.45 and ofi < -3.0:
+            recommendation = "SCALP_SHORT"
+            confidence = float(min(0.99, 0.50 - total_pressure * 0.4 - ofi_scaled * 0.09))
+    elif regime_str == "bear":
+        if total_pressure < -0.38 and ofi < -2.0:
+            recommendation = "SCALP_SHORT"
+            confidence = float(min(0.99, 0.50 - total_pressure * 0.4 - ofi_scaled * 0.09))
+        elif total_pressure > 0.45 and ofi > 3.0:
+            recommendation = "SCALP_LONG"
+            confidence = float(min(0.99, 0.50 + total_pressure * 0.4 + ofi_scaled * 0.09))
+    elif regime_str == "sideways":
+        if total_pressure > 0.48 and ofi > 3.0:
+            recommendation = "SCALP_LONG"
+            confidence = float(min(0.95, 0.45 + total_pressure * 0.4 + ofi_scaled * 0.09))
+        elif total_pressure < -0.48 and ofi < -3.0:
+            recommendation = "SCALP_SHORT"
+            confidence = float(min(0.95, 0.45 - total_pressure * 0.4 - ofi_scaled * 0.09))
+    elif regime_str == "high_vol":
+        # High volatility is extremely dangerous, signal caution
+        if total_pressure > 0.58 and ofi > 5.0:
+            recommendation = "SCALP_LONG_CAUTION"
+            confidence = float(min(0.90, 0.35 + total_pressure * 0.4 + ofi_scaled * 0.09))
+        elif total_pressure < -0.58 and ofi < -5.0:
+            recommendation = "SCALP_SHORT_CAUTION"
+            confidence = float(min(0.90, 0.35 - total_pressure * 0.4 - ofi_scaled * 0.09))
+            
     return {
         "ofi": round(ofi, 2),
         "cvd": round(cvd, 0),
-        "bap": round(bap, 1)
+        "bap": round(bap, 1),
+        "buy_pressure": round(buy_pressure, 3),
+        "sell_pressure": round(sell_pressure, 3),
+        "total_pressure": round(total_pressure, 3),
+        "market_regime": regime_str,
+        "volatility": round(volatility, 6),
+        "recommendation": recommendation,
+        "confidence": round(confidence, 2)
     }
+

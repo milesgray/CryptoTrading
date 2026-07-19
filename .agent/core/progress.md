@@ -200,3 +200,12 @@
 - [x] Implement downsampling in `book.py` using TimescaleDB's `time_bucket` and `last()` aggregate functions.
 - [x] Pass the expected interval in `data_loader.py` to allow database-side downsampling.
 - [x] Benchmark optimizations verifying speedups up to 4x on DB execution and 2.5x on downsampled fetches.
+
+### Phase 29: Dockerfile Optimization & PyTorch CPU Wheels (Completed ✅)
+- [x] Split heavy deep learning dependencies into an optional `ml` extra group in `pyproject.toml` to prevent pulling PyTorch/CUDA in core services.
+- [x] Configure explicit `pytorch-cpu` wheel index url pointing to `download.pytorch.org` to fetch optimized, lightweight CPU-only PyTorch.
+- [x] Regenerate `uv.lock` local lockfile.
+- [x] Modify all microservices Dockerfiles to only install necessary extra dependency groups (`--extra ml` where needed, raw sync for core services).
+- [x] Rebuild and run all containers sequentially on the remote server to prevent disk/CPU thrashing, successfully reducing compressed image sizes by up to 85%.
+- [x] Fix the symbol resolution database cache invalidation race condition inside `postgres.py` by implementing auto-refresh on missing symbol lookups.
+

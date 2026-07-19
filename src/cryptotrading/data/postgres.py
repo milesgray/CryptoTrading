@@ -118,6 +118,26 @@ async def init_pool(**overrides) -> Pool:
     
     return _pool
 
+# Safe ISO timezone offset and fractional seconds parser for Python 3.10 and below
+def parse_timestamptz(x: str) -> datetime | None:
+    if not x:
+        return None
+    # Support +HH or -HH suffix by expanding to +HH:00 or -HH:00
+    if len(x) >= 3 and x[-3] in ('+', '-') and x[-2:].isdigit():
+        x = x + ':00'
+    # Format fractional seconds to exactly 6 digits (microseconds)
+    if '.' in x:
+        parts = x.split('.')
+        tz_sign = '+' if '+' in parts[1] else '-' if '-' in parts[1] else None
+        if tz_sign:
+            frac, tz = parts[1].split(tz_sign, 1)
+            frac = frac.ljust(6, '0')[:6]
+            x = parts[0] + '.' + frac + tz_sign + tz
+        else:
+            frac = parts[1].ljust(6, '0')[:6]
+            x = parts[0] + '.' + frac
+    return datetime.fromisoformat(x)
+
 # Initialize a connection with custom type handlers
 async def init_connection(conn: Connection):
     """Initialize a new database connection with custom type handlers."""
@@ -134,7 +154,7 @@ async def init_connection(conn: Connection):
     await conn.set_type_codec(
         'timestamptz',
         encoder=lambda x: x.isoformat() if x else None,
-        decoder=lambda x: datetime.fromisoformat(x) if x else None,
+        decoder=parse_timestamptz,
         schema='pg_catalog',
         format='text'
     )
@@ -739,7 +759,16 @@ async def resolve_matching_symbols(token_or_symbol: str) -> List[str]:
         _cached_symbols = [r["symbol"] for r in rows]
         _cached_symbols_time = now
         
-    return [s for s in _cached_symbols if s == token_or_symbol or s.startswith(f"{token_or_symbol}/")]
+    matches = [s for s in _cached_symbols if s == token_or_symbol or s.startswith(f"{token_or_symbol}/")]
+    if not matches and (now - _cached_symbols_time) <= 60.0:
+        # Cache had no matches, force refresh once to avoid stale reads during bootstrapping
+        async with get_connection() as conn:
+            rows = await conn.fetch("SELECT DISTINCT symbol FROM price_data;")
+        _cached_symbols = [r["symbol"] for r in rows]
+        _cached_symbols_time = now
+        matches = [s for s in _cached_symbols if s == token_or_symbol or s.startswith(f"{token_or_symbol}/")]
+        
+    return matches
 
 # Initialize database connection on module import
 async def init_db():

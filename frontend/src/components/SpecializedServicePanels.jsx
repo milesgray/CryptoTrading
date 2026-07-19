@@ -500,6 +500,13 @@ export const OrderBookPressurePanel = () => {
   const [ofi, setOfi] = useState(1.2); // Order Flow Imbalance
   const [cvd, setCvd] = useState(2540); // Cumulative Volume Delta
   const [bap, setBap] = useState(55); // Bid-Ask Pressure %
+  const [buyPressure, setBuyPressure] = useState(0.55); // Sigmoid Buy Pressure
+  const [sellPressure, setSellPressure] = useState(0.45); // Sigmoid Sell Pressure
+  const [totalPressure, setTotalPressure] = useState(0.10); // Buy - Sell Pressure
+  const [marketRegime, setMarketRegime] = useState('sideways'); // Classified Regime
+  const [volatility, setVolatility] = useState(0.001); // Local Volatility
+  const [recommendation, setRecommendation] = useState('STANDBY'); // Scalp Signal
+  const [confidence, setConfidence] = useState(0.50); // Recommendation Confidence
 
   useEffect(() => {
     const fetchData = async () => {
@@ -509,6 +516,13 @@ export const OrderBookPressurePanel = () => {
           if (data.ofi !== undefined) setOfi(data.ofi);
           if (data.cvd !== undefined) setCvd(data.cvd);
           if (data.bap !== undefined) setBap(data.bap);
+          if (data.buy_pressure !== undefined) setBuyPressure(data.buy_pressure);
+          if (data.sell_pressure !== undefined) setSellPressure(data.sell_pressure);
+          if (data.total_pressure !== undefined) setTotalPressure(data.total_pressure);
+          if (data.market_regime !== undefined) setMarketRegime(data.market_regime);
+          if (data.volatility !== undefined) setVolatility(data.volatility);
+          if (data.recommendation !== undefined) setRecommendation(data.recommendation);
+          if (data.confidence !== undefined) setConfidence(data.confidence);
         }
       } catch (err) {
         console.error("Error fetching order book pressure:", err);
@@ -520,54 +534,196 @@ export const OrderBookPressurePanel = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const getRecommendationStyle = (rec) => {
+    switch (rec) {
+      case 'SCALP_LONG':
+        return { text: 'SCALP LONG', style: 'text-emerald-400 border-emerald-500/20 bg-emerald-950/30', glow: 'shadow-emerald-950/50' };
+      case 'SCALP_SHORT':
+        return { text: 'SCALP SHORT', style: 'text-rose-400 border-rose-500/20 bg-rose-950/30', glow: 'shadow-rose-950/50' };
+      case 'SCALP_LONG_CAUTION':
+        return { text: 'SCALP LONG (CAUTION)', style: 'text-amber-400 border-amber-500/20 bg-amber-950/30', glow: 'shadow-amber-950/50' };
+      case 'SCALP_SHORT_CAUTION':
+        return { text: 'SCALP SHORT (CAUTION)', style: 'text-amber-400 border-amber-500/20 bg-amber-950/30', glow: 'shadow-amber-950/50' };
+      default:
+        return { text: 'STANDBY', style: 'text-slate-400 border-slate-800 bg-slate-900/40', glow: '' };
+    }
+  };
+  const recStyle = getRecommendationStyle(recommendation);
+
+  const getRegimeStyle = (regime) => {
+    switch (regime) {
+      case 'bull':
+        return { text: 'BULL REGIME', style: 'text-emerald-400 bg-emerald-950/20 border-emerald-500/10' };
+      case 'bear':
+        return { text: 'BEAR REGIME', style: 'text-rose-400 bg-rose-950/20 border-rose-500/10' };
+      case 'high_vol':
+        return { text: 'HIGH VOLATILITY', style: 'text-amber-400 bg-amber-950/20 border-amber-500/10 animate-pulse' };
+      case 'low_vol':
+        return { text: 'LOW VOLATILITY', style: 'text-sky-400 bg-sky-950/20 border-sky-500/10' };
+      default:
+        return { text: 'SIDEWAYS RANGE', style: 'text-slate-450 bg-slate-900/40 border-slate-800' };
+    }
+  };
+  const regimeStyle = getRegimeStyle(marketRegime);
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-900/30 p-6 rounded-2xl border border-slate-800 backdrop-blur-md">
+    <div className="flex flex-col gap-6">
       
-      {/* 1. Bid-Ask Pressure Meter */}
-      <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-850 flex flex-col gap-3 items-center text-center justify-center">
-        <h4 className="text-xs text-slate-500 uppercase font-mono tracking-wider">Bid-Ask Pressure</h4>
+      {/* Row 1: Traditional Liquidity Features */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-900/30 p-6 rounded-2xl border border-slate-800 backdrop-blur-md">
         
-        <div className="w-32 h-32 rounded-full border-4 border-slate-800 flex items-center justify-center relative bg-slate-900/20 shadow-inner">
-          <div className="flex flex-col">
-            <span className="text-3xl font-mono font-extrabold text-indigo-400">{bap.toFixed(0)}%</span>
-            <span className="text-[9px] text-slate-500">Bids depth</span>
+        {/* 1. Bid-Ask Pressure Meter */}
+        <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-850 flex flex-col gap-3 items-center text-center justify-center">
+          <h4 className="text-xs text-slate-500 uppercase font-mono tracking-wider">Bid-Ask Pressure</h4>
+          
+          <div className="w-28 h-28 rounded-full border-4 border-slate-800 flex items-center justify-center relative bg-slate-900/20 shadow-inner">
+            <div className="flex flex-col">
+              <span className="text-2xl font-mono font-extrabold text-indigo-400">{bap.toFixed(0)}%</span>
+              <span className="text-[9px] text-slate-500">Bids depth</span>
+            </div>
+          </div>
+
+          <div className="w-full flex justify-between text-[10px] font-mono text-slate-400 mt-2">
+            <span>Bids: {bap.toFixed(0)}%</span>
+            <span>Asks: {(100 - bap).toFixed(0)}%</span>
           </div>
         </div>
 
-        <div className="w-full flex justify-between text-[10px] font-mono text-slate-400 mt-2">
-          <span>Bids: {bap.toFixed(0)}%</span>
-          <span>Asks: {(100 - bap).toFixed(0)}%</span>
+        {/* 2. Order Flow Imbalance */}
+        <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-850 flex flex-col gap-3 items-center text-center justify-center">
+          <h4 className="text-xs text-slate-500 uppercase font-mono tracking-wider">Order Flow Imbalance</h4>
+          
+          <div className={`text-3xl font-mono font-extrabold py-3 px-6 rounded-lg border bg-slate-950 shadow-inner ${
+            ofi > 0 ? 'text-emerald-400 border-emerald-500/10' : 'text-rose-400 border-rose-500/10'
+          }`}>
+            {ofi > 0 ? '+' : ''}{ofi.toFixed(2)}
+          </div>
+          
+          <span className="text-[10px] text-slate-500 leading-relaxed font-sans max-w-[180px]">
+            Positive values indicate heavy spot limit-order buying support pushing top-of-book levels.
+          </span>
         </div>
+
+        {/* 3. Cumulative Volume Delta */}
+        <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-850 flex flex-col gap-3 items-center text-center justify-center">
+          <h4 className="text-xs text-slate-500 uppercase font-mono tracking-wider">Cumulative Volume Delta</h4>
+          
+          <div className={`text-3xl font-mono font-extrabold py-3 px-6 rounded-lg border bg-slate-950 shadow-inner ${
+            cvd > 0 ? 'text-emerald-400 border-emerald-500/10' : 'text-rose-400 border-rose-500/10'
+          }`}>
+            {cvd > 0 ? '+' : ''}{cvd.toFixed(0)}
+          </div>
+
+          <span className="text-[10px] text-slate-500 leading-relaxed font-sans max-w-[180px]">
+            Volume delta measures net aggressive buying (market buys) minus aggressive selling (market sells) in contracts.
+          </span>
+        </div>
+
       </div>
 
-      {/* 2. Order Flow Imbalance */}
-      <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-850 flex flex-col gap-3 items-center text-center justify-center">
-        <h4 className="text-xs text-slate-500 uppercase font-mono tracking-wider">Order Flow Imbalance</h4>
+      {/* Row 2: Advanced Pressure Service Analytics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-900/30 p-6 rounded-2xl border border-slate-800 backdrop-blur-md">
         
-        <div className={`text-4xl font-mono font-extrabold py-3 px-6 rounded-lg border bg-slate-950 shadow-inner ${
-          ofi > 0 ? 'text-emerald-400 border-emerald-500/10' : 'text-rose-400 border-rose-500/10'
-        }`}>
-          {ofi > 0 ? '+' : ''}{ofi.toFixed(2)}
-        </div>
-        
-        <span className="text-[10px] text-slate-500 leading-relaxed font-sans max-w-[180px]">
-          Positive values indicate heavy spot limit-order buying support pushing top-of-book levels.
-        </span>
-      </div>
+        {/* 4. Sigmoid Integrated Pressure */}
+        <div className="bg-slate-950/50 p-5 rounded-xl border border-slate-850 flex flex-col gap-4 justify-between">
+          <div className="flex flex-col gap-0.5">
+            <h4 className="text-xs text-slate-300 font-bold font-mono tracking-wide uppercase">Integrated Pressure Analysis</h4>
+            <span className="text-[9px] text-slate-500">Sigmoid-mapped imbalance balance</span>
+          </div>
 
-      {/* 3. Cumulative Volume Delta */}
-      <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-850 flex flex-col gap-3 items-center text-center justify-center">
-        <h4 className="text-xs text-slate-500 uppercase font-mono tracking-wider">Cumulative Volume Delta</h4>
-        
-        <div className={`text-4xl font-mono font-extrabold py-3 px-6 rounded-lg border bg-slate-950 shadow-inner ${
-          cvd > 0 ? 'text-emerald-400 border-emerald-500/10' : 'text-rose-400 border-rose-500/10'
-        }`}>
-          {cvd > 0 ? '+' : ''}{cvd.toFixed(0)}
+          <div className="flex flex-col gap-3">
+            <div className="flex justify-between items-center text-xs font-mono">
+              <span className="text-emerald-400">Buy: {(buyPressure * 100).toFixed(0)}%</span>
+              <span className="text-slate-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                Index: {totalPressure > 0 ? '+' : ''}{totalPressure.toFixed(2)}
+              </span>
+              <span className="text-rose-400">Sell: {(sellPressure * 100).toFixed(0)}%</span>
+            </div>
+
+            <div className="w-full bg-slate-950 rounded-full h-3 border border-slate-850 overflow-hidden flex shadow-inner">
+              <div 
+                className="bg-emerald-500 h-full transition-all duration-500" 
+                style={{ width: `${buyPressure * 100}%` }} 
+              />
+              <div 
+                className="bg-rose-500 h-full transition-all duration-500" 
+                style={{ width: `${sellPressure * 100}%` }} 
+              />
+            </div>
+          </div>
+
+          <span className="text-[10px] text-slate-500 leading-normal">
+            Combines depth walls, order flow velocity, and cumulative aggressive volume to capture the true underlying market force.
+          </span>
         </div>
 
-        <span className="text-[10px] text-slate-500 leading-relaxed font-sans max-w-[180px]">
-          Volume delta measures net aggressive buying (market buys) minus aggressive selling (market sells) in contracts.
-        </span>
+        {/* 5. Regime Classification & Volatility */}
+        <div className="bg-slate-950/50 p-5 rounded-xl border border-slate-850 flex flex-col gap-4 justify-between">
+          <div className="flex flex-col gap-0.5">
+            <h4 className="text-xs text-slate-300 font-bold font-mono tracking-wide uppercase">Market Dynamical Context</h4>
+            <span className="text-[9px] text-slate-500">PressureOracle regime detection</span>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className={`py-2.5 px-4 rounded-lg border text-center font-mono font-bold text-sm tracking-wide ${regimeStyle.style}`}>
+              {regimeStyle.text}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono border-t border-slate-900 pt-2 text-slate-400">
+              <div className="flex flex-col">
+                <span className="text-slate-500 text-[8px] uppercase">Volatility</span>
+                <span className="font-bold text-slate-300">{(volatility * 10000).toFixed(2)} bps</span>
+              </div>
+              <div className="flex flex-col text-right">
+                <span className="text-slate-500 text-[8px] uppercase">Regime Window</span>
+                <span className="font-bold text-slate-300">100 ticks</span>
+              </div>
+            </div>
+          </div>
+
+          <span className="text-[10px] text-slate-500 leading-normal">
+            Detects trend strength and log return volatility in real-time. High volatility regimes trigger cautious sizing.
+          </span>
+        </div>
+
+        {/* 6. Scalp Trade Action Recommendation */}
+        <div className="bg-slate-950/50 p-5 rounded-xl border border-slate-850 flex flex-col gap-4 justify-between">
+          <div className="flex flex-col gap-0.5">
+            <h4 className="text-xs text-slate-300 font-bold font-mono tracking-wide uppercase">Scalp Recommendation</h4>
+            <span className="text-[9px] text-slate-500">High-leverage trade entry triggers</span>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className={`py-2 px-3 rounded-lg border text-center font-mono font-extrabold text-sm shadow-md ${recStyle.style} ${recStyle.glow}`}>
+              {recStyle.text}
+            </div>
+
+            <div className="flex flex-col gap-1 mt-1">
+              <div className="flex justify-between items-center text-[9px] font-mono text-slate-400">
+                <span>Signal Confidence:</span>
+                <span className="font-bold text-slate-200">{(confidence * 100).toFixed(0)}%</span>
+              </div>
+              <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-500 ${
+                    recommendation.includes('LONG') ? 'bg-emerald-500' :
+                    recommendation.includes('SHORT') ? 'bg-rose-500' : 'bg-slate-600'
+                  }`}
+                  style={{ width: `${confidence * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="text-[10px] text-slate-500 leading-normal border-t border-slate-900 pt-2 flex flex-col gap-1.5 font-sans">
+            <span className="text-indigo-400 font-semibold font-mono text-[8px] uppercase">Scalp Rules:</span>
+            {recommendation === 'SCALP_LONG' && <span>🟢 Long Scalp: Strong buying momentum in bull/low_vol regime. Set tight stops.</span>}
+            {recommendation === 'SCALP_SHORT' && <span>🔴 Short Scalp: Strong selling momentum in bear/low_vol regime. Set tight stops.</span>}
+            {recommendation.includes('CAUTION') && <span>⚠️ Caution: Extreme volatility. Reduce leverage and execute with strict limit orders.</span>}
+            {recommendation === 'STANDBY' && <span>⚪ Standby: Book is balanced. Wait for CVD divergence or OFI surge before entry.</span>}
+          </div>
+        </div>
+
       </div>
 
     </div>

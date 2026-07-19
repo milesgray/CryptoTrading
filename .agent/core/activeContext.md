@@ -1,29 +1,30 @@
-# Active Context: TimescaleDB Performance Optimizations & Downsampling
+# Active Context: Dockerfile Optimization & PyTorch CPU Wheels
 
 ## Quick Reference
-- **Feature**: TimescaleDB Query Optimizations & Downsampling
-- **Plan File**: [implementation_plan.md](file:///home/miles/.gemini/antigravity-ide/brain/9a0c565e-c575-458a-94aa-d1e6a9073e7f/implementation_plan.md)
+- **Feature**: Dockerfile Optimization & PyTorch CPU Wheels
+- **Plan File**: [implementation_plan.md](file:///home/miles/.gemini/antigravity-ide/brain/f7b7d684-c9cd-4b42-88eb-4b7003e6605d/implementation_plan.md)
 - **Status**: Completed ✅
 
 ## Executive Summary
-Optimized database queries for order books and price data on the remote TimescaleDB database VM. We resolved latency and timeout issues by leveraging B-tree index scan properties (backward scans to avoid sort operations), database-side downsampling via `time_bucket` and `last()` aggregate functions, and in-memory caching of symbol resolution.
+Optimized container builds and image sizes to prevent remote server CPU/disk bottlenecks and container crash-loops. By splitting heavy ML dependencies from core dependencies in `pyproject.toml` and configuring `tool.uv` sources to fetch PyTorch CPU-only wheels (`+cpu`), we reduced non-ML service images (like `record` and `serve`) by 85% (~1.4GB down to 330MB compressed) and ML service images (like `retrieval`, `predict`, `embed`, `train`) by 70% (~9.45GB down to 635MB compressed).
 
 ## Tech Stack for This Feature
-- **PostgreSQL / TimescaleDB**: Hypertable indexing, B-Tree backward scans, `time_bucket` downsampling, and `last` aggregates.
-- **Python / asyncpg**: Asynchronous connection pooling and query execution.
-- **NumPy / Pandas**: Order book feature calculation pipeline.
+- **Docker / BuildKit**: Container builds, caching, and multi-stage builds.
+- **Astral uv**: Fast dependency management, lockfile synchronization, and optional dependency extra groups (`--extra ml`).
+- **PyTorch (CPU-only)**: Optimized PyTorch CPU wheels (`+cpu`) for non-GPU VM host environments.
 
 ## Key Files Modified
-- [src/cryptotrading/data/postgres.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/postgres.py): Implemented a 60-second in-memory cache for SkipScan-based `resolve_matching_symbols` resolution.
-- [src/cryptotrading/data/book.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/book.py): Updated `get_orderbook_data` to support `time_bucket` downsampling and exact single-symbol equality scans (B-Tree backward scans to bypass sort steps).
-- [src/cryptotrading/data/price.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/price.py): Updated `get_price_data`, `get_price_data_count`, `get_latest_price`, and `get_candlestick_data` to leverage exact single-symbol index scans.
-- [services/pressure/data_loader.py](file:///home/miles/Development/notebooks/CryptoTrading/services/pressure/data_loader.py): Passed downsampling interval (`expected_interval_seconds`) to the database adapter.
-- [test_db.py](file:///home/miles/Development/notebooks/CryptoTrading/test_db.py): Wrote query verification and latency benchmark tests.
+- [src/pyproject.toml](file:///home/miles/Development/notebooks/CryptoTrading/src/pyproject.toml): Split dependencies into core and optional `ml` group; configured the `pytorch-cpu` package index.
+- [src/uv.lock](file:///home/miles/Development/notebooks/CryptoTrading/src/uv.lock): Regenerated lockfile without CUDA dependencies.
+- [Dockerfile.retrieval](file:///home/miles/Development/notebooks/CryptoTrading/Dockerfile.retrieval) & ML service Dockerfiles: Configured `uv sync` to compile using the `--extra ml` flag.
+- Core service Dockerfiles (`Dockerfile.record`, `Dockerfile.serve`, `services/trade/Dockerfile`): Maintained lightweight sync without `ml` dependencies.
+- [src/cryptotrading/data/postgres.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/postgres.py): Added cache invalidation auto-refresh on `resolve_matching_symbols` to resolve the startup bootstrap race condition.
 
 ## Critical Implementation Details
-1. **Backward Index Scan**: By dynamically rewriting `symbol = ANY($1)` to `symbol = $1` when a single symbol is matched, the Postgres planner scans the `(symbol, exchange, time DESC)` index backwards. This retrieves rows in sorted `time ASC` order directly from the index, eliminating the costly Sort operation and speeding up database fetch by 4x.
-2. **Database-Side Downsampling**: Utilizing TimescaleDB's `time_bucket` and `last()` aggregate functions, raw high-frequency orderbook snapshots are downsampled to a target frequency (e.g. 10s) directly on the DB server. This reduces the network payload and Python parsing time by up to 90%.
-3. **Symbol Caching**: Caching the list of available symbols in Python memory for 60 seconds eliminates the 9-second SkipScan Skip-Join latency on every single database fetch.
+1. **CPU PyTorch Package Index**: Added `https://download.pytorch.org/whl/cpu` as an explicit source for `torch` in `pyproject.toml`. This prevents `uv` from pulling down massive GPU/CUDA binaries (~8GB), producing compact ML containers.
+2. **Sequential Remote Builds**: Executed remote builds sequentially to prevent BuildKit socket resets due to concurrent compilation IO overhead on the VM.
+3. **Symbol Resolution Self-Healing**: Fixed a startup race condition where database bootstrapping finished but the resolved symbols cache returned empty due to stale caching, causing `ValueError` during index pre-building. The cache now auto-refreshes if a lookup yields zero matches.
 
 ## Next Steps
-- Monitor connection health and query execution speed in production dashboards.
+- Verify application functionality in the frontend dashboard.
+- Monitor disk space and memory utilization on the remote VM.

@@ -12,7 +12,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 COPY ./src/pyproject.toml ./src/uv.lock* ./src/README.md ./
 
-RUN uv sync --frozen --no-install-project --no-dev
+RUN uv sync --frozen --no-install-project --no-dev --extra ml
 
 ENV PYTHONPATH=/app
 

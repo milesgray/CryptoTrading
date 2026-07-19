@@ -1,13 +1,33 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as echarts from 'echarts';
-import { webSocketService } from '../services/api';
+import { webSocketService, getBookPressure } from '../services/api';
 
 const OrderBookPanel = ({ token, latestPriceData }) => {
   const [orderBookData, setOrderBookData] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [pressureAnalysis, setPressureAnalysis] = useState(null);
   
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
+
+  useEffect(() => {
+    if (!token) return;
+    
+    const fetchPressure = async () => {
+      try {
+        const data = await getBookPressure(token);
+        if (data) {
+          setPressureAnalysis(data);
+        }
+      } catch (error) {
+        console.error('Error fetching pressure analysis:', error);
+      }
+    };
+    
+    fetchPressure();
+    const interval = setInterval(fetchPressure, 1000);
+    return () => clearInterval(interval);
+  }, [token]);
 
   useEffect(() => {
     let cleanupCallback = null;
@@ -217,6 +237,71 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
   };
   const pressureLabel = getPressureLabel();
 
+  // Get recommendation details
+  const getRecommendationDetails = (rec) => {
+    switch (rec) {
+      case 'SCALP_LONG':
+        return {
+          title: 'SCALP LONG ENTRY',
+          subtitle: 'Imbalance detected. High probability long scalp.',
+          styleClass: 'border-emerald-500/30 bg-emerald-950/20 text-emerald-400',
+          indicatorColor: 'bg-emerald-500',
+          badgeText: 'BUY ENTRY'
+        };
+      case 'SCALP_SHORT':
+        return {
+          title: 'SCALP SHORT ENTRY',
+          subtitle: 'Imbalance detected. High probability short scalp.',
+          styleClass: 'border-rose-500/30 bg-rose-950/20 text-rose-400',
+          indicatorColor: 'bg-rose-500',
+          badgeText: 'SHORT ENTRY'
+        };
+      case 'SCALP_LONG_CAUTION':
+        return {
+          title: 'SCALP LONG (CAUTION)',
+          subtitle: 'Strong trend in high volatility. Watch stop-loss.',
+          styleClass: 'border-amber-500/30 bg-amber-950/20 text-amber-400',
+          indicatorColor: 'bg-amber-500',
+          badgeText: 'BUY ENTRY (CAUTION)'
+        };
+      case 'SCALP_SHORT_CAUTION':
+        return {
+          title: 'SCALP SHORT (CAUTION)',
+          subtitle: 'Strong trend in high volatility. Watch stop-loss.',
+          styleClass: 'border-amber-500/30 bg-amber-950/20 text-amber-400',
+          indicatorColor: 'bg-amber-500',
+          badgeText: 'SHORT ENTRY (CAUTION)'
+        };
+      default:
+        return {
+          title: 'STANDBY / NO SIGNAL',
+          subtitle: 'Order book pressure neutral. Wait for clear imbalance.',
+          styleClass: 'border-slate-800 bg-slate-950/40 text-slate-400',
+          indicatorColor: 'bg-slate-700',
+          badgeText: 'NEUTRAL'
+        };
+    }
+  };
+
+  const recDetails = getRecommendationDetails(pressureAnalysis?.recommendation);
+
+  const getRegimeLabel = (regime) => {
+    switch (regime) {
+      case 'bull':
+        return { text: 'BULLISH REGIME', style: 'text-emerald-400 border-emerald-500/20 bg-emerald-950/30' };
+      case 'bear':
+        return { text: 'BEARISH REGIME', style: 'text-rose-400 border-rose-500/20 bg-rose-950/30' };
+      case 'high_vol':
+        return { text: 'HIGH VOLATILITY', style: 'text-amber-400 border-amber-500/20 bg-amber-950/30' };
+      case 'low_vol':
+        return { text: 'LOW VOLATILITY', style: 'text-sky-400 border-sky-500/20 bg-sky-950/30' };
+      default:
+        return { text: 'SIDEWAYS RANGE', style: 'text-slate-400 border-slate-850 bg-slate-900/20' };
+    }
+  };
+
+  const regimeLabel = getRegimeLabel(pressureAnalysis?.market_regime);
+
   return (
     <div className="bg-slate-900/30 p-6 rounded-2xl border border-slate-800 backdrop-blur-md h-full flex flex-col gap-5 justify-between">
       {/* Header and status */}
@@ -234,29 +319,88 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
         </div>
       </div>
 
+      {/* SCALP Trading Signals Dashboard Overlay */}
+      {pressureAnalysis && (
+        <div className={`p-4 rounded-xl border flex flex-col gap-2 transition-all duration-300 ${recDetails.styleClass}`}>
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <span className={`h-2 w-2 rounded-full animate-pulse ${recDetails.indicatorColor}`} />
+              <span className="text-xs font-mono font-extrabold uppercase tracking-wide">{recDetails.title}</span>
+            </div>
+            <span className={`px-2 py-0.5 rounded text-[8px] font-bold border ${regimeLabel.style}`}>
+              {regimeLabel.text}
+            </span>
+          </div>
+          
+          <div className="text-[10px] opacity-85 leading-normal font-sans">{recDetails.subtitle}</div>
+          
+          <div className="flex flex-col gap-1 mt-1">
+            <div className="flex justify-between items-center text-[9px] font-mono">
+              <span>Signal Confidence:</span>
+              <span className="font-bold">{(pressureAnalysis.confidence * 100).toFixed(0)}%</span>
+            </div>
+            <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-500 ${recDetails.indicatorColor}`}
+                style={{ width: `${pressureAnalysis.confidence * 100}%` }}
+              />
+            </div>
+          </div>
+          
+          <div className="flex justify-between items-center text-[9px] font-mono opacity-80 pt-1 border-t border-slate-800/40">
+            <span>Volatility: {(pressureAnalysis.volatility * 10000).toFixed(1)} bps</span>
+            <span className="text-[8px] opacity-70">Index: {pressureAnalysis.total_pressure > 0 ? '+' : ''}{pressureAnalysis.total_pressure.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
+
       {displayData ? (
         <div className="flex flex-col gap-4 flex-1 justify-between">
           
           {/* Pressure Ratio Meter */}
-          <div className="flex flex-col gap-1">
-            <div className="flex justify-between items-center text-[10px] font-mono font-semibold px-0.5">
-              <span className="text-emerald-400">BIDS: {bidPercentage.toFixed(0)}%</span>
-              <span className={`px-2 py-0.5 rounded border text-[9px] ${pressureLabel.style}`}>
-                {pressureLabel.text}
-              </span>
-              <span className="text-rose-400">ASKS: {askPercentage.toFixed(0)}%</span>
+          <div className="flex flex-col gap-2">
+            {/* Raw Depth Meter */}
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between items-center text-[10px] font-mono font-semibold px-0.5">
+                <span className="text-emerald-400">BIDS depth: {bidPercentage.toFixed(0)}%</span>
+                <span className={`px-2 py-0.5 rounded border text-[9px] ${pressureLabel.style}`}>
+                  {pressureLabel.text}
+                </span>
+                <span className="text-rose-400">ASKS depth: {askPercentage.toFixed(0)}%</span>
+              </div>
+              
+              <div className="w-full bg-slate-950 rounded-full h-2 border border-slate-850 overflow-hidden flex">
+                <div 
+                  className="bg-emerald-500 h-full transition-all duration-500" 
+                  style={{ width: `${bidPercentage}%` }} 
+                />
+                <div 
+                  className="bg-rose-500 h-full transition-all duration-500" 
+                  style={{ width: `${askPercentage}%` }} 
+                />
+              </div>
             </div>
-            
-            <div className="w-full bg-slate-950 rounded-full h-2 border border-slate-850 overflow-hidden flex">
-              <div 
-                className="bg-emerald-500 h-full transition-all duration-500" 
-                style={{ width: `${bidPercentage}%` }} 
-              />
-              <div 
-                className="bg-rose-500 h-full transition-all duration-500" 
-                style={{ width: `${askPercentage}%` }} 
-              />
-            </div>
+
+            {/* Sigmoid Pressure Balance (Pressure Service Integrated Analysis) */}
+            {pressureAnalysis && (
+              <div className="flex flex-col gap-1 pt-1 border-t border-slate-850/40">
+                <div className="flex justify-between items-center text-[9px] font-mono font-semibold text-slate-450 px-0.5">
+                  <span className="text-emerald-400/80">Model Buy: {(pressureAnalysis.buy_pressure * 100).toFixed(0)}%</span>
+                  <span className="text-[8px] uppercase tracking-wider text-slate-500">Service Imbalance Analysis</span>
+                  <span className="text-rose-400/80">Model Sell: {(pressureAnalysis.sell_pressure * 100).toFixed(0)}%</span>
+                </div>
+                <div className="w-full bg-slate-950 rounded-full h-1.5 border border-slate-900 overflow-hidden flex">
+                  <div 
+                    className="bg-emerald-500 h-full transition-all duration-500" 
+                    style={{ width: `${pressureAnalysis.buy_pressure * 100}%` }} 
+                  />
+                  <div 
+                    className="bg-rose-500 h-full transition-all duration-500" 
+                    style={{ width: `${pressureAnalysis.sell_pressure * 100}%` }} 
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Depth Chart Display */}
