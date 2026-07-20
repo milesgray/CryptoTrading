@@ -1,4 +1,5 @@
 import json
+import random
 import logging
 import asyncio
 import datetime as dt
@@ -8,7 +9,8 @@ import pytz
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, Request
 from starlette.websockets import WebSocketDisconnect
-from websockets.exceptions import ConnectionClosed
+
+from cryptotrading.config import DB_BACKEND
 
 try:
     from ..models import (
@@ -250,8 +252,7 @@ async def read_latest_transformed_order_book_point(request: Request, token: str)
     return transformed_order_book_point
 
 
-from cryptotrading.config import DB_BACKEND
-import random
+
 
 # Global state for tracking previous order books to compute OFI/CVD
 prev_books = {}

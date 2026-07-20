@@ -2,6 +2,32 @@ from typing import Optional
 import numpy as np
 import datetime as dt
 from datetime import datetime, timedelta
+from dataclasses import dataclass
+
+@dataclass
+class DataPoint:
+    timestamp: datetime
+    price: float
+    volume: float
+
+@dataclass
+class CandlestickData:
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+@dataclass
+class LevelData:
+    level: float
+    touch_count: int
+    direction: int
+    strength: float
+    timeframe: str
+    last_touch: datetime
+    
 
 class PriceLevels:
     """
@@ -77,11 +103,11 @@ class PriceLevels:
                 raise ValueError("Timestamp must be a datetime object")
         
         # Add raw data point
-        data_point = {
-            'timestamp': timestamp,
-            'price': price,
-            'volume': volume or 0
-        }
+        data_point = DataPoint(
+            timestamp=timestamp,
+            price=price,
+            volume=volume or 0
+        )
         self.raw_data.append(data_point)
         
         # Update candles for each timeframe
@@ -94,7 +120,7 @@ class PriceLevels:
         # Trim historical data if needed
         self._trim_data()
         
-    def _update_candles(self, timeframe, delta, data_point):
+    def _update_candles(self, timeframe: str, delta: timedelta, data_point: DataPoint) -> None:
         """
         Update the OHLC candles for a specific timeframe.
         
@@ -107,38 +133,38 @@ class PriceLevels:
         
         if not candles:
             # Create the first candle
-            candle_timestamp = self._normalize_timestamp(data_point['timestamp'], delta)
-            candles.append({
-                'timestamp': candle_timestamp,
-                'open': data_point['price'],
-                'high': data_point['price'],
-                'low': data_point['price'],
-                'close': data_point['price'],
-                'volume': data_point['volume']
-            })
+            candle_timestamp = self._normalize_timestamp(data_point.timestamp, delta)
+            candles.append(CandlestickData(
+                timestamp=candle_timestamp,
+                open=data_point.price,
+                high=data_point.price,
+                low=data_point.price,
+                close=data_point.price,
+                volume=data_point.volume
+            ))
         else:
             # Check if the new data point belongs to the current candle or needs a new one
-            current_candle = candles[-1]
-            candle_timestamp = self._normalize_timestamp(data_point['timestamp'], delta)
+            current_candle: CandlestickData = candles[-1]
+            candle_timestamp = self._normalize_timestamp(data_point.timestamp, delta)
             
-            if candle_timestamp == current_candle['timestamp']:
+            if candle_timestamp == current_candle.timestamp:
                 # Update current candle
-                current_candle['high'] = max(current_candle['high'], data_point['price'])
-                current_candle['low'] = min(current_candle['low'], data_point['price'])
-                current_candle['close'] = data_point['price']
-                current_candle['volume'] += data_point['volume']
+                current_candle.high = max(current_candle.high, data_point.price)
+                current_candle.low = min(current_candle.low, data_point.price)
+                current_candle.close = data_point.price
+                current_candle.volume += data_point.volume
             else:
                 # Create a new candle
-                candles.append({
-                    'timestamp': candle_timestamp,
-                    'open': data_point['price'],
-                    'high': data_point['price'],
-                    'low': data_point['price'],
-                    'close': data_point['price'],
-                    'volume': data_point['volume']
-                })
+                candles.append(CandlestickData(
+                    timestamp=candle_timestamp,
+                    open=data_point.price,
+                    high=data_point.price,
+                    low=data_point.price,
+                    close=data_point.price,
+                    volume=data_point.volume
+                ))
                 
-    def _normalize_timestamp(self, timestamp, delta):
+    def _normalize_timestamp(self, timestamp: datetime, delta: timedelta) -> datetime:
         """
         Normalize a timestamp to the start of its respective candle period.
         
@@ -192,15 +218,12 @@ class PriceLevels:
             return
         
         # Extract relevant price points (high, low, open, close)
-        price_points = []
-        for candle in candles:
-            price_points.extend([
-                candle['high'],
-                candle['low']
-            ])
-            # Optionally include open/close for more precision
-            # price_points.extend([candle['open'], candle['close']])
-        
+        price_points = [val for candle in candles for val in [
+            candle.high,
+            candle.low,
+            candle.open,
+            candle.close
+        ]]      
         # Create a histogram of price levels
         min_price = min(price_points) * 0.9
         max_price = max(price_points) * 1.1
@@ -222,17 +245,49 @@ class PriceLevels:
             level_price = (bin_edges[idx] + bin_edges[idx + 1]) / 2
             strength = hist[idx] / len(price_points)  # Normalize strength
             
-            levels.append({
-                'price': level_price,
-                'strength': strength,
-                'count': hist[idx],
-                'timeframe': timeframe,
-                'last_touch': self._find_last_touch(level_price, candles)
-            })
+            levels.append(LevelData(
+                level=level_price,
+                strength=strength,
+                touch_count=hist[idx],
+                timeframe=timeframe,
+                last_touch=self._find_last_touch(level_price, candles),
+                direction=self._detect_direction(level_price, candles),
+            ))
         
         # Sort levels by strength and keep only the top ones
-        levels.sort(key=lambda x: x['strength'], reverse=True)
+        levels.sort(key=lambda x: x.strength, reverse=True)
         self.levels[timeframe] = levels[:self.max_levels]
+
+    def _detect_direction(self, level_price, candles):
+        """
+        Detect the direction of the price level.
+        
+        Args:
+            level_price (float): The price level
+            candles (list): List of candle dictionaries
+            
+        Returns:
+            str: The direction of the price level (Bullish, Bearish, Neutral)
+        """
+        proximity = level_price * self.level_proximity
+        
+        bullish_touches = 0
+        bearish_touches = 0
+        
+        for candle in reversed(candles):
+            # Check if the price level was within the candle's range
+            if (candle.low - proximity <= level_price <= candle.high + proximity):
+                if candle.close > candle.open:
+                    bullish_touches += 1
+                else:
+                    bearish_touches += 1
+        
+        if bullish_touches > bearish_touches:
+            return "Bullish"
+        elif bearish_touches > bullish_touches:
+            return "Bearish"
+        else:
+            return "Neutral"
         
     def _find_last_touch(self, level_price, candles):
         """
@@ -249,8 +304,8 @@ class PriceLevels:
         
         for candle in reversed(candles):
             # Check if the price level was within the candle's range
-            if (candle['low'] - proximity <= level_price <= candle['high'] + proximity):
-                return candle['timestamp']
+            if (candle.low - proximity <= level_price <= candle.high + proximity):
+                return candle.timestamp
         
         return None
     
@@ -297,10 +352,10 @@ class PriceLevels:
         
         # Calculate distance from current price
         for level in all_levels:
-            level['distance'] = abs(level['price'] - price) / price  # Normalized distance
+            level.distance = abs(level.price - price) / price  # Normalized distance
         
         # Sort by distance and return top n
-        nearest_levels = sorted(all_levels, key=lambda x: x['distance'])[:n]
+        nearest_levels = sorted(all_levels, key=lambda x: x.distance)[:n]
         
         return nearest_levels
     
@@ -326,7 +381,7 @@ class PriceLevels:
                 all_levels.extend(tf_levels)
         
         # Sort by strength and return top n
-        strongest_levels = sorted(all_levels, key=lambda x: x['strength'], reverse=True)[:n]
+        strongest_levels = sorted(all_levels, key=lambda x: x.strength, reverse=True)[:n]
         
         return strongest_levels
     
@@ -343,7 +398,7 @@ class PriceLevels:
         """
         nearest = self.get_nearest_levels(price, 1)
         
-        if nearest and nearest[0]['distance'] * 100 <= threshold_percent:
+        if nearest and nearest[0].distance * 100 <= threshold_percent:
             return nearest[0]
         return None
     
@@ -369,16 +424,16 @@ class PriceLevels:
             all_levels.extend(tf_levels)
             
         if all_levels:
-            strongest = max(all_levels, key=lambda x: x['strength'])
+            strongest = max(all_levels, key=lambda x: x.strength)
             stats['strongest_level'] = {
-                'price': strongest['price'],
-                'strength': strongest['strength'],
-                'timeframe': strongest['timeframe']
+                'price': strongest.price,
+                'strength': strongest.strength,
+                'timeframe': strongest.timeframe
             }
         
         # Calculate price range from raw data
         if self.raw_data:
-            prices = [point['price'] for point in self.raw_data]
+            prices = [point.price for point in self.raw_data]
             stats['price_range'] = {
                 'min': min(prices),
                 'max': max(prices),

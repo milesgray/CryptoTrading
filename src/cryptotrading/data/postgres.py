@@ -208,6 +208,26 @@ async def _init_schema_impl(conn: Connection):
         except Exception as e:
             logger.warning(f"Failed to initialize TimescaleDB extension: {e}")
     
+    # Create relational tables first (dependencies)
+    await conn.execute('''
+    CREATE TABLE IF NOT EXISTS crypto_assets (
+        symbol TEXT PRIMARY KEY,
+        name TEXT NOT NULL
+    );
+    ''')
+    
+    # Seed crypto assets if table is empty
+    count = await conn.fetchval('SELECT COUNT(*) FROM crypto_assets')
+    if count == 0:
+        await conn.execute('''
+        INSERT INTO crypto_assets (symbol, name) VALUES
+        ('BTC/USDT', 'Bitcoin / Tether'),
+        ('ETH/USDT', 'Ethereum / Tether'),
+        ('BTC', 'Bitcoin'),
+        ('ETH', 'Ethereum')
+        ON CONFLICT (symbol) DO NOTHING;
+        ''')
+
     # Create tables if they don't exist
     await conn.execute('''
     CREATE TABLE IF NOT EXISTS price_data (
@@ -259,6 +279,14 @@ async def _init_schema_impl(conn: Connection):
         entities JSONB,
         metadata JSONB
     );
+
+    CREATE TABLE IF NOT EXISTS crypto_ticks (
+        time TIMESTAMPTZ NOT NULL,
+        symbol TEXT NOT NULL,
+        price DOUBLE PRECISION,
+        day_volume NUMERIC,
+        PRIMARY KEY (time, symbol)
+    );
     ''')
     
     # Create vector extension table if pgvector is enabled
@@ -301,6 +329,7 @@ async def _init_schema_impl(conn: Connection):
             SELECT create_hypertable('price_data', 'time', if_not_exists => TRUE);
             SELECT create_hypertable('order_book_data', 'time', if_not_exists => TRUE);
             SELECT create_hypertable('trade_data', 'time', if_not_exists => TRUE);
+            SELECT create_hypertable('crypto_ticks', 'time', if_not_exists => TRUE);
             
             -- Create appropriate indexes
             CREATE INDEX IF NOT EXISTS idx_price_data_symbol_time 
@@ -340,6 +369,260 @@ async def _init_schema_impl(conn: Connection):
             SELECT add_retention_policy('price_data', INTERVAL '1 year', if_not_exists => TRUE);
             SELECT add_retention_policy('order_book_data', INTERVAL '1 year', if_not_exists => TRUE);
             SELECT add_retention_policy('trade_data', INTERVAL '1 year', if_not_exists => TRUE);
+
+            -- Enable compression on crypto_ticks hypertable
+            ALTER TABLE crypto_ticks SET (timescaledb.compress, timescaledb.compress_segmentby = 'symbol');
+            SELECT add_compression_policy('crypto_ticks', INTERVAL '1 day', if_not_exists => TRUE);
+
+            -- Create continuous aggregates for crypto_ticks
+            CREATE MATERIALIZED VIEW IF NOT EXISTS one_sec_candle
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('1 second', time) AS bucket,
+                symbol,
+                FIRST(price, time)          AS "open",
+                MAX(price)                  AS high,
+                MIN(price)                  AS low,
+                LAST(price, time)           AS "close",
+                LAST(day_volume, time)      AS day_volume
+            FROM crypto_ticks
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            CREATE MATERIALIZED VIEW IF NOT EXISTS fifteen_sec_candle
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('15 seconds', time) AS bucket,
+                symbol,
+                FIRST(price, time)          AS "open",
+                MAX(price)                  AS high,
+                MIN(price)                  AS low,
+                LAST(price, time)           AS "close",
+                LAST(day_volume, time)      AS day_volume
+            FROM crypto_ticks
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            CREATE MATERIALIZED VIEW IF NOT EXISTS thirty_sec_candle
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('30 seconds', time) AS bucket,
+                symbol,
+                FIRST(price, time)          AS "open",
+                MAX(price)                  AS high,
+                MIN(price)                  AS low,
+                LAST(price, time)           AS "close",
+                LAST(day_volume, time)      AS day_volume
+            FROM crypto_ticks
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            CREATE MATERIALIZED VIEW IF NOT EXISTS one_min_candle
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('1 minute', time) AS bucket,
+                symbol,
+                FIRST(price, time)          AS "open",
+                MAX(price)                  AS high,
+                MIN(price)                  AS low,
+                LAST(price, time)           AS "close",
+                LAST(day_volume, time)      AS day_volume
+            FROM crypto_ticks
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            CREATE MATERIALIZED VIEW IF NOT EXISTS five_min_candle
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('5 minutes', time) AS bucket,
+                symbol,
+                FIRST(price, time)          AS "open",
+                MAX(price)                  AS high,
+                MIN(price)                  AS low,
+                LAST(price, time)           AS "close",
+                LAST(day_volume, time)      AS day_volume
+            FROM crypto_ticks
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            CREATE MATERIALIZED VIEW IF NOT EXISTS one_day_candle
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('1 day', time) AS bucket,
+                symbol,
+                FIRST(price, time)          AS "open",
+                MAX(price)                  AS high,
+                MIN(price)                  AS low,
+                LAST(price, time)           AS "close",
+                LAST(day_volume, time)      AS day_volume
+            FROM crypto_ticks
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            -- Set up continuous aggregate policies
+            SELECT add_continuous_aggregate_policy('one_sec_candle',
+                start_offset => INTERVAL '30 seconds',
+                end_offset => INTERVAL '1 second',
+                schedule_interval => INTERVAL '1 second',
+                if_not_exists => TRUE);
+
+            SELECT add_continuous_aggregate_policy('fifteen_sec_candle',
+                start_offset => INTERVAL '5 minutes',
+                end_offset => INTERVAL '15 seconds',
+                schedule_interval => INTERVAL '15 seconds',
+                if_not_exists => TRUE);
+
+            SELECT add_continuous_aggregate_policy('thirty_sec_candle',
+                start_offset => INTERVAL '10 minutes',
+                end_offset => INTERVAL '30 seconds',
+                schedule_interval => INTERVAL '30 seconds',
+                if_not_exists => TRUE);
+
+            SELECT add_continuous_aggregate_policy('one_min_candle',
+                start_offset => INTERVAL '20 minutes',
+                end_offset => INTERVAL '1 minute',
+                schedule_interval => INTERVAL '1 minute',
+                if_not_exists => TRUE);
+
+            SELECT add_continuous_aggregate_policy('five_min_candle',
+                start_offset => INTERVAL '1 hour',
+                end_offset => INTERVAL '5 minutes',
+                schedule_interval => INTERVAL '5 minutes',
+                if_not_exists => TRUE);
+
+            SELECT add_continuous_aggregate_policy('one_day_candle',
+                start_offset => INTERVAL '3 days',
+                end_offset => INTERVAL '1 day',
+                schedule_interval => INTERVAL '1 day',
+                if_not_exists => TRUE);
+
+            -- Create continuous aggregates for price_data (exchange = 'index')
+            CREATE MATERIALIZED VIEW IF NOT EXISTS price_candle_1s
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('1 second', time) AS bucket,
+                symbol,
+                FIRST(close, time)          AS "open",
+                MAX(close)                  AS high,
+                MIN(close)                  AS low,
+                LAST(close, time)           AS "close",
+                SUM(volume)                 AS volume
+            FROM price_data
+            WHERE exchange = 'index'
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            CREATE MATERIALIZED VIEW IF NOT EXISTS price_candle_15s
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('15 seconds', time) AS bucket,
+                symbol,
+                FIRST(close, time)          AS "open",
+                MAX(close)                  AS high,
+                MIN(close)                  AS low,
+                LAST(close, time)           AS "close",
+                SUM(volume)                 AS volume
+            FROM price_data
+            WHERE exchange = 'index'
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            CREATE MATERIALIZED VIEW IF NOT EXISTS price_candle_30s
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('30 seconds', time) AS bucket,
+                symbol,
+                FIRST(close, time)          AS "open",
+                MAX(close)                  AS high,
+                MIN(close)                  AS low,
+                LAST(close, time)           AS "close",
+                SUM(volume)                 AS volume
+            FROM price_data
+            WHERE exchange = 'index'
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            CREATE MATERIALIZED VIEW IF NOT EXISTS price_candle_1m
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('1 minute', time) AS bucket,
+                symbol,
+                FIRST(close, time)          AS "open",
+                MAX(close)                  AS high,
+                MIN(close)                  AS low,
+                LAST(close, time)           AS "close",
+                SUM(volume)                 AS volume
+            FROM price_data
+            WHERE exchange = 'index'
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            CREATE MATERIALIZED VIEW IF NOT EXISTS price_candle_5m
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('5 minutes', time) AS bucket,
+                symbol,
+                FIRST(close, time)          AS "open",
+                MAX(close)                  AS high,
+                MIN(close)                  AS low,
+                LAST(close, time)           AS "close",
+                SUM(volume)                 AS volume
+            FROM price_data
+            WHERE exchange = 'index'
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            CREATE MATERIALIZED VIEW IF NOT EXISTS price_candle_1d
+            WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+            SELECT
+                time_bucket('1 day', time) AS bucket,
+                symbol,
+                FIRST(close, time)          AS "open",
+                MAX(close)                  AS high,
+                MIN(close)                  AS low,
+                LAST(close, time)           AS "close",
+                SUM(volume)                 AS volume
+            FROM price_data
+            WHERE exchange = 'index'
+            GROUP BY bucket, symbol
+            WITH NO DATA;
+
+            -- Policies for price_candle
+            SELECT add_continuous_aggregate_policy('price_candle_1s',
+                start_offset => INTERVAL '30 seconds',
+                end_offset => INTERVAL '1 second',
+                schedule_interval => INTERVAL '1 second',
+                if_not_exists => TRUE);
+
+            SELECT add_continuous_aggregate_policy('price_candle_15s',
+                start_offset => INTERVAL '5 minutes',
+                end_offset => INTERVAL '15 seconds',
+                schedule_interval => INTERVAL '15 seconds',
+                if_not_exists => TRUE);
+
+            SELECT add_continuous_aggregate_policy('price_candle_30s',
+                start_offset => INTERVAL '10 minutes',
+                end_offset => INTERVAL '30 seconds',
+                schedule_interval => INTERVAL '30 seconds',
+                if_not_exists => TRUE);
+
+            SELECT add_continuous_aggregate_policy('price_candle_1m',
+                start_offset => INTERVAL '20 minutes',
+                end_offset => INTERVAL '1 minute',
+                schedule_interval => INTERVAL '1 minute',
+                if_not_exists => TRUE);
+
+            SELECT add_continuous_aggregate_policy('price_candle_5m',
+                start_offset => INTERVAL '1 hour',
+                end_offset => INTERVAL '5 minutes',
+                schedule_interval => INTERVAL '5 minutes',
+                if_not_exists => TRUE);
+
+            SELECT add_continuous_aggregate_policy('price_candle_1d',
+                start_offset => INTERVAL '3 days',
+                end_offset => INTERVAL '1 day',
+                schedule_interval => INTERVAL '1 day',
+                if_not_exists => TRUE);
             ''')
         except Exception as e:
             logger.error(f"Failed to set up TimescaleDB hypertables and policies: {e}")
@@ -529,6 +812,22 @@ class Database:
         return [dict(row) for row in rows]
 
 # Specialized repositories
+class CryptoAssetRepository(Database):
+    """Repository for crypto assets metadata."""
+    
+    def __init__(self):
+        super().__init__('crypto_assets', 'symbol')
+        
+    async def get_all_assets(self, conn: Optional[Connection] = None) -> List[Dict[str, Any]]:
+        """Get all registered assets."""
+        query = 'SELECT * FROM crypto_assets ORDER BY symbol;'
+        if conn:
+            rows = await conn.fetch(query)
+        else:
+            async with get_connection() as conn:
+                rows = await conn.fetch(query)
+        return [dict(row) for row in rows]
+
 class PriceDataRepository(Database):
     """Repository for price data operations."""
     
@@ -790,6 +1089,7 @@ async def close_db():
         logger.info("Database connection pool closed")
 
 # Create repository instances
+crypto_asset_repo = CryptoAssetRepository()
 price_repo = PriceDataRepository()
 order_book_repo = OrderBookRepository()
 document_embedding_repo = DocumentEmbeddingRepository() if POSTGRES_USE_PGVECTOR else None

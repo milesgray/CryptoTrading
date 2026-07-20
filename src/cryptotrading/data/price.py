@@ -621,6 +621,86 @@ class PricePostgresAdapter(PriceAdapter):
         if not matching_symbols:
             return []
             
+        # Try to map granularity to a continuous aggregate view on price_data
+        view_name = None
+        if not include_book:
+            if granularity == 1:
+                view_name = "price_candle_1s"
+            elif granularity == 15:
+                view_name = "price_candle_15s"
+            elif granularity == 30:
+                view_name = "price_candle_30s"
+            elif granularity == 60:
+                view_name = "price_candle_1m"
+            elif granularity == 300:
+                view_name = "price_candle_5m"
+            elif granularity == 86400:
+                view_name = "price_candle_1d"
+
+        if view_name:
+            logger.info(f"Querying continuous aggregate view {view_name} for candlestick data (granularity={granularity}s)")
+            symbol_op = "= $1" if len(matching_symbols) == 1 else "= ANY($1)"
+            query = f'''
+                SELECT bucket AS timestamp, open, high, low, close, volume
+                FROM {view_name}
+                WHERE symbol {symbol_op} AND bucket >= $2 AND bucket <= $3
+                ORDER BY bucket ASC;
+            '''
+            async with get_connection() as conn:
+                param = matching_symbols[0] if len(matching_symbols) == 1 else matching_symbols
+                rows = await conn.fetch(query, param, start_time, end_time)
+            
+            return [
+                CandlestickData(
+                    timestamp=row["timestamp"].replace(tzinfo=timezone.utc) if row["timestamp"].tzinfo is None else row["timestamp"],
+                    open=row["open"],
+                    high=row["high"],
+                    low=row["low"],
+                    close=row["close"],
+                    volume=float(row["volume"]) if row["volume"] is not None else 0.0,
+                    exchange_count=1.0,
+                    order_book=None
+                )
+                for row in rows
+            ]
+
+        # Use dynamic time_bucket query on the database instead of Python grouping
+        if not include_book:
+            logger.info(f"Querying raw price_data with database-side time_bucket (granularity={granularity}s)")
+            symbol_op = "= $1" if len(matching_symbols) == 1 else "= ANY($1)"
+            interval_str = f"{granularity} seconds"
+            query = f'''
+                SELECT 
+                    time_bucket($2::interval, time) AS bucket,
+                    FIRST(close, time) AS open,
+                    MAX(close) AS high,
+                    MIN(close) AS low,
+                    LAST(close, time) AS close,
+                    SUM(volume) AS volume
+                FROM price_data
+                WHERE symbol {symbol_op} AND exchange = 'index' AND time >= $3 AND time <= $4
+                GROUP BY bucket, symbol
+                ORDER BY bucket ASC;
+            '''
+            async with get_connection() as conn:
+                param = matching_symbols[0] if len(matching_symbols) == 1 else matching_symbols
+                rows = await conn.fetch(query, param, interval_str, start_time, end_time)
+                
+            return [
+                CandlestickData(
+                    timestamp=row["bucket"].replace(tzinfo=timezone.utc) if row["bucket"].tzinfo is None else row["bucket"],
+                    open=row["open"],
+                    high=row["high"],
+                    low=row["low"],
+                    close=row["close"],
+                    volume=float(row["volume"]) if row["volume"] is not None else 0.0,
+                    exchange_count=1.0,
+                    order_book=None
+                )
+                for row in rows
+            ]
+
+        # Fallback to standard chunked client-side grouping if include_book is True
         logger.info(f"Retrieving candlestick data for {token} from {start_time} to {end_time} in chunks of 1 day (granularity={granularity}s)")
         
         candle_map = {}

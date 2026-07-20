@@ -199,3 +199,10 @@ class CandlestickData(BaseModel):
         json_encoders = {
             datetime: lambda dt: dt.isoformat()
         }
+
+class PriceLevel(BaseModel):
+    price: float
+    strength: float
+    timeframe: str
+    last_touch: Optional[datetime] = None
+    direction: Optional[str] = None

@@ -57,14 +57,22 @@ class OrderBookAdapter(ABC):
 
     @abstractmethod
     async def get_orderbook_data(
-        self, 
-        symbol: str, 
-        start_time: datetime, 
-        end_time: datetime, 
-        verbose: bool = False,
-        include_book: bool = False,
-        count: int = None,
-        chunk_size: int = 1000
+        self,
+        token: str,
+        start_time: datetime,
+        end_time: datetime,
+        interval: Optional[Union[float, dt.timedelta, str]] = None,
+        depth: int = 10
+    ) -> list[OrderBookSnapshot]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_orderbook_summary(
+        self,
+        token: str,
+        start_time: datetime,
+        end_time: datetime,
+        interval: Optional[Union[float, dt.timedelta, str]] = None
     ) -> list[dict]:
         raise NotImplementedError
 
@@ -355,6 +363,8 @@ class OrderBookMongoAdapter(OrderBookAdapter):
         token: str,
         start_time: dt.datetime,
         end_time: dt.datetime,
+        interval: Optional[Union[float, dt.timedelta, str]] = None,
+        depth: int = 10
     ) -> list[OrderBookSnapshot]:
         """Retrieve and aggregate price data into candlestick format.
 
@@ -384,6 +394,37 @@ class OrderBookMongoAdapter(OrderBookAdapter):
         ]
         cursor = self.composite_order_book_collection.aggregate(pipeline)
         return [OrderBookSnapshot.from_mongodb_doc(doc) async for doc in cursor]
+
+    async def get_orderbook_summary(
+        self,
+        token: str,
+        start_time: datetime,
+        end_time: datetime,
+        interval: Optional[Union[float, dt.timedelta, str]] = None
+    ) -> list[dict]:
+        """MongoDB summary implementation (stub)."""
+        pipeline = [
+            {
+                "$match": {
+                    "metadata.token": token,
+                    "timestamp": {"$gte": start_time, "$lte": end_time},
+                }
+            },
+            {
+                "$sort": {"timestamp": 1}
+            }
+        ]
+        cursor = self.composite_order_book_collection.aggregate(pipeline)
+        return [
+            {
+                "timestamp": doc["timestamp"].timestamp() if isinstance(doc["timestamp"], datetime) else doc["timestamp"],
+                "midpoint": doc["metadata"].get("midpoint"),
+                "spread": doc["metadata"].get("spread"),
+                "total_bid_size": doc["metadata"].get("total_bid_size", 0.0),
+                "total_ask_size": doc["metadata"].get("total_ask_size", 0.0)
+            }
+            async for doc in cursor
+        ]
 
     @staticmethod
     def process_order_book_data(book_data: dict[str, Any]) -> OrderBookSummaryData:
@@ -639,12 +680,81 @@ class OrderBookPostgresAdapter:
                 SET close = EXCLUDED.close, metadata = EXCLUDED.metadata;
             ''', timestamp, symbol, 'transformed', midpoint, metadata)
  
-    async def get_orderbook_data(
+    async def get_orderbook_summary(
         self,
         token: str,
         start_time: datetime,
         end_time: datetime,
         interval: Optional[Union[float, dt.timedelta, str]] = None
+    ) -> list[dict]:
+        matching_symbols = await resolve_matching_symbols(token)
+        if not matching_symbols:
+            return []
+            
+        bucket_width = None
+        if interval is not None:
+            seconds = 0.0
+            if isinstance(interval, dt.timedelta):
+                seconds = interval.total_seconds()
+            elif isinstance(interval, (int, float)):
+                seconds = float(interval)
+            elif isinstance(interval, str):
+                clean_str = "".join(c for c in interval if c.isdigit() or c == '.')
+                try:
+                    seconds = float(clean_str)
+                except ValueError:
+                    seconds = 0.0
+            if seconds > 1.0:
+                bucket_width = f"{seconds} seconds"
+
+        async with get_connection() as conn:
+            symbol_op = "= $1" if len(matching_symbols) == 1 else "= ANY($1)"
+            param = matching_symbols[0] if len(matching_symbols) == 1 else matching_symbols
+            if bucket_width is not None:
+                query = f'''
+                    SELECT 
+                        time_bucket('{bucket_width}'::interval, time) as timestamp, 
+                        last(close, time) as midpoint, 
+                        (last(metadata, time)->>'spread')::double precision as spread,
+                        (last(metadata, time)->>'total_bid_size')::double precision as total_bid_size,
+                        (last(metadata, time)->>'total_ask_size')::double precision as total_ask_size
+                    FROM price_data
+                    WHERE symbol {symbol_op} AND exchange = 'composite' AND time >= $2 AND time <= $3
+                    GROUP BY timestamp, symbol
+                    ORDER BY timestamp ASC;
+                '''
+            else:
+                query = f'''
+                    SELECT 
+                        time as timestamp, 
+                        close as midpoint, 
+                        (metadata->>'spread')::double precision as spread,
+                        (metadata->>'total_bid_size')::double precision as total_bid_size,
+                        (metadata->>'total_ask_size')::double precision as total_ask_size
+                    FROM price_data
+                    WHERE symbol {symbol_op} AND exchange = 'composite' AND time >= $2 AND time <= $3
+                    ORDER BY time ASC;
+                '''
+            rows = await conn.fetch(query, param, start_time, end_time)
+
+        return [
+            {
+                "timestamp": r["timestamp"].timestamp() if isinstance(r["timestamp"], datetime) else r["timestamp"],
+                "midpoint": r["midpoint"],
+                "spread": r["spread"],
+                "total_bid_size": r["total_bid_size"],
+                "total_ask_size": r["total_ask_size"]
+            }
+            for r in rows
+        ]
+
+    async def get_orderbook_data(
+        self,
+        token: str,
+        start_time: datetime,
+        end_time: datetime,
+        interval: Optional[Union[float, dt.timedelta, str]] = None,
+        depth: int = 10
     ) -> list[OrderBookSnapshot]:
         matching_symbols = await resolve_matching_symbols(token)
         if not matching_symbols:
@@ -667,62 +777,58 @@ class OrderBookPostgresAdapter:
             if seconds > 1.0:
                 bucket_width = f"{seconds} seconds"
 
+        limit_expr = f"$[0 to {depth - 1}]"
         async with get_connection() as conn:
+            symbol_op = "= $1" if len(matching_symbols) == 1 else "= ANY($1)"
+            param = matching_symbols[0] if len(matching_symbols) == 1 else matching_symbols
             if bucket_width is not None:
-                if len(matching_symbols) == 1:
-                    query = f'''
-                        SELECT 
-                            time_bucket('{bucket_width}'::interval, time) as timestamp, 
-                            last(close, time) as midpoint, 
-                            last(metadata, time) as metadata
-                        FROM price_data
-                        WHERE symbol = $1 AND exchange = 'composite' AND time >= $2 AND time <= $3
-                        GROUP BY timestamp, symbol
-                        ORDER BY timestamp ASC;
-                    '''
-                    rows = await conn.fetch(query, matching_symbols[0], start_time, end_time)
-                else:
-                    query = f'''
-                        SELECT 
-                            time_bucket('{bucket_width}'::interval, time) as timestamp, 
-                            last(close, time) as midpoint, 
-                            last(metadata, time) as metadata
-                        FROM price_data
-                        WHERE symbol = ANY($1) AND exchange = 'composite' AND time >= $2 AND time <= $3
-                        GROUP BY timestamp, symbol
-                        ORDER BY timestamp ASC;
-                    '''
-                    rows = await conn.fetch(query, matching_symbols, start_time, end_time)
+                query = f'''
+                    SELECT 
+                        time_bucket('{bucket_width}'::interval, time) as timestamp, 
+                        last(close, time) as midpoint, 
+                        (last(metadata, time)->>'lowest_ask')::double precision as lowest_ask,
+                        (last(metadata, time)->>'highest_bid')::double precision as highest_bid,
+                        jsonb_path_query_array(last(metadata, time)->'book'->'bids', '{limit_expr}') as bids,
+                        jsonb_path_query_array(last(metadata, time)->'book'->'asks', '{limit_expr}') as asks
+                    FROM price_data
+                    WHERE symbol {symbol_op} AND exchange = 'composite' AND time >= $2 AND time <= $3
+                    GROUP BY timestamp, symbol
+                    ORDER BY timestamp ASC;
+                '''
             else:
-                if len(matching_symbols) == 1:
-                    query = '''
-                        SELECT time as timestamp, close as midpoint, metadata
-                        FROM price_data
-                        WHERE symbol = $1 AND exchange = 'composite' AND time >= $2 AND time <= $3
-                        ORDER BY time ASC;
-                    '''
-                    rows = await conn.fetch(query, matching_symbols[0], start_time, end_time)
-                else:
-                    query = '''
-                        SELECT time as timestamp, close as midpoint, metadata
-                        FROM price_data
-                        WHERE symbol = ANY($1) AND exchange = 'composite' AND time >= $2 AND time <= $3
-                        ORDER BY time ASC;
-                    '''
-                    rows = await conn.fetch(query, matching_symbols, start_time, end_time)
+                query = f'''
+                    SELECT 
+                        time as timestamp, 
+                        close as midpoint, 
+                        (metadata->>'lowest_ask')::double precision as lowest_ask,
+                        (metadata->>'highest_bid')::double precision as highest_bid,
+                        jsonb_path_query_array(metadata->'book'->'bids', '{limit_expr}') as bids,
+                        jsonb_path_query_array(metadata->'book'->'asks', '{limit_expr}') as asks
+                    FROM price_data
+                    WHERE symbol {symbol_op} AND exchange = 'composite' AND time >= $2 AND time <= $3
+                    ORDER BY time ASC;
+                '''
+            rows = await conn.fetch(query, param, start_time, end_time)
             
         snapshots = []
         for r in rows:
-            meta = r["metadata"] or {}
-            book = meta.get("book", {})
-            bids = sorted([(float(p), float(q)) for p, q in book.get("bids", [])], key=lambda x: x[0], reverse=True)
-            asks = sorted([(float(p), float(q)) for p, q in book.get("asks", [])], key=lambda x: x[0])
+            raw_bids = r.get("bids")
+            raw_asks = r.get("asks")
+            import json
+            bids_list = json.loads(raw_bids) if isinstance(raw_bids, str) else raw_bids or []
+            asks_list = json.loads(raw_asks) if isinstance(raw_asks, str) else raw_asks or []
+            bids = sorted([(float(item[0]), float(item[1])) for item in bids_list if item], key=lambda x: x[0], reverse=True)
+            asks = sorted([(float(item[0]), float(item[1])) for item in asks_list if item], key=lambda x: x[0])
             
+            mid_price = r["midpoint"]
+            if r["lowest_ask"] is not None and r["highest_bid"] is not None:
+                mid_price = (r["lowest_ask"] + r["highest_bid"]) / 2
+                
             snapshots.append(OrderBookSnapshot(
                 timestamp=r["timestamp"].timestamp(),
                 bids=bids,
                 asks=asks,
-                mid_price=meta.get("midpoint", r["midpoint"])
+                mid_price=mid_price
             ))
         return snapshots
  

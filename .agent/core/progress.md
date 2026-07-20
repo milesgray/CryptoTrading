@@ -220,3 +220,10 @@
 - [x] Define `VITE_PRESSURE_URL` proxy and environment settings in Vite and docker-compose configurations.
 - [x] Add dynamic model training console UI, parameter adjustments, and progress tracking inside the frontend's Order Book Pressure panel.
 - [x] Run and pass all tests inside `services/pressure/test_data_loader.py`.
+
+### Phase 32: TimescaleDB Candlestick & Order Book Optimizations (Completed ✅)
+- [x] Create multi-timescale continuous aggregates (`price_candle_1s`, `price_candle_15s`, `price_candle_30s`, `price_candle_1m`, `price_candle_5m`, `price_candle_1d`) and refresh policies in `postgres.py`.
+- [x] Optimize `get_candlestick_data` in `price.py` to route to continuous aggregates or fall back to SQL-side `time_bucket` grouping.
+- [x] Implement database-side JSONB slicing using `jsonb_path_query_array` in `get_orderbook_data` in `book.py`.
+- [x] Add lightweight `get_orderbook_summary` query in `book.py`.
+- [x] Verify database adapter query executions successfully.
