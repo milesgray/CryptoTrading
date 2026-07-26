@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
 
   console.log(`[Vite Config] Proxying /api to ${backendUrl}`);
   console.log(`[Vite Config] Proxying /api/train to ${trainUrl}`);
-  console.log(`[Vite Config] Proxying /api/pressure to ${pressureUrl}`);
+  console.log(`[Vite Config] Proxying /api/pressure/train to ${pressureUrl}`);
   console.log(`[Vite Config] Proxying /ws to ${backendWsUrl}`);
 
   return {
@@ -28,11 +28,11 @@ export default defineConfig(({ mode }) => {
           secure: false,
           rewrite: (path) => path.replace(/^\/api\/train/, ''),
         },
-        '/api/pressure': {
+        '/api/pressure/train': {
           target: pressureUrl,
           changeOrigin: true,
           secure: false,
-          rewrite: (path) => path.replace(/^\/api\/pressure/, ''),
+          rewrite: (path) => path.replace(/^\/api\/pressure\/train/, '/train'),
         },
         '/api': {  // Proxy API requests to the FastAPI backend
           target: backendUrl,

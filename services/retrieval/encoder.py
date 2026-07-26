@@ -44,7 +44,7 @@ class RetrievalServiceEncoder:
         self.index = VectorIndex(dim=dim)
         self.dim = dim
         self.is_built = False
-        self.embed_service_url = embed_service_url or os.getenv("EMBED_SERVICE_URL", "http://localhost:8301")
+        self.embed_service_url = embed_service_url or os.getenv("EMBED_SERVICE_URL", "http://embed:8301")
         
         # Determine deep learning embedding dimension dynamically if not provided
         if embed_dim is not None:
@@ -52,13 +52,18 @@ class RetrievalServiceEncoder:
             logger.info(f"RetrievalServiceEncoder initialized with embed_dim: {self.embed_dim}")
         else:
             self.embed_dim = 128
-            try:
-                response = httpx.get(f"{self.embed_service_url}/health", timeout=2.0)
-                if response.status_code == 200:
-                    self.embed_dim = response.json().get("embedding_dim", 128)
-                    logger.info(f"Dynamically determined embed service embedding dimension: {self.embed_dim}")
-            except Exception as e:
-                logger.warning(f"Could not connect to embed service to determine dimension: {e}. Defaulting to 128.")
+            import time
+            for attempt in range(5):
+                try:
+                    response = httpx.get(f"{self.embed_service_url}/health", timeout=5.0)
+                    if response.status_code == 200:
+                        self.embed_dim = response.json().get("embedding_dim", 128)
+                        logger.info(f"Dynamically determined embed service embedding dimension: {self.embed_dim}")
+                        break
+                except Exception as e:
+                    logger.warning(f"Could not connect to embed service to determine dimension (attempt {attempt+1}/5): {e}.")
+                    if attempt < 4:
+                        time.sleep(2.0)
 
     def encode_segment(self, prices: np.ndarray, order_book: Dict[str, Any]) -> np.ndarray:
         """
@@ -99,15 +104,28 @@ class RetrievalServiceEncoder:
             if response.status_code == 200:
                 data = response.json()
                 embed_emb = np.array(data["embedding"], dtype=np.float32)
-                # Concatenate embed representation + local representation
-                return np.concatenate([embed_emb, local_emb])
+                
+                # Check dynamic dimension match
+                if len(embed_emb) != self.embed_dim:
+                    self.embed_dim = len(embed_emb)
+                    
+                combined = np.concatenate([embed_emb, local_emb])
+                if len(combined) != self.dim:
+                    if len(combined) < self.dim:
+                        return np.pad(combined, (0, self.dim - len(combined)), 'constant')
+                    return combined[:self.dim]
+                return combined
             else:
                 logger.warning(f"Embed service returned {response.status_code}, falling back to padded local representation.")
         except Exception as e:
             logger.error(f"Error encoding segment via embed service: {e}. Falling back to padded local representation.")
             
         # Padded local fallback to fit self.dim
-        return np.pad(local_emb, (0, self.dim - len(local_emb)), 'constant')
+        if len(local_emb) < self.dim:
+            return np.pad(local_emb, (0, self.dim - len(local_emb)), 'constant')
+        elif len(local_emb) > self.dim:
+            return local_emb[:self.dim]
+        return local_emb
 
     def encode_segments_batch(self, prices_list: List[np.ndarray], order_books: List[Dict[str, Any]]) -> List[np.ndarray]:
         """
@@ -129,32 +147,24 @@ class RetrievalServiceEncoder:
         local_dim = len(local_embs[0]) if n > 0 else 0
         expected_combined_dim = self.embed_dim + local_dim
 
-        if self.dim != expected_combined_dim:
-            res = []
-            for local_emb in local_embs:
-                if len(local_emb) < self.dim:
-                    res.append(np.pad(local_emb, (0, self.dim - len(local_emb)), 'constant'))
-                elif len(local_emb) > self.dim:
-                    res.append(local_emb[:self.dim])
-                else:
-                    res.append(local_emb)
-            return res
-
         # Call the batch embed endpoint
         embeddings_embed = []
-        batch_size = 500  # Batch size for HTTP requests
+        batch_size = 100  # Batch size for HTTP requests
 
         try:
             for i in range(0, n, batch_size):
                 sub_prices = [p.tolist() for p in prices_list[i:i+batch_size]]
                 payload = {"prices_list": sub_prices}
-                response = httpx.post(f"{self.embed_service_url}/embed/batch", json=payload, timeout=10.0)
+                response = httpx.post(f"{self.embed_service_url}/embed/batch", json=payload, timeout=30.0)
                 if response.status_code == 200:
                     data = response.json()
                     embs = data.get("embeddings", [])
                     if len(embs) == len(sub_prices):
                         for emb in embs:
-                            embeddings_embed.append(np.array(emb, dtype=np.float32))
+                            emb_arr = np.array(emb, dtype=np.float32)
+                            if len(emb_arr) != self.embed_dim:
+                                self.embed_dim = len(emb_arr)
+                            embeddings_embed.append(emb_arr)
                     else:
                         logger.warning(f"Embed service returned {len(embs)} embeddings for {len(sub_prices)} requests. Using fallback.")
                         for _ in range(len(sub_prices)):
@@ -171,7 +181,13 @@ class RetrievalServiceEncoder:
         # Concatenate embed representation + local representation
         combined_embs = []
         for i in range(n):
-            combined_embs.append(np.concatenate([embeddings_embed[i], local_embs[i]]))
+            comb = np.concatenate([embeddings_embed[i], local_embs[i]])
+            if len(comb) != self.dim:
+                if len(comb) < self.dim:
+                    comb = np.pad(comb, (0, self.dim - len(comb)), 'constant')
+                else:
+                    comb = comb[:self.dim]
+            combined_embs.append(comb)
 
         return combined_embs
 
