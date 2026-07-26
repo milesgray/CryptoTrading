@@ -283,6 +283,11 @@ async def build_index_for_combination(token: str, granularity_sec: int, window_s
         horizon=horizon
     )
     
+    retrieval_forecaster = RetrievalForecaster(
+        encoder_service=encoder,
+        chronos_pipeline=chronos_pipeline
+    )
+
     raf_forecaster = ChronosRAFForecaster(
         encoder_service=encoder,
         chronos_pipeline=chronos_pipeline
@@ -290,6 +295,7 @@ async def build_index_for_combination(token: str, granularity_sec: int, window_s
     
     return {
         "specretf": specretf_forecaster,
+        "retrieval": retrieval_forecaster,
         "raf": raf_forecaster
     }
 
@@ -382,7 +388,7 @@ async def forecast(
         HTTPException (500): For general retrieval and forecasting processing failures.
     """
     try:
-        if method not in ("raf", "specretf"):
+        if method not in ("raf", "specretf", "retrieval"):
             raise HTTPException(status_code=400, detail=f"Invalid forecasting method: {method}")
 
         price_adapter = get_price_adapter()

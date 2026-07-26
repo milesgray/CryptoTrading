@@ -23,17 +23,20 @@ class RetrievalForecaster:
     """
     Standard shape-similarity retrieval-augmented forecaster.
     
-    Uses Pearson correlation coefficient to retrieve and align historical continuations.
+    Uses Pearson correlation coefficient to retrieve historical matches,
+    and optionally uses Chronos pipeline to project future predictions.
     """
     
-    def __init__(self, encoder_service: RetrievalServiceEncoder):
+    def __init__(self, encoder_service: RetrievalServiceEncoder, chronos_pipeline: Optional[ChronosPipeline] = None):
         """
         Initialize the RetrievalForecaster.
 
         Args:
             encoder_service (RetrievalServiceEncoder): Vector encoder service instance.
+            chronos_pipeline (Optional[ChronosPipeline]): Chronos forecasting pipeline instance.
         """
         self.encoder_service = encoder_service
+        self.chronos_pipeline = chronos_pipeline
 
     def forecast(
         self, 
@@ -124,18 +127,29 @@ class RetrievalForecaster:
             }
             processed_retrieved.append(seg_copy)
             
-        # 4. Compute similarity-weighted consensus projection
-        weights = np.array(similarities, dtype=np.float32)
-        total_w = np.sum(weights)
-        if total_w > 1e-8:
-            weights = weights / total_w
-        else:
-            weights = np.ones_like(weights) / len(weights)
-            
+        # 4. Compute consensus projection (using Chronos if available)
         horizon = min(len(p) for p in aligned_paths)
-        consensus_path = np.zeros(horizon, dtype=np.float32)
-        for w, path in zip(weights, aligned_paths):
-            consensus_path += w * path[:horizon]
+        if self.chronos_pipeline is not None and len(prices) > 0:
+            prices_tensor = torch.tensor(prices, dtype=torch.float32)
+            with torch.no_grad():
+                samples = self.chronos_pipeline.predict(
+                    [prices_tensor],
+                    prediction_length=horizon,
+                    limit_prediction_length=False
+                )
+            samples_np = samples[0].cpu().numpy()
+            consensus_path = np.median(samples_np, axis=0)
+        else:
+            weights = np.array(similarities, dtype=np.float32)
+            total_w = np.sum(weights)
+            if total_w > 1e-8:
+                weights = weights / total_w
+            else:
+                weights = np.ones_like(weights) / len(weights)
+                
+            consensus_path = np.zeros(horizon, dtype=np.float32)
+            for w, path in zip(weights, aligned_paths):
+                consensus_path += w * path[:horizon]
             
         # 5. Compute aggregate metrics
         pred_price = float(consensus_path[-1]) if len(consensus_path) > 0 else query_last_price
