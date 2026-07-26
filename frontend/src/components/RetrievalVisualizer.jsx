@@ -25,6 +25,7 @@ const RetrievalVisualizer = ({ token }) => {
   const [k, setK] = useState(3);
   const [segmentLength, setSegmentLength] = useState(60);
   const [frequency, setFrequency] = useState('1m');
+  const [method, setMethod] = useState('raf');
   const [orderBookWeight, setOrderBookWeight] = useState(30); // 30% order book, 70% price by default
   
   // Data State
@@ -88,7 +89,7 @@ const RetrievalVisualizer = ({ token }) => {
     setError(null);
     try {
       // 1. Fetch live forecast (retrieved segments) from serve proxy
-      const forecastRes = await fetch(`/api/retrieval/forecast?symbol=${token}&k=${k}&granularity=${frequency}&window_size=${segmentLength}`);
+      const forecastRes = await fetch(`/api/retrieval/forecast?symbol=${token}&k=${k}&granularity=${frequency}&window_size=${segmentLength}&method=${method}`);
       if (!forecastRes.ok) {
         let errMsg = "Failed to fetch forecasting data";
         try {
@@ -168,7 +169,7 @@ const RetrievalVisualizer = ({ token }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, k, frequency, segmentLength]);
+  }, [token, k, frequency, segmentLength, method]);
 
   // Handle toggle change
   const handleToggleChange = (id) => {
@@ -178,10 +179,10 @@ const RetrievalVisualizer = ({ token }) => {
     }));
   };
 
-  // Trigger data fetch on token, k, frequency, or segmentLength change
+  // Trigger data fetch on token, k, frequency, segmentLength, or method change
   useEffect(() => {
     fetchForecastData();
-  }, [token, k, frequency, segmentLength, fetchForecastData]);
+  }, [token, k, frequency, segmentLength, method, fetchForecastData]);
 
   // Hook into live WebSocket updates for comparing actual values against forecast in real-time
   useEffect(() => {
@@ -950,6 +951,21 @@ const RetrievalVisualizer = ({ token }) => {
                 <option value={30}>30 steps (Standard)</option>
                 <option value={60}>60 steps (Recommended)</option>
                 <option value={120}>120 steps (Macro)</option>
+              </select>
+            </div>
+
+            {/* forecaster algorithm */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="method-select" className="text-[10px] text-slate-500 uppercase font-semibold">Forecaster Algorithm</label>
+              <select 
+                id="method-select"
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+                className="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-800 text-slate-300 text-xs py-1.5 px-3 focus:outline-none focus:border-slate-700 font-mono"
+              >
+                <option value="raf">Chronos RAF (Retrieval Augmented)</option>
+                <option value="specretf">SpecReTF (Spectral Frequency-Aware)</option>
+                <option value="retrieval">Pearson Shape Retrieval</option>
               </select>
             </div>
 

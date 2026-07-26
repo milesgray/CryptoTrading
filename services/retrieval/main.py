@@ -280,7 +280,8 @@ async def build_index_for_combination(token: str, granularity_sec: int, window_s
         encoder_service=encoder,
         frame_size=frame_size,
         hop_size=hop_size,
-        horizon=horizon
+        horizon=horizon,
+        chronos_pipeline=chronos_pipeline
     )
     
     retrieval_forecaster = RetrievalForecaster(

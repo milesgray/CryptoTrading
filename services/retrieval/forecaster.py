@@ -12,7 +12,7 @@ Provides shape-similarity and frequency-domain forecasting classes:
 import torch
 import numpy as np
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional  
 
 # pyrefly: ignore [missing-import]
 from encoder import RetrievalServiceEncoder
@@ -176,6 +176,7 @@ class SpecReTFForecaster:
     
     Compares query and candidate segments in the frequency domain using Hann-windowed STFTs,
     Jensen-Shannon Divergence on normalized amplitudes, and phase coherence.
+    Optionally uses Chronos pipeline to project future predictions.
     """
     
     def __init__(
@@ -191,6 +192,7 @@ class SpecReTFForecaster:
         bias_retrieval: np.ndarray = None,
         bias_direct: np.ndarray = None,
         bias_final: np.ndarray = None,
+        chronos_pipeline: Optional[ChronosPipeline] = None
     ):
         """
         Initialize the SpecReTFForecaster.
@@ -207,12 +209,14 @@ class SpecReTFForecaster:
             bias_retrieval (np.ndarray, optional): Retrieval bias matrix.
             bias_direct (np.ndarray, optional): Direct pathway bias matrix.
             bias_final (np.ndarray, optional): Fusion pathway bias matrix.
+            chronos_pipeline (Optional[ChronosPipeline]): Chronos forecasting pipeline instance.
         """
         self.encoder_service = encoder_service
         self.frame_size = frame_size
         self.hop_size = hop_size
         self.alpha = alpha
         self.horizon = horizon
+        self.chronos_pipeline = chronos_pipeline
         
         self.w_retrieval = w_retrieval
         self.w_direct = w_direct
@@ -441,13 +445,23 @@ class SpecReTFForecaster:
         exp_sim = np.exp(similarities - np.max(similarities))
         weights = exp_sim / np.sum(exp_sim)
         
+        # 4. Forecasting Pipeline (using Chronos if available, or Linear Projection & Fusion)
         actual_horizon = min(len(s["aligned_path"]) for s in top_k)
-        y_retrieval = np.zeros(actual_horizon, dtype=np.float32)
-        for w, s in zip(weights, top_k):
-            y_retrieval += w * s["aligned_path"][:actual_horizon]
-            
-        # 4. Forecasting Pipeline (Linear Projection & Fusion)
-        if self.w_final is not None:
+        if self.chronos_pipeline is not None and len(prices) > 0:
+            prices_tensor = torch.tensor(prices, dtype=torch.float32)
+            with torch.no_grad():
+                samples = self.chronos_pipeline.predict(
+                    [prices_tensor],
+                    prediction_length=actual_horizon,
+                    limit_prediction_length=False
+                )
+            samples_np = samples[0].cpu().numpy()
+            y_hat_final = np.median(samples_np, axis=0)
+        elif self.w_final is not None:
+            y_retrieval = np.zeros(actual_horizon, dtype=np.float32)
+            for w, s in zip(weights, top_k):
+                y_retrieval += w * s["aligned_path"][:actual_horizon]
+
             if self.w_retrieval is not None:
                 y_hat_retrieval = np.dot(y_retrieval, self.w_retrieval)
                 if self.bias_retrieval is not None:
@@ -467,6 +481,9 @@ class SpecReTFForecaster:
             if self.bias_final is not None:
                 y_hat_final += self.bias_final
         else:
+            y_retrieval = np.zeros(actual_horizon, dtype=np.float32)
+            for w, s in zip(weights, top_k):
+                y_retrieval += w * s["aligned_path"][:actual_horizon]
             y_hat_retrieval = y_retrieval
             y_hat_direct = np.full(actual_horizon, query_last_price)
             y_hat_final = 0.5 * y_hat_retrieval + 0.5 * y_hat_direct
