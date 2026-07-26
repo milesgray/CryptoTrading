@@ -17,9 +17,20 @@ class WebSocketService {
     this.isConnecting = false;
     this.callbacks = {
       price: [],
-      orderBook: []
+      orderBook: [],
+      status: []
     };
     this.fallbackInterval = null;
+  }
+
+  notifyStatusChange(status) {
+    this.callbacks.status.forEach(cb => {
+      try {
+        cb(status);
+      } catch (err) {
+        console.error('[WebSocket] Error in status callback:', err);
+      }
+    });
   }
 
   getSubscriberCount() {
@@ -153,6 +164,7 @@ class WebSocketService {
           this.reconnectAttempts = 0;
           this.stopFallbackPolling(); // Successfully connected! Stop fallback HTTP polling.
           this.startKeepAlive();
+          this.notifyStatusChange(true);
           resolve();
         };
         
@@ -163,6 +175,7 @@ class WebSocketService {
           console.error(errorMsg);
           this.isConnecting = false;
           this.stopKeepAlive();
+          this.notifyStatusChange(false);
           
           // Make sure fallback polling is active
           this.startFallbackPolling();
@@ -184,6 +197,7 @@ class WebSocketService {
           clearTimeout(connectionTimeout);
           console.log(`[WebSocket] Disconnected: ${event.code} ${event.reason || 'No reason provided'}`);
           this.isConnecting = false;
+          this.notifyStatusChange(false);
           
           // Start fallback HTTP polling on disconnect
           this.startFallbackPolling();
@@ -408,6 +422,22 @@ class WebSocketService {
       if (this.getSubscriberCount() === 0) {
         this.disconnect();
       }
+    };
+  }
+
+  onStatusChange(callback) {
+    if (typeof callback !== 'function') {
+      console.error('[WebSocket] onStatusChange requires a function as callback');
+      return () => {};
+    }
+    
+    this.callbacks.status.push(callback);
+    // Emit current status immediately upon subscription
+    const isCurrentlyConnected = Boolean(this.socket && this.socket.readyState === WebSocket.OPEN);
+    callback(isCurrentlyConnected);
+
+    return () => {
+      this.callbacks.status = this.callbacks.status.filter(cb => cb !== callback);
     };
   }
 }

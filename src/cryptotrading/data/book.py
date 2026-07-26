@@ -923,14 +923,16 @@ class OrderBookPostgresAdapter:
         if not matching_symbols:
             return None
             
-        query = '''
+        symbol_op = "= $1" if len(matching_symbols) == 1 else "= ANY($1)"
+        query = f'''
             SELECT time as timestamp, close as midpoint, metadata
             FROM price_data
-            WHERE symbol = ANY($1) AND exchange = 'transformed' AND time >= $2 AND time <= $3
+            WHERE symbol {symbol_op} AND exchange = 'transformed' AND time >= $2 AND time <= $3
             ORDER BY time ASC;
         '''
         async with get_connection() as conn:
-            rows = await conn.fetch(query, matching_symbols, start_time, end_time)
+            param = matching_symbols[0] if len(matching_symbols) == 1 else matching_symbols
+            rows = await conn.fetch(query, param, start_time, end_time)
             
         if not rows:
             return None

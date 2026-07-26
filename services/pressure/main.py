@@ -1,13 +1,18 @@
 import os
 import torch
+import numpy as np
 import logging
 from typing import List, Dict, Any, Tuple, Optional
 import datetime as dt
+# pyrefly: ignore [missing-import]
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
-from pressure_features import OrderBookFeaturizer, OrderBookSnapshot
+# pyrefly: ignore [missing-import]
+from cryptotrading.analysis.book import OrderBookFeaturizer, OrderBookSnapshot
+# pyrefly: ignore [missing-import]
 from model import get_model
+# pyrefly: ignore [missing-import]
 from train import TrainingConfig
 
 # Setup logging
@@ -17,7 +22,7 @@ logger = logging.getLogger("pressure_service")
 app = FastAPI(title="Pressure Service", description="Order book pressure model and features")
 
 model = None
-featurizer = None
+featurizer = OrderBookFeaturizer()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 config = TrainingConfig()
 
@@ -137,8 +142,11 @@ async def run_training_task(req: TrainRequest):
     })
     logger.info(f"Starting background training task for {req.token}...")
     try:
+        # pyrefly: ignore [missing-import]
         from data_loader import OrderBookDataLoader
+        # pyrefly: ignore [missing-import]
         from oracle import PressureOracle
+        # pyrefly: ignore [missing-import]
         from train import PressureTrainer, prepare_temporal_dataloaders
         import numpy as np
         
@@ -266,17 +274,90 @@ async def train_model_endpoint(request: TrainRequest, background_tasks: Backgrou
 @app.get("/{token}")
 @app.get("/pressure/{token}")
 async def get_token_pressure(token: str):
-    """Return order book pressure metrics for a given token symbol."""
-    return {
-        "ofi": 0.0,
-        "cvd": 2500,
-        "bap": 50.0,
-        "buy_pressure": 0.50,
-        "sell_pressure": 0.50,
-        "total_pressure": 0.00,
-        "market_regime": "sideways",
-        "volatility": 0.001,
-        "recommendation": "STANDBY",
-        "confidence": 0.50
-    }
+    """Return order book pressure metrics for a given token symbol calculated in real time."""
+    try:
+        # pyrefly: ignore [missing-import]
+        from data_loader import OrderBookDataLoader
+        loader = OrderBookDataLoader()
+        await loader.initialize()
+        
+        end_time = dt.datetime.now(dt.timezone.utc)
+        start_time = end_time - dt.timedelta(minutes=15)
+        
+        snapshots, _ = await loader.load_orderbook_data(
+            token=token.upper(),
+            start_time=start_time,
+            end_time=end_time,
+            validate_data=False,
+            fill_gaps=False
+        )
+        
+        if snapshots:
+            obs = snapshots[-1]
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No recent orderbook data available for token '{token.upper()}'."
+            )
+            
+        features_dict = featurizer.extract_features(obs, token=token.upper(), validate=False)
+        flat_features = featurizer.flatten_features(features_dict)
+        
+        buy_pressure = 0.50
+        sell_pressure = 0.50
+        total_pressure = 0.00
+        recommendation = "STANDBY"
+        confidence = 0.50
+
+        if model is not None:
+            features_tensor = torch.FloatTensor(flat_features).unsqueeze(0).to(device)
+            with torch.no_grad():
+                output = model(features_tensor)
+            if isinstance(output, dict):
+                buy_pressure = float(output.get("buy_pressure", 0.50))
+                sell_pressure = float(output.get("sell_pressure", 0.50))
+                total_pressure = float(output.get("total_pressure", 0.00))
+            elif isinstance(output, torch.Tensor):
+                preds = output.squeeze(0).tolist()
+                if len(preds) >= 3:
+                    buy_pressure, sell_pressure, total_pressure = preds[:3]
+
+        if total_pressure > 0.15:
+            recommendation = "BUY"
+            confidence = min(0.50 + abs(total_pressure), 0.95)
+        elif total_pressure < -0.15:
+            recommendation = "SELL"
+            confidence = min(0.50 + abs(total_pressure), 0.95)
+        else:
+            recommendation = "STANDBY"
+            confidence = 0.50
+
+        ofi = float(features_dict.get("ofi", np.array([0.0]))[0]) if "ofi" in features_dict else 0.0
+        cvd = float(features_dict.get("depth_imbalance", np.array([0.0]))[0]) if "depth_imbalance" in features_dict else 0.0
+        bap = float(features_dict.get("bid_ask_spread", np.array([0.0]))[0]) if "bid_ask_spread" in features_dict else 0.0
+        volatility = float(features_dict.get("volatility", np.array([0.001]))[0]) if "volatility" in features_dict else 0.001
+        
+        market_regime = "trending_up" if total_pressure > 0.2 else ("trending_down" if total_pressure < -0.2 else "sideways")
+
+        return {
+            "ofi": round(ofi, 4),
+            "cvd": round(cvd, 4),
+            "bap": round(bap, 4),
+            "buy_pressure": round(buy_pressure, 4),
+            "sell_pressure": round(sell_pressure, 4),
+            "total_pressure": round(total_pressure, 4),
+            "market_regime": market_regime,
+            "volatility": round(volatility, 6),
+            "recommendation": recommendation,
+            "confidence": round(confidence, 4)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error calculating real-time token pressure for {token}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to calculate token pressure for {token}: {str(e)}"
+        )
+
 

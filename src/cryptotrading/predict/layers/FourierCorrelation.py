@@ -1,5 +1,4 @@
 # MIT License
-import time
 
 # Copyright (c) 2021 DAMO Academy @ Alibaba
 

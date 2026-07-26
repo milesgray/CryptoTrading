@@ -371,6 +371,7 @@ class PressureTrainer:
         config: TrainingConfig,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
+        # pyrefly: ignore [missing-import]
         from model import get_model
         self.model  = get_model(config).to(device)
         self.config = config
@@ -662,6 +663,7 @@ def prepare_temporal_dataloaders(
         logger.info("Applied feature normalization")
 
     # FIX #6: Temporal split (not random!)
+    # pyrefly: ignore [missing-import]
     from oracle import TemporalDatasetSplitter
 
     splitter = TemporalDatasetSplitter()

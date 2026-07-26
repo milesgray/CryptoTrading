@@ -129,7 +129,7 @@ class SolutionValidator:
     def test_pressure_independence(self, oracle):
         """Test that buy and sell pressures are independent (FIX #3)"""
         try:
-            from pressure_features_v2 import OrderBookSnapshot
+            from cryptotrading.analysis.book_v2 import OrderBookSnapshot
             
             # Create test scenario: HIGH VOLATILITY (should have high buy AND sell)
             prices = [100.0] * 50 + [105.0, 103.0, 107.0, 104.0, 106.0]  # Volatile
@@ -276,7 +276,7 @@ class SolutionValidator:
     def test_data_validation(self, featurizer):
         """Test that order book validation exists"""
         try:
-            from pressure_features_v2 import OrderBookSnapshot
+            from cryptotrading.analysis.book_v2 import OrderBookSnapshot
             
             # Test that validation catches crossed book
             try:
@@ -309,7 +309,7 @@ class SolutionValidator:
     def test_adaptive_buckets(self, featurizer):
         """Test that bucket ranges can be adaptive"""
         try:
-            from pressure_features_v2 import AdaptiveBucketCalculator
+            from cryptotrading.analysis.book_v2 import AdaptiveBucketCalculator
             
             # Test different asset classes
             calc_major = AdaptiveBucketCalculator('major_crypto')
@@ -356,7 +356,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
     # Import all components
-    from pressure_features import OrderBookFeaturizer, AdaptiveBucketCalculator
+    from cryptotrading.analysis.book import OrderBookFeaturizer, AdaptiveBucketCalculator
     from oracle import PressureOracle
     from train import TrainingConfig, PressurePredictor
     

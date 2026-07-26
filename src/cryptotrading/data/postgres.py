@@ -337,6 +337,12 @@ async def _init_schema_impl(conn: Connection):
                 
             CREATE INDEX IF NOT EXISTS idx_price_data_symbol_exchange_time 
                 ON price_data(symbol, exchange, time DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_price_data_symbol_exchange_time_asc 
+                ON price_data(symbol, exchange, time ASC);
+
+            CREATE INDEX IF NOT EXISTS idx_price_data_exchange_time_asc 
+                ON price_data(exchange, time ASC);
                 
             CREATE INDEX IF NOT EXISTS idx_order_book_data_symbol_time 
                 ON order_book_data(symbol, time DESC);

@@ -6,6 +6,8 @@ import numpy as np
 from typing import List, Tuple
 from dataclasses import dataclass
 from enum import Enum
+# pyrefly: ignore [missing-import]
+from cryptotrading.analysis.book import OrderBookSnapshot
 
 import logging
 
@@ -91,7 +93,7 @@ class PressureOracle:
 
     def compute_pressure_labels(
         self,
-        orderbook_snapshot,
+        orderbook_snapshot: OrderBookSnapshot,
         future_prices: List[float],
         price_history: List[float],
         current_idx: int,
@@ -275,7 +277,7 @@ if __name__ == "__main__":
     print(f"Test range: {test_idx.start} to {test_idx.stop}")
 
     # Generate labels (only showing a few)
-    from pressure_features import OrderBookSnapshot
+    
 
     for i in list(train_idx)[:5]:
         # Create dummy orderbook

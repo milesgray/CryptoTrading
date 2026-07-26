@@ -5,13 +5,18 @@ from typing import List
 
 import torch.nn as nn
 
+# pyrefly: ignore [missing-import]
+from cryptotrading.predict.layers.AdaptiveKernel import AdaptiveKernelLayer
+# pyrefly: ignore [missing-import]
+from cryptotrading.predict.layers.StateSpace import StateSpaceLayer
+
 
 class MLP(nn.Module):
     def __init__(self, dim_in, dim_hidden, dim_out, dropout=0.1, norm=True):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(dim_in, dim_hidden),
-            nn.LayerNorm(dim_hidden) if norm else nn.Identity(),
+            AdaptiveKernelLayer(dim_in, dim_hidden),
+            nn.LayerNorm(dim_hidden) if norm else nn.Identity(),            
             nn.GELU(),  # GELU > ReLU for financial time series usually
             nn.Dropout(dropout),
             nn.Linear(dim_hidden, dim_out),
@@ -24,12 +29,13 @@ class MLP(nn.Module):
 class ResidualBlock(nn.Module):
     """Dense Residual Block for feature interaction"""
 
-    def __init__(self, dim_in, dim_hidden, dim_out, dropout=0.1, norm=True):
+    def __init__(self, dim_in, dim_hidden, dim_out, dropout=0.1, norm=True, residual=True):
         super().__init__()
         self.net = MLP(dim_in, dim_hidden, dim_out, dropout=dropout, norm=norm)
+        self.residual = residual
 
     def forward(self, x):
-        return x + self.net(x)
+        return x + self.net(x) if self.residual else self.net(x)
 
 
 class RobustPressurePredictor(nn.Module):
@@ -48,13 +54,15 @@ class RobustPressurePredictor(nn.Module):
 
         # Deep Residual Feature Extractor
         self.blocks = nn.ModuleList([
-            ResidualBlock(hidden_dim, hidden_dim // 2, hidden_dim, dropout=dropout)
+            ResidualBlock(hidden_dim, hidden_dim // 2, hidden_dim, dropout=dropout, residual=use_residual)
             for hidden_dim in hidden_dims
         ])
 
         # Independent Heads
         self.buy_head = nn.Sequential(
             nn.Linear(hidden_dims[-1], head_dim), 
+            nn.GELU(), 
+            StateSpaceLayer(head_dim),
             nn.GELU(), 
             nn.Linear(head_dim, 1), 
             nn.Sigmoid()
@@ -63,12 +71,16 @@ class RobustPressurePredictor(nn.Module):
         self.sell_head = nn.Sequential(
             nn.Linear(hidden_dims[-1], head_dim), 
             nn.GELU(), 
+            StateSpaceLayer(head_dim),
+            nn.GELU(), 
             nn.Linear(head_dim, 1), 
             nn.Sigmoid()
         )
 
         self.total_head = nn.Sequential(
             nn.Linear(hidden_dims[-1], head_dim), 
+            nn.GELU(), 
+            StateSpaceLayer(head_dim),
             nn.GELU(), 
             nn.Linear(head_dim, 1), 
             nn.Tanh()
@@ -124,10 +136,7 @@ class PressurePredictor(nn.Module):
         prev_dim = input_dim
 
         for i, hidden_dim in enumerate(hidden_dims):
-            if use_residual:
-                layer = ResidualBlock(prev_dim, hidden_dim, hidden_dim, dropout=dropout)
-            else:
-                layer = MLP(prev_dim, hidden_dim, hidden_dim, dropout=dropout)
+            layer = ResidualBlock(prev_dim, hidden_dim, hidden_dim, dropout=dropout, residual=use_residual)
             layers.append(layer)
 
             prev_dim = hidden_dim
@@ -138,6 +147,8 @@ class PressurePredictor(nn.Module):
         self.buy_pressure_head = nn.Sequential(
             nn.Linear(prev_dim, head_dim),
             nn.GELU(),
+            StateSpaceLayer(head_dim),
+            nn.GELU(), 
             nn.Dropout(dropout * 0.5),  # Less dropout in heads
             nn.Linear(head_dim, 1),
             nn.Sigmoid(),
@@ -146,6 +157,8 @@ class PressurePredictor(nn.Module):
         self.sell_pressure_head = nn.Sequential(
             nn.Linear(prev_dim, head_dim),
             nn.GELU(),
+            StateSpaceLayer(head_dim),
+            nn.GELU(), 
             nn.Dropout(dropout * 0.5),
             nn.Linear(head_dim, 1),
             nn.Sigmoid(),
@@ -154,6 +167,8 @@ class PressurePredictor(nn.Module):
         self.total_pressure_head = nn.Sequential(
             nn.Linear(prev_dim, head_dim),
             nn.GELU(),
+            StateSpaceLayer(head_dim),
+            nn.GELU(), 
             nn.Dropout(dropout * 0.5),
             nn.Linear(head_dim, 1),
             nn.Tanh(),

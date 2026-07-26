@@ -11,7 +11,7 @@ import numpy as np
 from unittest.mock import AsyncMock, MagicMock
 
 from data_loader import OrderBookDataLoader, DataQualityMetrics, GapInfo
-from pressure_features import OrderBookFeaturizer, OrderBookSnapshot
+from cryptotrading.analysis.book import OrderBookFeaturizer, OrderBookSnapshot
 
 
 @pytest.fixture

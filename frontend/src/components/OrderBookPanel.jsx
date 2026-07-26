@@ -32,37 +32,44 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
   useEffect(() => {
     let cleanupCallback = null;
     let priceCleanup = null;
+    let statusCleanup = null;
 
     const connectWebSocket = async () => {
       try {
         await webSocketService.connect(token);
-        setIsConnected(true);
       } catch (error) {
         console.error('Failed to connect WebSocket:', error);
-        setIsConnected(false);
       }
     };
 
     connectWebSocket();
 
+    statusCleanup = webSocketService.onStatusChange((status) => {
+      setIsConnected(status);
+    });
+
     cleanupCallback = webSocketService.onOrderBookUpdate((data) => {
       console.log('Order book update received:', data);
       setOrderBookData(data);
+      setIsConnected(true);
     });
 
     priceCleanup = webSocketService.onPriceUpdate((data) => {
       if (data.order_book) {
         setOrderBookData(data.order_book);
+        setIsConnected(true);
       }
     });
 
     return () => {
       if (cleanupCallback) cleanupCallback();
       if (priceCleanup) priceCleanup();
+      if (statusCleanup) statusCleanup();
     };
   }, [token]);
 
   const displayData = orderBookData || latestPriceData?.order_book;
+  const isOnline = isConnected || Boolean(displayData);
 
   const formatNumber = (num, decimals = 2) => {
     if (num === null || num === undefined) return 'N/A';
@@ -312,9 +319,9 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
         </div>
         
         <div className="flex items-center gap-2 bg-slate-950/60 px-2.5 py-1 rounded-lg border border-slate-800">
-          <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></div>
+          <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></div>
           <span className="text-[10px] font-semibold font-mono text-slate-400">
-            {isConnected ? 'LIVE' : 'OFFLINE'}
+            {isOnline ? 'LIVE' : 'OFFLINE'}
           </span>
         </div>
       </div>

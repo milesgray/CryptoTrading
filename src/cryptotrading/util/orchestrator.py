@@ -225,7 +225,7 @@ class ServiceOrchestrator:
                 name="pressure",
                 display_name="Order Book Pressure Service",
                 description="Extracts high-frequency liquidity features (Order Flow Imbalance, Cumulative Volume Delta, Bid-Ask Pressure) from active feeds.",
-                script_path="services/pressure/pressure_features.py"
+                script_path="services/pressure/main.py"
             ),
             ServiceConfig(
                 name="predict",

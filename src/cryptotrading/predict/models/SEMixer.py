@@ -47,9 +47,6 @@ class IntraPatchMixing(nn.Module):
         x = self.dropout2(x)
         return x
 
-
-
-
 class TMBlock(nn.Module):
     def __init__(self, PatchNum, PatchEmbedDim, dropout, args=None):
         super(TMBlock, self).__init__()
@@ -82,9 +79,15 @@ class TMBlock(nn.Module):
                 args.d_model, args.n_heads)
         elif self.args.autocorrelation:
             self.self_attn = AutoCorrelationLayer(
-                AutoCorrelation(False, args.factor, attention_dropout=args.dropout,
-                                output_attention=args.output_attention, args=args),
-                args.d_model, args.n_heads, )
+                AutoCorrelation(
+                    mask_flag=False, 
+                    factor=args.factor, 
+                    attention_dropout=args.dropout,
+                    output_attention=args.output_attention,                     
+                ),
+                args.d_model, 
+                args.n_heads, 
+            )
         elif self.args.fed_fourier_attn:
             self.self_attn = AutoCorrelationLayer(
                 FourierBlock(in_channels=args.d_model,
@@ -134,82 +137,12 @@ class TMBlock(nn.Module):
         x = self.intra_patch_mixing(x) + res_x + x_or.transpose(1, 2)
         return x
 
-class Model(nn.Module):
-    def __init__(self, configs=None):
-        super().__init__()
-        self.configs = configs
-        d_model = configs.d_model
-        head_dropout = configs.head_dropout
-        individual = configs.individual
-        affine = configs.affine
-        subtract_last = configs.subtract_last
-        # RevIn
-        self.revin = True
-        self.patch_len= configs.patch_len
-        self.stride=configs.stride
-        if self.revin: self.revin_layer = RevIN(self.configs.c_in, affine=affine, subtract_last=subtract_last)
-
-        # Patching
-        padding_patch = self.configs.padding_patch
-        self.scale_all = self.configs.scale_factors
-        self.configs.scale_all = self.scale_all
-        self.configs.patch_num_all = {}
-        self.padding_patch_layer_all = {}
-        for i in self.scale_all:
-            self.configs.patch_num_all[i] = (int((self.configs.seq_len - self.configs.patch_len * i) / (self.configs.stride * i) + 1))
-        if padding_patch == 'end':  # can be modified to general case
-            for i, s in enumerate(self.scale_all):
-                self.padding_patch_layer = nn.ReplicationPad1d((0, self.configs.stride * s))
-                self.padding_patch_layer_all[s] = (self.padding_patch_layer)
-                self.configs.patch_num_all[s] += 1
-
-        if not self.configs.multi_scale:
-            self.head_nf = d_model * self.configs.patch_num_all[1]
-        else:
-            self.head_nf = d_model * self.configs.reduce_dim
-        # Backbone
-        self.mpmc_layer = MPMCLayer(d_model=d_model,configs=self.configs)
-        # Head
-        self.n_vars = self.configs.c_in
-        self.individual = individual
-        self.head_all = []
-        self.head = Flatten_Head(self.individual, self.n_vars, self.head_nf, self.configs.pred_len,
-                                 head_dropout=head_dropout, args=configs)
-        self.revin = True
-
-    def forward(self, z):
-        # z: [batch_size x sequence_length x variable_size]
-        z = z.permute(0, 2, 1)
-        if self.revin:
-            z = z.permute(0, 2, 1)
-            z = self.revin_layer(z, 'norm')
-            z = z.permute(0, 2, 1)
-
-        # do patching
-        z_scale_all = {}
-        if self.configs.padding_patch == 'end':
-            for i, s in enumerate(self.scale_all):
-                z_scale_all[s] = (self.padding_patch_layer_all[s](z))
-        for k, v in z_scale_all.items():
-            z_scale_all[k] = v.unfold(dimension=-1, size=self.patch_len * k, step=self.stride * k).permute(0, 1, 3, 2)
-        # z_scale_all: [batch_size x variable_size x patch_length x patch_number]
-
-        z = self.mpmc_layer(z_scale_all)  # z: [batch_size x variable_size x d_model x patch_num]
-
-        z = self.head(z)  # z: [batch_size x variable_size x prediction_length]
-        # denorm
-        if self.revin:
-            z = z.permute(0, 2, 1)
-            z = self.revin_layer(z, 'denorm')
-            z = z.permute(0, 2, 1)
-
-        return z.permute(0, 2, 1)
 class MPMCLayer(nn.Module):
-    def __init__(self,d_model,pe='zeros',learn_pe=True,configs=None):
+    def __init__(self, d_model, pe='zeros', learn_pe=True, configs=None):
         super().__init__()
         self.configs = configs
         self.W_Align_Scales = nn.ModuleList()
-        self.W_Pos_Scales= []
+        self.W_Pos_Scales = []
         for s in self.configs.scale_all:
             self.W_Align_Scales.append(nn.Linear(self.configs.patch_len * s, self.configs.d_model))
 
@@ -217,7 +150,7 @@ class MPMCLayer(nn.Module):
         self.W_pos_2 = positional_encoding(pe, learn_pe, self.configs.patch_num_all[2], d_model)
         self.W_pos_3 = positional_encoding(pe, learn_pe, self.configs.patch_num_all[4], d_model)
         self.W_pos_4 = positional_encoding(pe, learn_pe, self.configs.patch_num_all[8], d_model)
-        self.W_Pos_Scales= [self.W_pos_1, self.W_pos_2, self.W_pos_3, self.W_pos_4]
+        self.W_Pos_Scales = [self.W_pos_1, self.W_pos_2, self.W_pos_3, self.W_pos_4]
 
         self.T_Mixing_Scale_1 = nn.ModuleList()
         for i in range(self.configs.eib_num_1scale):
@@ -240,6 +173,7 @@ class MPMCLayer(nn.Module):
 
         self.reduce = nn.Linear(sum(self.configs.patch_num_all.values()), self.configs.reduce_dim)
         self.dropout = nn.Dropout(0.1)
+
     def forward(self, x_scale_all_or) -> Tensor:  # [batch_size x variable_size x patch_length x patch_number]
         x_scale_all = {}
         n_vars = self.configs.enc_in
@@ -264,8 +198,7 @@ class MPMCLayer(nn.Module):
                 if i==0:
                     z_all[1] = self.T_Mixing_Scale_1[i](x_scale_all[1]) # [(batch_size x variable_size) x patch_number x patch_embed_dim]
                 else:
-
-                    z_all[1]= self.T_Mixing_Scale_1[i](z_all[1])
+                    z_all[1] = self.T_Mixing_Scale_1[i](z_all[1])
             temp = torch.cat([z_all[1], x_scale_all[2]], dim=1)
 
             for i in range(self.configs.eib_num):
@@ -281,11 +214,12 @@ class MPMCLayer(nn.Module):
                 else:
                     z_all[4] = self.T_Mixing_Scale_3[i](z_all[4])
             temp = torch.cat([z_all[4][:, -x_scale_all[4].shape[1]:, :], x_scale_all[8]], dim=1)
+
             for i in range(self.configs.eib_num):
                 if i==0:
                     z_all[8] = self.T_Mixing_Scale_4[i](temp)
                 else:
-                    z_all[8]= self.T_Mixing_Scale_4[i](z_all[8])
+                    z_all[8] = self.T_Mixing_Scale_4[i](z_all[8])
             z_final[1] = z_all[1]
             z_final[2] = z_all[2][:, -x_scale_all[2].shape[1]:, :]
             z_final[4] = z_all[4][:, -x_scale_all[4].shape[1]:, :]
@@ -407,7 +341,6 @@ class _MultiheadAttention(nn.Module):
         if self.res_attention: return output, attn_weights, attn_scores
         else: return output, attn_weights
 
-
 class _ScaledDotProductAttention(nn.Module):
     r"""Scaled Dot-Product Attention module (Attention is all you need by Vaswani et al., 2017) with optional residual attention from previous layer
     (Realformer: Transformer likes residual attention by He et al, 2020) and locality self sttention (Vision Transformer for Small-Size Datasets
@@ -462,3 +395,75 @@ class _ScaledDotProductAttention(nn.Module):
 
         if self.res_attention: return output, attn_weights, attn_scores
         else: return output, attn_weights
+
+
+class Model(nn.Module):
+    def __init__(self, configs=None):
+        super().__init__()
+        self.configs = configs
+        d_model = configs.d_model
+        head_dropout = configs.head_dropout
+        individual = configs.individual
+        affine = configs.affine
+        subtract_last = configs.subtract_last
+        # RevIn
+        self.revin = True
+        self.patch_len= configs.patch_len
+        self.stride=configs.stride
+        if self.revin: self.revin_layer = RevIN(self.configs.c_in, affine=affine, subtract_last=subtract_last)
+
+        # Patching
+        padding_patch = self.configs.padding_patch
+        self.scale_all = self.configs.scale_factors
+        self.configs.scale_all = self.scale_all
+        self.configs.patch_num_all = {}
+        self.padding_patch_layer_all = {}
+        for i in self.scale_all:
+            self.configs.patch_num_all[i] = (int((self.configs.seq_len - self.configs.patch_len * i) / (self.configs.stride * i) + 1))
+        if padding_patch == 'end':  # can be modified to general case
+            for i, s in enumerate(self.scale_all):
+                self.padding_patch_layer = nn.ReplicationPad1d((0, self.configs.stride * s))
+                self.padding_patch_layer_all[s] = (self.padding_patch_layer)
+                self.configs.patch_num_all[s] += 1
+
+        if not self.configs.multi_scale:
+            self.head_nf = d_model * self.configs.patch_num_all[1]
+        else:
+            self.head_nf = d_model * self.configs.reduce_dim
+        # Backbone
+        self.mpmc_layer = MPMCLayer(d_model=d_model, configs=self.configs)
+        # Head
+        self.n_vars = self.configs.c_in
+        self.individual = individual
+        self.head_all = []
+        self.head = Flatten_Head(self.individual, self.n_vars, self.head_nf, self.configs.pred_len,
+                                 head_dropout=head_dropout, args=configs)
+        self.revin = True
+
+    def forward(self, z):
+        # z: [batch_size x sequence_length x variable_size]
+        z = z.permute(0, 2, 1)
+        if self.revin:
+            z = z.permute(0, 2, 1)
+            z = self.revin_layer(z, 'norm')
+            z = z.permute(0, 2, 1)
+
+        # do patching
+        z_scale_all = {}
+        if self.configs.padding_patch == 'end':
+            for i, s in enumerate(self.scale_all):
+                z_scale_all[s] = (self.padding_patch_layer_all[s](z))
+        for k, v in z_scale_all.items():
+            z_scale_all[k] = v.unfold(dimension=-1, size=self.patch_len * k, step=self.stride * k).permute(0, 1, 3, 2)
+        # z_scale_all: [batch_size x variable_size x patch_length x patch_number]
+
+        z = self.mpmc_layer(z_scale_all)  # z: [batch_size x variable_size x d_model x patch_num]
+
+        z = self.head(z)  # z: [batch_size x variable_size x prediction_length]
+        # denorm
+        if self.revin:
+            z = z.permute(0, 2, 1)
+            z = self.revin_layer(z, 'denorm')
+            z = z.permute(0, 2, 1)
+
+        return z.permute(0, 2, 1)

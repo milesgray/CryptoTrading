@@ -11,9 +11,12 @@ from typing import List, Optional, Tuple, Dict, Any
 from dataclasses import dataclass, field
 import numpy as np
 
+# pyrefly: ignore [missing-import]
 from cryptotrading.data.factory import get_order_book_adapter, get_price_adapter
+# pyrefly: ignore [missing-import]
 from cryptotrading.data.models import OrderBookSnapshot
-from pressure_features import OrderBookFeaturizer, OrderBookSnapshot as PressureOrderBookSnapshot
+# pyrefly: ignore [missing-import]
+from cryptotrading.analysis.book import OrderBookFeaturizer, OrderBookSnapshot as PressureOrderBookSnapshot
 
 logger = logging.getLogger(__name__)
 
