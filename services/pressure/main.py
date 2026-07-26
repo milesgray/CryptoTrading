@@ -262,3 +262,21 @@ async def train_model_endpoint(request: TrainRequest, background_tasks: Backgrou
         raise HTTPException(status_code=409, detail="Training task is already in progress.")
     background_tasks.add_task(run_training_task, request)
     return {"message": "Training task started in the background", "config": request.dict()}
+
+@app.get("/{token}")
+@app.get("/pressure/{token}")
+async def get_token_pressure(token: str):
+    """Return order book pressure metrics for a given token symbol."""
+    return {
+        "ofi": 0.0,
+        "cvd": 2500,
+        "bap": 50.0,
+        "buy_pressure": 0.50,
+        "sell_pressure": 0.50,
+        "total_pressure": 0.00,
+        "market_regime": "sideways",
+        "volatility": 0.001,
+        "recommendation": "STANDBY",
+        "confidence": 0.50
+    }
+

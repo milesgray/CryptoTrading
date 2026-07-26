@@ -20,8 +20,9 @@ COPY ./src/pyproject.toml ./src/uv.lock* ./src/README.md ./
 RUN uv sync --frozen --no-install-project --no-dev --extra ml
 
 
-# Set PYTHONPATH
+# Set PYTHONPATH and unbuffer Python stdout
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
 # Copy application files
 COPY ./src/cryptotrading ./cryptotrading/

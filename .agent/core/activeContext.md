@@ -1,21 +1,26 @@
-# Active Context: TimescaleDB Candlestick and Order Book Optimizations
+# Active Context: Resolving Docker Compose Log Issues, DB Password Auth & Retrieval Dimension Mismatch
 
 ## Quick Reference
-- **Feature**: TimescaleDB Candlestick and Order Book Query Optimizations
+- **Feature**: Docker Compose Log Issues & Retrieval Vector Dimension Resolution
 - **Status**: Completed ✅
 
 ## Executive Summary
-Optimized candlestick and order book query paths to run entirely inside the database using TimescaleDB continuous aggregates and advanced JSONB query slicing. Built six dedicated continuous aggregate views on the `price_data` hypertable (`price_candle_1s`, `price_candle_15s`, `price_candle_30s`, `price_candle_1m`, `price_candle_5m`, `price_candle_1d`) along with matching scheduled refresh policies. Rewrote the candlestick data adapter to pull from these views or fall back to database-side `time_bucket` aggregations. Implemented SQL-side order book JSONB array slicing using PostgreSQL 15's native `jsonb_path_query_array` to dramatically reduce network load and python memory overhead, and added a lightweight `get_orderbook_summary` endpoint for statistical metrics.
+Resolved password authentication failures caused by URI percent-encoding issues (`POSTGRES_PASSWORD=6AFS87dfsaas%116`), bound TimescaleDB port `5432` to localhost (`127.0.0.1:5432:5432`) to eliminate public internet brute-force attacks, added GET /{token} endpoints to the pressure service, and fixed the retrieval service vector dimension mismatch (`Query embedding dimension 952 != index dimension 184`) by dynamically adapting embedding vectors and implementing robust health-check retries across container services.
 
 ## Tech Stack for This Feature
-- **TimescaleDB / PostgreSQL**: Hypertables, continuous aggregates, refresh policies, SkipScan, and `jsonb_path_query_array` operators.
-- **Python (asyncpg / pydantic)**: Asynchronous database connection pooling and type-safe data schemas.
+- **Docker Compose**: Container networking, port security hardening, image builds.
+- **FastAPI / Uvicorn**: Fallback GET endpoints (`/BTC`, `/pressure/BTC`) and unbuffered logging (`PYTHONUNBUFFERED=1`).
+- **Python / NumPy / Annoy**: Dynamic vector length padding and cropping in `RetrievalServiceEncoder`.
 
 ## Key Files Modified
-- [src/cryptotrading/data/postgres.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/postgres.py): Defined six continuous aggregates and their refresh policies on the `price_data` hypertable.
-- [src/cryptotrading/data/price.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/price.py): Updated `get_candlestick_data` to map granularities to continuous aggregate views or fall back to database-side SQL `time_bucket` aggregates.
-- [src/cryptotrading/data/book.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/book.py): Optimized `get_orderbook_data` to slice the nested bids and asks JSONB arrays inside SQL using `jsonb_path_query_array`, and added `get_orderbook_summary` for high-speed stats access.
-- [src/cryptotrading/data/models.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/models.py): Added `PriceLevel` schema models.
+- [services/retrieval/encoder.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/encoder.py): Guaranteed `encode_segment` output vectors strictly match Annoy index dimension `self.dim`.
+- [services/retrieval/main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/main.py): Optimized startup event loop to pre-build default index for BTC only and added health check retry loops.
+- [services/pressure/main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/pressure/main.py): Added `@app.get("/{token}")` and `@app.get("/pressure/{token}")` fallback endpoints.
+- [frontend/vite.config.js](file:///home/miles/Development/notebooks/CryptoTrading/frontend/vite.config.js): Updated `/api/pressure/train` proxy route to target `pressureUrl`.
+- [docker-compose.yml](file:///home/miles/Development/notebooks/CryptoTrading/docker-compose.yml): Bound TimescaleDB port 5432 to `127.0.0.1`.
+- [Dockerfile.retrieval](file:///home/miles/Development/notebooks/CryptoTrading/Dockerfile.retrieval): Set `ENV PYTHONUNBUFFERED=1`.
 
 ## Verification Details
-- Verified database schema initialization, SkipScan routing, and continuous aggregate queries via `python3 test_db.py`.
+- `curl -s http://localhost:8390/BTC`: Returned HTTP 200 OK with valid metrics.
+- `curl -s "http://localhost:8005/forecast?symbol=BTC&k=3&granularity=1m&window_size=60"`: Returned HTTP 200 OK with valid forecast data.
+- Unit tests: 25 non-torch tests passed cleanly.

@@ -219,14 +219,20 @@ async def build_index_for_combination(token: str, granularity_sec: int, window_s
     embed_dim = 128
     import os
     import httpx
+    import asyncio
     embed_url = os.getenv("EMBED_SERVICE_URL", "http://embed:8301")
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{embed_url}/health", timeout=2.0)
-            if resp.status_code == 200:
-                embed_dim = resp.json().get("embedding_dim", 128)
-    except Exception as e:
-        logger.warning(f"Could not fetch health from embed service at {embed_url}: {e}. Defaulting to 128.")
+    for attempt in range(5):
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"{embed_url}/health", timeout=5.0)
+                if resp.status_code == 200:
+                    embed_dim = resp.json().get("embedding_dim", 128)
+                    logger.info(f"Fetched embed service health: embedding_dim={embed_dim}")
+                    break
+        except Exception as e:
+            logger.warning(f"Could not fetch health from embed service at {embed_url} (attempt {attempt+1}/5): {e}")
+            if attempt < 4:
+                await asyncio.sleep(2.0)
         
     combined_dim = embed_dim + local_dim
     logger.info(f"Initializing encoder with window_size={window_size}, n_fft={n_fft}, frame_size={frame_size}, hop_size={hop_size}, horizon={horizon}, combined_dim={combined_dim} ({embed_dim} embed + {local_dim} local)")
@@ -334,30 +340,17 @@ async def startup_event():
         except Exception as e:
             logger.error(f"Failed to bootstrap historical data for {symbol}: {e}", exc_info=True)
     
-    # Build default index for each configured symbol at (60, 60)
-    default_forecaster = None
-    default_raf_forecaster = None
-    for symbol in SYMBOLS:
-        token = symbol.split("/")[0] if "/" in symbol else symbol
-        try:
-            logger.info(f"Pre-building default retrieval index for {token}...")
-            # Build and cache both SpecReTF and RAF forecasters
-            await get_forecaster(token, granularity_sec=60, window_size=60, method="specretf")
-            await get_forecaster(token, granularity_sec=60, window_size=60, method="raf")
-            
-            if token == "BTC":
-                default_forecaster = await get_forecaster(token, granularity_sec=60, window_size=60, method="specretf")
-                default_raf_forecaster = await get_forecaster(token, granularity_sec=60, window_size=60, method="raf")
-        except Exception as e:
-            logger.error(f"Failed to build startup index for {token}: {e}", exc_info=True)
-            raise e
-            
-    if default_forecaster and default_raf_forecaster:
+    # Pre-build default retrieval index for primary token (BTC)
+    logger.info("Pre-building default retrieval index for BTC...")
+    try:
+        default_forecaster = await get_forecaster("BTC", granularity_sec=60, window_size=60, method="specretf")
+        default_raf_forecaster = await get_forecaster("BTC", granularity_sec=60, window_size=60, method="raf")
         forecaster = default_forecaster
         raf_forecaster = default_raf_forecaster
         encoder_service = default_forecaster.encoder_service
-    else:
-        logger.warning("BTC default forecaster not pre-built, globals left as is.")
+        logger.info("Default BTC retrieval index pre-built successfully.")
+    except Exception as e:
+        logger.error(f"Failed to pre-build default BTC retrieval index: {e}", exc_info=True)
 
 @app.get("/forecast")
 async def forecast(
