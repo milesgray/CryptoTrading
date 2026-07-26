@@ -4,8 +4,9 @@ import random
 import httpx
 import numpy as np
 from typing import List, Optional
-from datetime import datetime, timedelta
-from pydantic import BaseModel, Field
+from datetime import datetime
+from pydantic import BaseModel
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, HTTPException, Request
 
 logger = logging.getLogger("fastapi_server")
@@ -292,8 +293,10 @@ async def get_jepa_regime(request: Request, token: str):
     # 1. Fetch recent price history from database
     prices = []
     try:
+        # pyrefly: ignore [missing-import]
         from cryptotrading.config import DB_BACKEND
         if DB_BACKEND == 'postgres':
+            # pyrefly: ignore [missing-import]
             from cryptotrading.data.postgres import get_connection, resolve_matching_symbols
             matching_symbols = await resolve_matching_symbols(token)
             if matching_symbols:

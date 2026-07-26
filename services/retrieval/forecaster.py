@@ -9,10 +9,14 @@ Provides shape-similarity and frequency-domain forecasting classes:
   Jensen-Shannon Divergence on amplitude distributions, phase coherence, and recency decay.
 """
 
-import numpy as np
-from typing import Dict, Any
-from encoder import RetrievalServiceEncoder
 import torch
+import numpy as np
+
+from typing import Dict, Any
+
+# pyrefly: ignore [missing-import]
+from encoder import RetrievalServiceEncoder
+# pyrefly: ignore [missing-import]
 from chronos import ChronosPipeline
 
 class RetrievalForecaster:

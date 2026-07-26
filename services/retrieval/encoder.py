@@ -13,7 +13,7 @@ import os
 import httpx
 import logging
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from cryptotrading.analysis.retrieval import RetrievalEncoder
 from cryptotrading.data.index import VectorIndex
 
@@ -26,21 +26,33 @@ class RetrievalServiceEncoder:
     Combines deep learning embeddings from the Embed Service with local handcrafted features.
     """
     
-    def __init__(self, window_size: int = 60, n_fft: int = 32, dim: int = 184, embed_service_url: str = None, embed_dim: int = None):
+    def __init__(
+        self,
+        forecast_size: int = 15,
+        historic_window_size: Optional[int] = None,
+        n_fft: int = 32,
+        dim: int = 237,
+        embed_service_url: str = None,
+        embed_dim: int = None
+    ):
         """
         Initialize the RetrievalServiceEncoder.
 
         Args:
-            window_size (int): Size of the rolling price window. Defaults to 60.
-            n_fft (int): Number of FFT bins for the handcrafted encoder. Defaults to 32.
-            dim (int): Vector dimension of the index. Defaults to 184.
-            embed_service_url (str, optional): Target URL for the embed service.
-                If not specified, reads from the EMBED_SERVICE_URL environment variable,
-                defaulting to 'http://localhost:8301'.
-            embed_dim (int, optional): The embedding dimension from the embed service.
-                If not specified, queries it dynamically from the embed service.
+            forecast_size (int): Size of prediction horizon window. Defaults to 15.
+            historic_window_size (int, optional): Size of historic price window. Defaults to 4 * forecast_size.
+            n_fft (int): Number of FFT bins for handcrafted encoder. Defaults to 32.
+            dim (int): Vector dimension of index. Defaults to 237.
+            embed_service_url (str, optional): URL for embed service.
+            embed_dim (int, optional): Embedding dimension from embed service.
         """
-        self.encoder = RetrievalEncoder(window_size=window_size, n_fft=n_fft)
+        self.forecast_size = forecast_size
+        self.historic_window_size = historic_window_size if historic_window_size is not None else 4 * forecast_size
+        self.encoder = RetrievalEncoder(
+            forecast_size=self.forecast_size,
+            historic_window_size=self.historic_window_size,
+            n_fft=n_fft
+        )
         self.index = VectorIndex(dim=dim)
         self.dim = dim
         self.is_built = False

@@ -1,19 +1,21 @@
-# Active Context: Real-Time Token Pressure Calculation
+# Active Context: Retrieval Encoder & Service Improvements
 
 ## Quick Reference
-- **Feature**: Real-Time Token Pressure Calculation
-- **Branch**: `feature/realtime-token-pressure`
-- **Plan File**: `.agent/plans/realtime-token-pressure-plan.md`
+- **Feature**: Retrieval Service & RetrievalEncoder Improvements
+- **Branch**: `feature/retrieval-encoder-improvements`
+- **Plan File**: `.agent/plans/retrieval-encoder-improvements-plan.md`
 - **Status**: Completed ✅
 
 ## Executive Summary
-Replaced static token pressure results (`cvd: 2500`, `bap: 50.0`, etc.) in `services/pressure/main.py`'s `get_token_pressure` handler with real-time order book fetching, feature extraction (`OrderBookFeaturizer`), and model prediction (`PressureModel`).
+Enhanced `RetrievalEncoder` and retrieval service architecture to incorporate `OrderBookFeaturizer` (microstructure, depth, slope), `PriceLevels` (support/resistance level proximity and strength), and decoupled historic price window size from prediction horizon size (defaulting historic window to 4x forecast size).
 
 ## Tech Stack for This Feature
-- **FastAPI / Uvicorn**: `GET /{token}` and `GET /pressure/{token}` endpoints.
-- **PyTorch**: Pressure model inference (`buy_pressure`, `sell_pressure`, `total_pressure`).
-- **OrderBookFeaturizer & OrderBookDataLoader**: Real-time snapshot loading and vectorized feature extraction.
+- **Python / NumPy / SciPy**: Spectral, orderbook featurization, and price level calculations.
+- **OrderBookFeaturizer & PriceLevels**: Vectorized order book and support/resistance level feature extraction.
+- **pgvector**: Auto-detects vector dimension mismatches and alters table column types accordingly.
 
 ## Key Files Modified
-- [services/pressure/main.py](file:///home/miles/Development/notebooks/CryptoTrading/services/pressure/main.py): Implemented real-time feature extraction and prediction in `get_token_pressure`.
-- [services/pressure/test_realtime_pressure.py](file:///home/miles/Development/notebooks/CryptoTrading/services/pressure/test_realtime_pressure.py): Added unit tests for real-time endpoint calculation.
+- [src/cryptotrading/analysis/retrieval.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/analysis/retrieval.py): Integrated OrderBookFeaturizer, PriceLevels, and 4x historic window sizing.
+- [services/retrieval/encoder.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/encoder.py): Updated RetrievalServiceEncoder for variable forecast and historic window sizes.
+- [src/cryptotrading/data/pgvector_store.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/pgvector_store.py): Implemented dynamic vector column dimension migration.
+- [tests/test_retrieval_encoder.py](file:///home/miles/Development/notebooks/CryptoTrading/tests/test_retrieval_encoder.py): Unit tests for updated RetrievalEncoder.

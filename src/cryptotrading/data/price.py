@@ -10,6 +10,7 @@ from cryptotrading.data.mongo import get_db
 from cryptotrading.data.models import (
     CandlestickData,
     ExchangeRawOrderBook,
+    PriceLevel
 )
 from cryptotrading.data.postgres import get_connection, init_pool, _pool, resolve_matching_symbols
 from cryptotrading.data.book import OrderBookMongoAdapter, OrderBookPostgresAdapter
@@ -27,6 +28,7 @@ class PriceAdapter(ABC):
         index_price: float, 
         book: dict,            
         raw_data: list[ExchangeRawOrderBook], 
+        levels: list[PriceLevel],
         verbose: bool = False
     ) -> None:
         raise NotImplementedError
@@ -121,6 +123,7 @@ class PriceMongoAdapter(PriceAdapter):
         index_price: float, 
         book: dict,            
         raw_data: list[ExchangeRawOrderBook], 
+        levels: list[PriceLevel],
         verbose: bool = False
     ) -> None:
         """Store calculated index price and raw data in MongoDB time series collection"""

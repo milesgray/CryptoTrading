@@ -151,6 +151,22 @@ class TradeEmbeddingDB:
                 )
             """)
             
+            # Check existing column dimension and alter if different
+            try:
+                curr_dim = await conn.fetchval("""
+                    SELECT atttypmod 
+                    FROM pg_attribute 
+                    WHERE attrelid = 'trade_setups'::regclass 
+                      AND attname = 'embedding'
+                """)
+                if curr_dim is not None and curr_dim != self.embedding_dim and curr_dim > 0:
+                    logger.info(f"Altering trade_setups embedding column dimension from {curr_dim} to {self.embedding_dim}")
+                    await conn.execute("DROP INDEX IF EXISTS trade_setups_embedding_idx")
+                    await conn.execute("TRUNCATE trade_setups RESTART IDENTITY")
+                    await conn.execute(f"ALTER TABLE trade_setups ALTER COLUMN embedding TYPE vector({self.embedding_dim})")
+            except Exception as dim_err:
+                logger.warning(f"Could not verify/alter embedding vector dimension: {dim_err}")
+            
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS trade_setups_embedding_idx 
                 ON trade_setups 
