@@ -66,6 +66,16 @@ async def startup_event():
     model_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(model_device)
     
+    # Try downloading from Artifact Service if not present locally
+    try:
+        from cryptotrading.client.artifact.service import download_artifact, upload_artifact
+        if not os.path.exists(checkpoint_path):
+            download_artifact("predict", os.path.basename(checkpoint_path), checkpoint_path)
+        if not os.path.exists(scaler_path):
+            download_artifact("predict", os.path.basename(scaler_path), scaler_path)
+    except Exception as art_err:
+        logger.warning(f"Could not check Artifact Service for predict model: {art_err}")
+    
     if os.path.exists(checkpoint_path) and os.path.exists(scaler_path):
         logger.info(f"Loading pre-trained model checkpoint from {checkpoint_path}...")
         try:
@@ -119,6 +129,12 @@ async def train_and_save_model(price_adapter, checkpoint_path, scaler_path):
         with open(scaler_path, "wb") as f:
             pickle.dump(scaler, f)
         logger.info(f"Model and scaler saved successfully to {checkpoint_path}.")
+        try:
+            from cryptotrading.client.artifact.service import upload_artifact
+            upload_artifact(checkpoint_path, category="predict", filename=os.path.basename(checkpoint_path))
+            upload_artifact(scaler_path, category="predict", filename=os.path.basename(scaler_path))
+        except Exception as art_err:
+            logger.warning(f"Failed uploading predict artifacts to Artifact Service: {art_err}")
     except Exception as e:
         logger.error(f"Error during startup training: {e}", exc_info=True)
         # Use synthetic fallback if training fails to prevent container crash

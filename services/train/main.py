@@ -184,8 +184,20 @@ def run_training_task(task_id: str, request_data: TrainRequest):
             # Save the config.json inside the checkpoint directory
             checkpoint_dir = os.path.join(args.checkpoints, setting)
             os.makedirs(checkpoint_dir, exist_ok=True)
-            with open(os.path.join(checkpoint_dir, 'config.json'), 'w') as f:
+            config_file_path = os.path.join(checkpoint_dir, 'config.json')
+            with open(config_file_path, 'w') as f:
                 json.dump(args_dict, f, indent=4)
+
+            # Upload checkpoint and config to Artifact Service
+            try:
+                from cryptotrading.client.artifact.service import upload_artifact
+                pth_file = os.path.join(checkpoint_dir, 'checkpoint.pth')
+                if os.path.exists(pth_file):
+                    upload_artifact(pth_file, category=f"train/{setting}", filename="checkpoint.pth")
+                if os.path.exists(config_file_path):
+                    upload_artifact(config_file_path, category=f"train/{setting}", filename="config.json")
+            except Exception as art_err:
+                print(f"Warning: Failed uploading artifact for {setting} to Artifact Service: {art_err}")
                 
         with tasks_lock:
             tasks[task_id]['status'] = 'success'

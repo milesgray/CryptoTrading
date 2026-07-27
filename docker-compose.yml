@@ -129,6 +129,18 @@ services:
             - timescaledb
             - record
 
+    artifact:
+        build:
+            context: .
+            dockerfile: Dockerfile.artifact
+        ports:
+            - "${ARTIFACT_PORT:-8006}:8006"
+        volumes:
+            - ./checkpoints:/app/checkpoints
+        environment:
+            - ARTIFACT_STORAGE_DIR=/app/checkpoints
+            - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
+
     portainer:
         image: portainer/portainer-ce:latest
         container_name: crypto-trading-portainer

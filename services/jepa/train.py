@@ -423,6 +423,15 @@ class JEPATrainer:
     def load(self, name: str = 'best_model', folder_path: Optional[Path] = None):
         folder_path = folder_path if folder_path else self.save_dir
         path = folder_path / f'{name}.pt'
+        
+        # Try downloading from Artifact Service if missing locally
+        if not path.exists():
+            try:
+                from cryptotrading.client.artifact.service import download_artifact
+                download_artifact("jepa", f'{name}.pt', str(path))
+            except Exception as art_err:
+                logger.warning(f"Could not check Artifact Service for jepa model: {art_err}")
+                
         if not path.exists():
             raise FileNotFoundError(f"Model file not found: {path}")
         checkpoint = torch.load(path)
@@ -436,8 +445,19 @@ class JEPATrainer:
         if folder_path is not None:
             folder_path = Path(folder_path)
             folder_path.mkdir(exist_ok=True, parents=True)
+        path = folder_path / f'{name}.pt'
         torch.save({
             'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'history': self.history,
+            'embeddings': self.embeddings,
+            **kwargs
+        }, path)
+        try:
+            from cryptotrading.client.artifact.service import upload_artifact
+            upload_artifact(str(path), category="jepa", filename=f'{name}.pt')
+        except Exception as art_err:
+            logger.warning(f"Failed uploading jepa artifact to Artifact Service: {art_err}")
             'optimizer_state_dict': self.optimizer.state_dict(),
             'history': self.history,
             'embeddings': self.embeddings

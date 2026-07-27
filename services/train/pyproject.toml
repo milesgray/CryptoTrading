@@ -1,7 +1,7 @@
 [project]
-name = "cryptotrading-price-serve"
+name = "cryptotrading-train-service"
 version = "0.1.0"
-description = "FastAPI web server for Rollbit price formulation"
+description = "FastAPI web server for training models used in other services"
 authors = [
     { name = "Miles", email = "miles@resatiate.com" }
 ]
@@ -17,6 +17,8 @@ dependencies = [
     "numpy>=2.2.3",
     "fastapi[standard]>=0.115.11",
     "cryptotrading",
+    "torch>=2.13.0",
+    "pydantic>=2.13.4",
 ]
 
 [build-system]

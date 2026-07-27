@@ -16,7 +16,7 @@ import torch
 from typing import Dict, Any
 from fastapi import FastAPI, HTTPException
 from encoder import RetrievalServiceEncoder
-from forecaster import SpecReTFForecaster, ChronosRAFForecaster
+from forecaster import RetrievalForecaster, SpecReTFForecaster, ChronosRAFForecaster
 from chronos import ChronosPipeline
 from cryptotrading.data.factory import get_price_adapter
 from cryptotrading.config import SYMBOLS
@@ -322,6 +322,14 @@ async def startup_event():
     """
     global chronos_pipeline, encoder_service, forecaster, raf_forecaster
     
+    # 0. Check Artifact Service connectivity
+    try:
+        from cryptotrading.client.artifact.service import list_category_files
+        artifacts = list_category_files("retrieval")
+        logger.info(f"Connected to Artifact Service (found {len(artifacts)} retrieval artifacts).")
+    except Exception as art_err:
+        logger.warning(f"Could not connect to Artifact Service on startup: {art_err}")
+
     # 1. Initialize Chronos pipeline first (needed by forecasters during build_index)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Loading Chronos pipeline for RAF from {CHRONOS_MODEL_ID} on device {device}...")

@@ -1,22 +1,17 @@
 [project]
-name = "cryptotrading-price-serve"
+name = "cryptotrading-artifact"
 version = "0.1.0"
-description = "FastAPI web server for Rollbit price formulation"
+description = "FastAPI service for storing, retrieving, listing, and managing model artifacts and system files"
 authors = [
     { name = "Miles", email = "miles@resatiate.com" }
 ]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "requests>=2.32",
-    "pytz>=2024",
-    "pymongo>=4.11.2",
-    "motor>=3.7.0",
-    "asyncio>=3.4.3",
-    "six>=1.17.0",
-    "numpy>=2.2.3",
     "fastapi[standard]>=0.115.11",
-    "cryptotrading",
+    "uvicorn>=0.51.0",
+    "python-multipart>=0.0.32",
+    "cryptotrading>=0.1.0",
 ]
 
 [build-system]

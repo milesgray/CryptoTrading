@@ -31,6 +31,7 @@ from pipeline import TradePipeline
 from database.numpy_store import NumpyVectorStore
 from database.pgvector_store import TradeEmbeddingDB, StoredTradeSetup
 from cryptotrading.trade.oracle import LeveragedDPOracle
+from cryptotrading.client.artifact.service import download_artifact
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -205,6 +206,7 @@ async def auto_populate_db():
     
     model_path = Path(state.config.get('model_path', 'models/trained/encoder.pt'))
     
+    
     # If the trained model is missing, we clear any existing database records to force retraining and regeneration
     if not model_path.exists():
         logger.warning(f"No trained model found at {model_path}. Forcing clearing of vector store for retraining...")
@@ -355,6 +357,12 @@ async def auto_populate_db():
             state.encoder.eval()
             state.pipeline.encoder = state.encoder
             logger.info(f"Saved trained encoder weights to {model_path}")
+            try:
+                from cryptotrading.client.artifact.service import upload_artifact
+                if model_path.exists():
+                    upload_artifact(str(model_path), category="embed", filename=os.path.basename(model_path))
+            except Exception as art_err:
+                logger.warning(f"Failed uploading embed model artifact to Artifact Service: {art_err}")
             
         # 3. Generate embeddings and insert into vector store
         total_inserted = 0
@@ -478,10 +486,17 @@ async def startup():
         device=state.device,
         chronos_model_id=state.config.get('chronos_model_id', 'amazon/chronos-t5-base'),
         chronos_torch_dtype=state.config.get('chronos_torch_dtype', 'bfloat16')
-    )
+    )    
     
     # Load encoder weights
     model_path = Path(state.config.get('model_path', 'models/trained/encoder.pt'))
+    # Try downloading from Artifact Service if not present locally
+    try:
+        if not model_path.exists():
+            download_artifact("embed", os.path.basename(model_path), str(model_path))
+    except Exception as art_err:
+        logger.warning(f"Could not check Artifact Service for embed model: {art_err}")
+    
     state.pipeline.initialize_encoder(model_path)
     state.encoder = state.pipeline.encoder
     

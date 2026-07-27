@@ -1,7 +1,7 @@
 [project]
-name = "cryptotrading-price-serve"
+name = "cryptotrading-trade-service"
 version = "0.1.0"
-description = "FastAPI web server for Rollbit price formulation"
+description = "FastAPI web server for trading service"
 authors = [
     { name = "Miles", email = "miles@resatiate.com" }
 ]

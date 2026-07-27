@@ -574,6 +574,11 @@ class PressureTrainer:
             best_path = self.checkpoint_dir / "best_model.pt"
             torch.save(checkpoint, best_path)
             logger.info(f"Saved best model with val_loss={val_loss:.6f}")
+            try:
+                from cryptotrading.client.artifact.service import upload_artifact
+                upload_artifact(str(best_path), category="pressure", filename="best_model.pt")
+            except Exception as art_err:
+                logger.warning(f"Failed uploading pressure artifact to Artifact Service: {art_err}")
 
     def train(self, train_loader: DataLoader, val_loader: DataLoader, progress_callback=None) -> Dict:
         """Main training loop"""
