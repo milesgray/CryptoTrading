@@ -1,7 +1,7 @@
 [project]
-name = "cryptotrading-price-serve"
+name = "cryptotrading-predict"
 version = "0.1.0"
-description = "FastAPI web server for Rollbit price formulation"
+description = "FastAPI web server for predict service"
 authors = [
     { name = "Miles", email = "miles@resatiate.com" }
 ]
@@ -16,7 +16,7 @@ dependencies = [
     "six>=1.17.0",
     "numpy>=2.2.3",
     "fastapi[standard]>=0.115.11",
-    "cryptotrading",
+    "cryptotrading>=0.1.0",
 ]
 
 [build-system]

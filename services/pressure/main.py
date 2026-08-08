@@ -54,6 +54,14 @@ async def startup_event():
     checkpoint_dir = os.environ.get("CHECKPOINT_DIR", "/app/checkpoints")
     checkpoint_path = os.path.join(checkpoint_dir, "best_model.pt")
     
+    # Try downloading from Artifact Service if not present locally
+    try:
+        from cryptotrading.client.artifact.service import download_artifact
+        if not os.path.exists(checkpoint_path):
+            download_artifact("pressure", "best_model.pt", checkpoint_path)
+    except Exception as art_err:
+        logger.warning(f"Could not check Artifact Service for pressure model: {art_err}")
+    
     logger.info(f"Loading model on {device}...")
     model = get_model(config)
     model = model.to(device)
