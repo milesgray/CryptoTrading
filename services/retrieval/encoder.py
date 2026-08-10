@@ -30,6 +30,7 @@ class RetrievalServiceEncoder:
         self,
         forecast_size: int = 15,
         historic_window_size: Optional[int] = None,
+        window_size: Optional[int] = None,
         n_fft: int = 32,
         dim: int = 237,
         embed_service_url: str = None,
@@ -41,11 +42,15 @@ class RetrievalServiceEncoder:
         Args:
             forecast_size (int): Size of prediction horizon window. Defaults to 15.
             historic_window_size (int, optional): Size of historic price window. Defaults to 4 * forecast_size.
+            window_size (int, optional): Alias for historic_window_size.
             n_fft (int): Number of FFT bins for handcrafted encoder. Defaults to 32.
             dim (int): Vector dimension of index. Defaults to 237.
             embed_service_url (str, optional): URL for embed service.
             embed_dim (int, optional): Embedding dimension from embed service.
         """
+        if historic_window_size is None and window_size is not None:
+            historic_window_size = window_size
+            
         self.forecast_size = forecast_size
         self.historic_window_size = historic_window_size if historic_window_size is not None else 4 * forecast_size
         self.encoder = RetrievalEncoder(
