@@ -182,9 +182,21 @@ async def bootstrap_historical_data(price_adapter, symbol: str, days: int = 7):
 forecasters_cache = {}
 cache_lock = asyncio.Lock()
 
-async def build_index_for_combination(token: str, granularity_sec: int, window_size: int) -> SpecReTFForecaster:
+async def build_index_for_combination(
+    token: str, 
+    granularity_sec: int, 
+    window_size: int
+) -> SpecReTFForecaster:
     """
     Build a retrieval index for the given combination of token, granularity, and window size.
+
+    Args:
+        token: Trading token (e.g. 'BTC/USDT')
+        granularity_sec: Granularity in seconds (e.g. 60 for 1-minute)
+        window_size: Window size for the forecaster (e.g. 60 for 60 candles)
+
+    Returns:
+        Forecaster instance for the given parameters.
     """
     logger.info(f"Building dynamic retrieval index for token={token}, granularity={granularity_sec}s, window_size={window_size}...")
     price_adapter = get_price_adapter()
@@ -312,7 +324,24 @@ async def build_index_for_combination(token: str, granularity_sec: int, window_s
         "raf": raf_forecaster
     }
 
-async def get_forecaster(token: str, granularity_sec: int, window_size: int, method: str = "raf") -> Any:
+async def get_forecaster(
+    token: str, 
+    granularity_sec: int, 
+    window_size: int, 
+    method: str = "raf"   
+) -> Any:
+    """
+    Get or build forecaster for a token, granularity, and window size.
+
+    Args:
+        token: Trading token (e.g. 'BTC/USDT')
+        granularity_sec: Granularity in seconds (e.g. 60 for 1-minute)
+        window_size: Window size for the forecaster (e.g. 60 for 60 candles)
+        method: Method to use for the forecaster ('raf', 'specretf', or 'retrieval')
+
+    Returns:
+        Forecaster instance for the given parameters.
+    """
     key = (token, granularity_sec, window_size)
     async with cache_lock:
         if key not in forecasters_cache:
