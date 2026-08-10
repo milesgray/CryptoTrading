@@ -16,6 +16,7 @@ spec:
       containers:
         - name: timescaledb
           image: timescale/timescaledb:latest-pg15
+          args: ["postgres", "-c", "log_min_messages=warning", "-c", "log_statement=none", "-c", "client_min_messages=warning"]
           envFrom:
             - configMapRef:
                 name: crypto-trading-config

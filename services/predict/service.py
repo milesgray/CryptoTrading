@@ -17,7 +17,7 @@ from cryptotrading.predict.models import get_model
 from cryptotrading.predict.utils import dotdict
 from cryptotrading.predict.train import train_model, predict_next_movement
 from cryptotrading.data.factory import get_price_adapter
-
+import cryptotrading.client.artifact.service as artifact_service
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("predict_service")
@@ -68,11 +68,10 @@ async def startup_event():
     
     # Try downloading from Artifact Service if not present locally
     try:
-        from cryptotrading.client.artifact.service import download_artifact, upload_artifact
         if not os.path.exists(checkpoint_path):
-            download_artifact("predict", os.path.basename(checkpoint_path), checkpoint_path)
+            artifact_service.download_artifact("predict", os.path.basename(checkpoint_path), checkpoint_path)
         if not os.path.exists(scaler_path):
-            download_artifact("predict", os.path.basename(scaler_path), scaler_path)
+            artifact_service.download_artifact("predict", os.path.basename(scaler_path), scaler_path)
     except Exception as art_err:
         logger.warning(f"Could not check Artifact Service for predict model: {art_err}")
     
@@ -130,9 +129,8 @@ async def train_and_save_model(price_adapter, checkpoint_path, scaler_path):
             pickle.dump(scaler, f)
         logger.info(f"Model and scaler saved successfully to {checkpoint_path}.")
         try:
-            from cryptotrading.client.artifact.service import upload_artifact
-            upload_artifact(checkpoint_path, category="predict", filename=os.path.basename(checkpoint_path))
-            upload_artifact(scaler_path, category="predict", filename=os.path.basename(scaler_path))
+            artifact_service.upload_artifact(checkpoint_path, category="predict", filename=os.path.basename(checkpoint_path))
+            artifact_service.upload_artifact(scaler_path, category="predict", filename=os.path.basename(scaler_path))
         except Exception as art_err:
             logger.warning(f"Failed uploading predict artifacts to Artifact Service: {art_err}")
     except Exception as e:
@@ -152,7 +150,17 @@ async def train_and_save_model(price_adapter, checkpoint_path, scaler_path):
             pickle.dump(scaler, f)
 
 @app.get("/predict")
-async def get_prediction(symbol: str = "BTC") -> Dict[str, Any]:
+async def get_prediction(
+    symbol: str = "BTC", 
+    granularity: int | str = 60,
+    lookback: int = 12,
+    model_type: str = "WAVESTATE",
+    include_book: bool = False,
+    start_time: float = None,
+    end_delta_seconds: int = 3600,
+    end_delta_candlesticks: int = None,
+
+    ) -> Dict[str, Any]:
     """Exposes real-time price predictions and recommended actions for a token."""
     global model, scaler
     try:
@@ -163,14 +171,21 @@ async def get_prediction(symbol: str = "BTC") -> Dict[str, Any]:
         
         # Fetch last 30 minutes of price data to construct feature window (min seq_len=20)
         end_time = datetime.now(timezone.utc)
-        start_time = end_time - dt.timedelta(hours=2)
+        granularity = int(granularity)
+        if start_time is None:
+            if end_delta_seconds is not None:
+                start_time = end_time - dt.timedelta(seconds=end_delta_seconds)
+            elif end_delta_candlesticks is not None:
+                start_time = end_time - dt.timedelta(seconds=granularity*end_delta_candlesticks)
+            else:
+                raise ValueError("start_time or end_delta_seconds or end_delta_candlesticks must be provided")
         
         candles = await price_adapter.get_candlestick_data(
             token=token,
             start_time=start_time,
             end_time=end_time,
-            granularity=60, # 1-minute bars
-            include_book=False
+            granularity=granularity, # 1-minute bars
+            include_book=include_book
         )
         
         # Fallback if database candle count is insufficient
@@ -179,7 +194,7 @@ async def get_prediction(symbol: str = "BTC") -> Dict[str, Any]:
             prediction = random.choice([0, 1])
             confidence = random.uniform(0.51, 0.75)
         else:
-            query_candles = candles[-20:]
+            query_candles = candles[-lookback:]
             df = pd.DataFrame({
                 'datetime': [c.timestamp for c in query_candles],
                 'price': [float(c.close) for c in query_candles]
@@ -204,18 +219,14 @@ async def get_prediction(symbol: str = "BTC") -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error in prediction endpoint: {e}", exc_info=True)
         # Fallback response
-        prediction = random.choice([0, 1])
-        confidence = random.uniform(0.50, 0.65)
-        action = "BUY" if (prediction == 1 and confidence > 0.60) else ("SELL" if (prediction == 0 and confidence > 0.60) else "HOLD")
-        return {
-            "symbol": symbol,
-            "prediction": "UP" if prediction == 1 else "DOWN",
-            "confidence": round(confidence, 4),
-            "recommended_action": action,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "fallback": True,
-            "error": str(e)
-        }
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "symbol": symbol,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "error": str(e)
+            }
+        )
 
 if __name__ == "__main__":
     import uvicorn

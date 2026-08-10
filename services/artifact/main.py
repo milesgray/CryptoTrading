@@ -85,7 +85,7 @@ async def upload_artifact(
             "success": True,
             "filename": file.filename,
             "category": category,
-            "path": os.path.relative_path(target_path, DEFAULT_STORAGE_DIR) if hasattr(os.path, 'relative_path') else target_path,
+            "path": os.path.relpath(target_path, DEFAULT_STORAGE_DIR),
             "size_bytes": file_size
         }
     except Exception as e:

@@ -186,6 +186,9 @@ async def setup_connection(conn: Connection):
     stmt_timeout = os.getenv('DATABASE_STATEMENT_TIMEOUT', '30000')
     await conn.execute(f'SET statement_timeout = {stmt_timeout}')
     
+    # Suppress verbose client messages (e.g. NOTICEs from extension checks or table creation)
+    await conn.execute("SET client_min_messages TO WARNING")
+    
     # Ensure search_path is set correctly
     await conn.execute('SET search_path TO public')
 
@@ -469,7 +472,7 @@ async def _init_schema_impl(conn: Connection):
             SELECT add_continuous_aggregate_policy('one_sec_candle',
                 start_offset => INTERVAL '30 seconds',
                 end_offset => INTERVAL '1 second',
-                schedule_interval => INTERVAL '1 second',
+                schedule_interval => INTERVAL '10 seconds',
                 if_not_exists => TRUE);
 
             SELECT add_continuous_aggregate_policy('fifteen_sec_candle',
@@ -597,7 +600,7 @@ async def _init_schema_impl(conn: Connection):
             SELECT add_continuous_aggregate_policy('price_candle_1s',
                 start_offset => INTERVAL '30 seconds',
                 end_offset => INTERVAL '1 second',
-                schedule_interval => INTERVAL '1 second',
+                schedule_interval => INTERVAL '10 seconds',
                 if_not_exists => TRUE);
 
             SELECT add_continuous_aggregate_policy('price_candle_15s',

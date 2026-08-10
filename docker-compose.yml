@@ -2,6 +2,7 @@ services:
     timescaledb:
         image: timescale/timescaledb:latest-pg15
         container_name: crypto-trading-timescaledb
+        command: postgres -c log_min_messages=error -c log_statement=none -c client_min_messages=error
         environment:
             - POSTGRES_DB=${POSTGRES_DB:-crypto_trading}
             - POSTGRES_USER=${POSTGRES_USER:-postgres}
