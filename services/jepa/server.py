@@ -59,8 +59,9 @@ async def predict_regime(req: RegimeRequest):
     timestamps = np.array(req.timestamps, dtype=np.float32) if req.timestamps else np.arange(len(prices), dtype=np.float32)
     
     try:
-        regime_id, regime_probs = state_augmentation.encode_price_history(prices, timestamps)
-        optimal_leverage = leverage_controller.compute_optimal_leverage(prices, timestamps)
+        import asyncio
+        regime_id, regime_probs = await asyncio.to_thread(state_augmentation.encode_price_history, prices, timestamps)
+        optimal_leverage = await asyncio.to_thread(leverage_controller.compute_optimal_leverage, prices, timestamps)
         
         return {
             "token": req.token,
