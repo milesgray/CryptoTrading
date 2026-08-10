@@ -84,35 +84,34 @@ async def add_realized_setup(request: StoreSetupRequest):
     embed_url = os.getenv("EMBED_SERVICE_URL", "http://localhost:8301")
     retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://retrieval:8000")
     
-    payload = {
-        "symbol": request.symbol,
-        "timeframe": request.timeframe,
-        "prices": request.prices,
-        "direction": direction,
-        "profit_pct": profit_pct,
-        "leverage": request.leverage,
-        "hold_duration": hold_duration,
-        "entry_timestamp": entry_timestamp,
-        "entry_price": entry_price,
-        "exit_price": exit_price
-    }
-    
     setup_id = None
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(f"{embed_url}/setup/add", json=payload)
-            response.raise_for_status()
-            res_data = response.json()
-            setup_id = res_data.get("id")
+        import asyncio
+        from cryptotrading.client import EmbedServiceClient, RetrievalServiceClient
+        embed_client = EmbedServiceClient(base_url=embed_url, timeout=5.0)
+        res_data = await asyncio.to_thread(
+            embed_client.add_setup,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            prices=request.prices,
+            direction=direction,
+            profit_pct=profit_pct,
+            leverage=request.leverage,
+            hold_duration=hold_duration,
+            entry_timestamp=entry_timestamp,
+            entry_price=entry_price,
+            exit_price=exit_price
+        )
+        setup_id = res_data.get("id")
     except Exception as e:
         logger.error(f"Failed to save setup in embed service: {e}")
         raise HTTPException(status_code=502, detail=f"Embed service database insertion failed: {e}")
         
     # 2. Proxy to retrieval service to invalidate forecaster cache and trigger index rebuild
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            rebuild_res = await client.post(f"{retrieval_url}/rebuild?symbol={request.symbol}")
-            rebuild_res.raise_for_status()
+        from cryptotrading.client import RetrievalServiceClient
+        retrieval_client = RetrievalServiceClient(base_url=retrieval_url, timeout=5.0)
+        await asyncio.to_thread(retrieval_client.rebuild, symbol=request.symbol)
     except Exception as e:
         logger.warning(f"Failed to clear forecaster cache in retrieval service: {e}")
         

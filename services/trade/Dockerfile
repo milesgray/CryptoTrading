@@ -19,4 +19,4 @@ ENV PYTHONPATH=/app
 COPY ./src/cryptotrading ./cryptotrading/
 COPY ./services/trade .
 
-CMD ["uv", "run", "python", "main.py"]
+CMD ["uv", "run", "python", "server.py"]

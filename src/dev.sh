@@ -1,1 +1,1 @@
-uv run fastapi dev ../services/serve/app.py --host 0.0.0.0 --port 8362
+uv run fastapi dev ../services/serve/server.py --host 0.0.0.0 --port 8362

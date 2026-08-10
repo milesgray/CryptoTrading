@@ -218,17 +218,16 @@ async def build_index_for_combination(token: str, granularity_sec: int, window_s
     # Try to query embed service dimension dynamically, fall back to 128
     embed_dim = 128
     import os
-    import httpx
     import asyncio
+    from cryptotrading.client import EmbedServiceClient
     embed_url = os.getenv("EMBED_SERVICE_URL", "http://embed:8301")
+    embed_client = EmbedServiceClient(base_url=embed_url, timeout=5.0)
     for attempt in range(5):
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(f"{embed_url}/health", timeout=5.0)
-                if resp.status_code == 200:
-                    embed_dim = resp.json().get("embedding_dim", 128)
-                    logger.info(f"Fetched embed service health: embedding_dim={embed_dim}")
-                    break
+            health_data = embed_client.health()
+            embed_dim = health_data.get("embedding_dim", 128)
+            logger.info(f"Fetched embed service health: embedding_dim={embed_dim}")
+            break
         except Exception as e:
             logger.warning(f"Could not fetch health from embed service at {embed_url} (attempt {attempt+1}/5): {e}")
             if attempt < 4:
@@ -478,4 +477,5 @@ async def rebuild_index(symbol: str = "BTC"):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

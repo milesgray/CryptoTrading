@@ -185,21 +185,21 @@ class ServiceOrchestrator:
                 name="serve",
                 display_name="API Serving Gateway",
                 description="FastAPI REST & WebSocket gateway for the dashboard, serving prices, order books, and managing other services.",
-                script_path="services/serve/app.py",
+                script_path="services/serve/server.py",
                 default_port=8362
             ),
             ServiceConfig(
                 name="price",
                 display_name="Price Ingestion Service",
                 description="Subscribes to multiple exchanges, filters stale feeds, aggregates order books ($1M cap), and computes the Rollbit price index every 500ms.",
-                script_path="services/price/service.py",
+                script_path="services/price/server.py",
                 default_port=8300
             ),
             ServiceConfig(
                 name="retrieval",
                 display_name="Pattern Retrieval & Forecast",
                 description="Indexes historical price windows and uses fast vector similarity search (Annoy) to query current setups and compute consensus forecasts.",
-                script_path="services/retrieval/main.py",
+                script_path="services/retrieval/server.py",
                 default_port=8000
             ),
             ServiceConfig(
@@ -213,37 +213,37 @@ class ServiceOrchestrator:
                 name="sentiment",
                 display_name="Twitter Sentiment Service",
                 description="Ingests real-time Twitter streams, scores sentiment polarity using VADER, and stores aggregate sentiment indicators in MongoDB.",
-                script_path="services/sentiment/service_runner.py"
+                script_path="services/sentiment/server.py"
             ),
             ServiceConfig(
                 name="jepa",
                 display_name="Koopman-JEPA Regime Classifier",
                 description="Discovers dynamical market regime transitions using Joint Embedding Predictive Architectures (JEPA) and determines optimal leverage.",
-                script_path="services/jepa/trading_integration.py"
+                script_path="services/jepa/server.py"
             ),
             ServiceConfig(
                 name="pressure",
                 display_name="Order Book Pressure Service",
                 description="Extracts high-frequency liquidity features (Order Flow Imbalance, Cumulative Volume Delta, Bid-Ask Pressure) from active feeds.",
-                script_path="services/pressure/main.py"
+                script_path="services/pressure/server.py"
             ),
             ServiceConfig(
                 name="predict",
                 display_name="Deep Learning Forecasting Engine",
                 description="Runs TimesNet, Autoformer, and Transformer models to predict next-candle direction and long-term price forecasting signals.",
-                script_path="services/predict/service.py"
+                script_path="services/predict/server.py"
             ),
             ServiceConfig(
                 name="train",
                 display_name="Model Training Pipeline",
                 description="Triggers and monitors training runs for contrastive encoders, JEPA models, and forecasting networks with live loss plotting.",
-                script_path="services/train/main.py"
+                script_path="services/train/server.py"
             ),
             ServiceConfig(
                 name="trade",
                 display_name="Polymarket Trade Execution Broker",
                 description="Mock execution broker that tracks balances, processes forecasting signals, records simulated trades, and calculates portfolio PnL.",
-                script_path="services/trade/main.py"
+                script_path="services/trade/server.py"
             )
         ]
 

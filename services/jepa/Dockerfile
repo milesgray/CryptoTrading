@@ -19,4 +19,4 @@ ENV PYTHONPATH=/app
 COPY ./src/cryptotrading ./cryptotrading/
 COPY ./services/jepa .
 
-CMD ["uv", "run", "python", "trading_integration.py"]
+CMD ["uv", "run", "python", "server.py"]
