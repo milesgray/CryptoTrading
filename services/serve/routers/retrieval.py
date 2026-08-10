@@ -86,9 +86,11 @@ async def add_realized_setup(request: StoreSetupRequest):
     
     setup_id = None
     try:
+        import asyncio
         from cryptotrading.client import EmbedServiceClient, RetrievalServiceClient
         embed_client = EmbedServiceClient(base_url=embed_url, timeout=5.0)
-        res_data = embed_client.add_setup(
+        res_data = await asyncio.to_thread(
+            embed_client.add_setup,
             symbol=request.symbol,
             timeframe=request.timeframe,
             prices=request.prices,
@@ -109,7 +111,7 @@ async def add_realized_setup(request: StoreSetupRequest):
     try:
         from cryptotrading.client import RetrievalServiceClient
         retrieval_client = RetrievalServiceClient(base_url=retrieval_url, timeout=5.0)
-        retrieval_client.rebuild(symbol=request.symbol)
+        await asyncio.to_thread(retrieval_client.rebuild, symbol=request.symbol)
     except Exception as e:
         logger.warning(f"Failed to clear forecaster cache in retrieval service: {e}")
         
