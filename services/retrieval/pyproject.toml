@@ -29,5 +29,4 @@ build-backend = "hatchling.build"
 package = false
 
 [tool.uv.sources]
-cryptotrading = { path = "../../src", editable = true }
-
+cryptotrading = { path = "/app/cryptotrading", editable = true }
