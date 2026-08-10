@@ -1,23 +1,31 @@
 import os
-import sys
 import pickle
 import logging
 import random
-import asyncio
 import datetime as dt
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Dict, Any
 
-from fastapi import FastAPI, HTTPException, Query
+# pyrefly: ignore [missing-import]
+from fastapi import HTTPException
 import pandas as pd
 import numpy as np
 import torch
 
+# pyrefly: ignore [missing-import]
 from cryptotrading.predict.models import get_model
+# pyrefly: ignore [missing-import]
 from cryptotrading.predict.utils import dotdict
+# pyrefly: ignore [missing-import]
 from cryptotrading.predict.train import train_model, predict_next_movement
+# pyrefly: ignore [missing-import]
 from cryptotrading.data.factory import get_price_adapter
+# pyrefly: ignore [missing-import]
+from cryptotrading.server import ServiceServer
+
+# pyrefly: ignore [missing-import]
 import cryptotrading.client.artifact.service as artifact_service
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("predict_service")
@@ -231,6 +239,7 @@ async def get_prediction(
         )
 
 if __name__ == "__main__":
+    # pyrefly: ignore [missing-import]
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

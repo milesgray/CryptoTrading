@@ -5,11 +5,14 @@ import logging
 from typing import List, Dict, Any, Tuple, Optional
 import datetime as dt
 # pyrefly: ignore [missing-import]
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
 # pyrefly: ignore [missing-import]
 from cryptotrading.analysis.book import OrderBookFeaturizer, OrderBookSnapshot
+# pyrefly: ignore [missing-import]
+from cryptotrading.service import ServiceServer
+
 # pyrefly: ignore [missing-import]
 from model import get_model
 # pyrefly: ignore [missing-import]
@@ -42,7 +45,6 @@ class SnapshotInput(BaseModel):
     asks: List[Tuple[float, float]]
     mid_price: float
 
-from cryptotrading.service import ServiceServer
 
 service = ServiceServer(title="Pressure Service", description="Order book pressure model and features")
 app = service.app
@@ -59,6 +61,7 @@ async def startup_event():
     
     # Try downloading from Artifact Service if not present locally
     try:
+        # pyrefly: ignore [missing-import]
         from cryptotrading.client.artifact.service import download_artifact
         if not os.path.exists(checkpoint_path):
             download_artifact("pressure", "best_model.pt", checkpoint_path)
@@ -373,6 +376,7 @@ async def get_token_pressure(token: str):
 
 
 if __name__ == "__main__":
+    # pyrefly: ignore [missing-import]
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

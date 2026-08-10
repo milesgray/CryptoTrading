@@ -12,18 +12,29 @@ import logging
 import asyncio
 import numpy as np
 import os
-from fastapi import FastAPI, HTTPException
+from typing import Any, Dict
+
+import torch
+
+# pyrefly: ignore [missing-import]
+from fastapi import HTTPException
+# pyrefly: ignore [missing-import]
 from encoder import RetrievalServiceEncoder
+# pyrefly: ignore [missing-import]
 from forecaster import RetrievalForecaster, SpecReTFForecaster, ChronosRAFForecaster
+# pyrefly: ignore [missing-import]
 from chronos import ChronosPipeline
+# pyrefly: ignore [missing-import]
 from cryptotrading.data.factory import get_price_adapter
+# pyrefly: ignore [missing-import]
 from cryptotrading.config import SYMBOLS
-from contextlib import asynccontextmanager
+
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("retrieval_service")
 
+# pyrefly: ignore [missing-import]
 from cryptotrading.service import ServiceServer
 
 service = ServiceServer(

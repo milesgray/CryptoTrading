@@ -6,6 +6,7 @@ from typing import Optional
 from pathlib import Path
 from tqdm import tqdm
 
+# pyrefly: ignore [missing-import]
 import cryptotrading.client.artifact.service as artifact_service
 
 logging.basicConfig(
@@ -123,7 +124,9 @@ class JEPAEmbedder:
         Returns:
             2D embeddings array
         """
+        # pyrefly: ignore [missing-import]
         from sklearn.manifold import TSNE
+        # pyrefly: ignore [missing-import]
         from pacmap import PaCMAP
         
         # Apply t-SNE to reduce dimensionality to 2D

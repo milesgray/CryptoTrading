@@ -58,7 +58,7 @@ services:
     embed:
         build:
             context: .
-            dockerfile: services/embed/Dockerfile
+            dockerfile: Dockerfile.embed
         ports:
             - "8301:8301"
         volumes:
@@ -100,7 +100,7 @@ services:
     predict:
         build:
             context: .
-            dockerfile: services/predict/Dockerfile
+            dockerfile: Dockerfile.predict
         ports:
             - "${PREDICT_PORT:-8388}:8000"
         environment:
@@ -115,7 +115,7 @@ services:
     train:
         build:
             context: .
-            dockerfile: services/train/Dockerfile
+            dockerfile: Dockerfile.train
         ports:
             - "${TRAIN_PORT:-8389}:8000"
         environment:
@@ -130,7 +130,7 @@ services:
     pressure:
         build:
             context: .
-            dockerfile: services/pressure/Dockerfile
+            dockerfile: Dockerfile.pressure
         ports:
             - "${PRESSURE_PORT:-8390}:8000"
         environment:

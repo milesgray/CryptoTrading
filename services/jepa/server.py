@@ -2,17 +2,24 @@ import os
 import torch
 import numpy as np
 import logging
-from typing import Dict, Any, List, Optional
-from fastapi import FastAPI, HTTPException
+from typing import List, Optional
+
+# pyrefly: ignore [missing-import]
+from fastapi import HTTPException
+# pyrefly: ignore [missing-import]
 from pydantic import BaseModel
 
+# pyrefly: ignore [missing-import]
 from model import KoopmanJEPAModel
+# pyrefly: ignore [missing-import]
 from trading_integration import JEPAStateAugmentation, RegimeAwareLeverageController
+
+# pyrefly: ignore [missing-import]
+from cryptotrading.service import ServiceServer
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("jepa_service")
 
-from cryptotrading.service import ServiceServer
 
 service = ServiceServer(title="JEPA Service", description="Koopman-JEPA Market Regime & Dynamic Leverage Controller")
 app = service.app
@@ -73,6 +80,7 @@ async def predict_regime(req: RegimeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
+    # pyrefly: ignore [missing-import]
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

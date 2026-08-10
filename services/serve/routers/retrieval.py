@@ -87,6 +87,7 @@ async def add_realized_setup(request: StoreSetupRequest):
     setup_id = None
     try:
         import asyncio
+        # pyrefly: ignore [missing-import]
         from cryptotrading.client import EmbedServiceClient, RetrievalServiceClient
         embed_client = EmbedServiceClient(base_url=embed_url, timeout=5.0)
         res_data = await asyncio.to_thread(
@@ -109,6 +110,7 @@ async def add_realized_setup(request: StoreSetupRequest):
         
     # 2. Proxy to retrieval service to invalidate forecaster cache and trigger index rebuild
     try:
+        # pyrefly: ignore [missing-import]
         from cryptotrading.client import RetrievalServiceClient
         retrieval_client = RetrievalServiceClient(base_url=retrieval_url, timeout=5.0)
         await asyncio.to_thread(retrieval_client.rebuild, symbol=request.symbol)
