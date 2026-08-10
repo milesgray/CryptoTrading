@@ -18,6 +18,7 @@ from pathlib import Path
 from tqdm import tqdm
 import json
 from cryptotrading.predict.utils.augment import rnd_augment, sequence_augment
+import cryptotrading.client.artifact.service as artifact_service
 from .model import KoopmanJEPA
 from .data import CryptoPriceDataset, GlobalPriceNormalizer
 
@@ -388,8 +389,9 @@ class JEPATrainer:
                         'embedding_stats': embedding_stats,
                         'history': self.history
                     }
-                    
-                    torch.save(checkpoint, save_dir / 'best_model.pt')
+                    model_path = save_dir / 'best_model.pt'
+                    torch.save(checkpoint, model_path)
+                    upload_artifact(str(model_path), category="jepa", filename=f'best_model.pt')
                     logger.info(f"✓ Saved best model (val_loss={best_val_loss:.6f})")
             
             # Update learning rate
@@ -427,8 +429,7 @@ class JEPATrainer:
         # Try downloading from Artifact Service if missing locally
         if not path.exists():
             try:
-                from cryptotrading.client.artifact.service import download_artifact
-                download_artifact("jepa", f'{name}.pt', str(path))
+                artifact_service.download_artifact("jepa", f'{name}.pt', str(path))
             except Exception as art_err:
                 logger.warning(f"Could not check Artifact Service for jepa model: {art_err}")
                 
@@ -454,14 +455,9 @@ class JEPATrainer:
             **kwargs
         }, path)
         try:
-            from cryptotrading.client.artifact.service import upload_artifact
-            upload_artifact(str(path), category="jepa", filename=f'{name}.pt')
+            artifact_service.upload_artifact(str(path), category="jepa", filename=f'{name}.pt')
         except Exception as art_err:
             logger.warning(f"Failed uploading jepa artifact to Artifact Service: {art_err}")
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'history': self.history,
-            'embeddings': self.embeddings
-        }, folder_path / f'{name}.pt')
 
 def create_datasets_from_price_client(
     price_client,

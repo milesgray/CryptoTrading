@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 from tqdm import tqdm
 from dataclasses import dataclass, asdict, field
-
+import cryptotrading.client.artifact.service as artifact_service
 logger = logging.getLogger(__name__)
 
 
@@ -575,8 +575,7 @@ class PressureTrainer:
             torch.save(checkpoint, best_path)
             logger.info(f"Saved best model with val_loss={val_loss:.6f}")
             try:
-                from cryptotrading.client.artifact.service import upload_artifact
-                upload_artifact(str(best_path), category="pressure", filename="best_model.pt")
+                artifact_service.upload_artifact(str(best_path), category="pressure", filename="best_model.pt")
             except Exception as art_err:
                 logger.warning(f"Failed uploading pressure artifact to Artifact Service: {art_err}")
 

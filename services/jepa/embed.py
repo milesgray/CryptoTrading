@@ -6,6 +6,8 @@ from typing import Optional
 from pathlib import Path
 from tqdm import tqdm
 
+import cryptotrading.client.artifact.service as artifact_service
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -38,7 +40,10 @@ class JEPAEmbedder:
         folder_path = folder_path if folder_path else self.save_dir        
         path = folder_path / f'{name}.pt'
         if not path.exists():
-            raise FileNotFoundError(f"Model file not found: {path}")
+            logger.warning(f"Model file not found: {path} - downloading from artifact service")
+            artifact_service.download_artifact("jepa", f'{name}.pt', str(path))
+            if not path.exists():
+                raise FileNotFoundError(f"Model file not found: {path}")
         checkpoint = torch.load(path)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.embeddings = checkpoint.get('embeddings', None)
@@ -57,6 +62,7 @@ class JEPAEmbedder:
             'embeddings': self.embeddings,
             'embeddings_2d': self.embeddings_2d
         }, folder_path / f'{name}.pt')
+        artifact_service.upload_artifact(str(folder_path / f'{name}.pt'), "jepa", f'{name}.pt')
 
     def make_embeddings(self, datasets: dict, save: bool = True, make_labels: bool = False) -> np.ndarray:
         """
