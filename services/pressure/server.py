@@ -42,10 +42,13 @@ class SnapshotInput(BaseModel):
     asks: List[Tuple[float, float]]
     mid_price: float
 
-from contextlib import asynccontextmanager
+from cryptotrading.service import ServiceServer
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+service = ServiceServer(title="Pressure Service", description="Order book pressure model and features")
+app = service.app
+
+@service.on_startup
+async def startup_event():
     global model, featurizer
     logger.info("Initializing featurizer...")
     featurizer = OrderBookFeaturizer()
@@ -81,9 +84,6 @@ async def lifespan(app: FastAPI):
         logger.warning(f"No checkpoint found at {checkpoint_path}. Model will use untrained weights.")
         
     model.eval()
-    yield
-
-app = FastAPI(title="Pressure Service", description="Order book pressure model and features", lifespan=lifespan)
 
 @app.post("/features")
 async def get_features(snapshot: SnapshotInput):

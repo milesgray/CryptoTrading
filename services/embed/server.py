@@ -141,20 +141,14 @@ class AppState:
         return emb
 
 
-app = FastAPI(
+from cryptotrading.service import ServiceServer
+
+service = ServiceServer(
     title="Trade Setup Embedding API",
     description="Real-time trade pattern matching using contrastive learning",
-    version="1.0.0",
-    lifespan=lifespan
+    version="1.0.0"
 )
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = service.app
 
 state = AppState()
 
@@ -457,10 +451,8 @@ async def auto_populate_db():
 # Lifecycle Events
 # ============================================================================
 
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+@service.on_startup
+async def startup():
     logger.info("Starting up Trade Embedding API...")
     
     # Load config
@@ -550,8 +542,10 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(auto_populate_db())
     
     logger.info("Startup complete!")
-    yield
-    
+
+
+@service.on_shutdown
+async def shutdown():
     logger.info("Shutting down...")
     if state.store:
         if isinstance(state.store, TradeEmbeddingDB):

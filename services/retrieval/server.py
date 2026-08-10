@@ -24,12 +24,14 @@ from contextlib import asynccontextmanager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("retrieval_service")
 
-app = FastAPI(
+from cryptotrading.service import ServiceServer
+
+service = ServiceServer(
     title="Retrieval Service API",
     description="Microservice for real-time shape-similarity quantitative timeseries matching.",
-    version="1.0.0",
-    lifespan=lifespan
+    version="1.0.0"
 )
+app = service.app
 
 # Initialize encoder and forecasters with dim=184 for combined embedding compatibility (128D deep learning + 56D local features)
 encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=184, embed_dim=128)
@@ -307,8 +309,8 @@ async def get_forecaster(token: str, granularity_sec: int, window_size: int, met
             forecasters_cache[key] = forecasters_dict
         return forecasters_cache[key][method]
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+@service.on_startup
+async def startup_event():
     """
     FastAPI Lifespan Event Handler.
 
@@ -369,7 +371,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to pre-build default index: {e}", exc_info=True)
         logger.warning("Service will continue, but first query may experience cold-start latency.")
-    yield
 
 @app.get("/forecast")
 async def forecast(

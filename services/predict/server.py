@@ -18,8 +18,6 @@ from cryptotrading.predict.utils import dotdict
 from cryptotrading.predict.train import train_model, predict_next_movement
 from cryptotrading.data.factory import get_price_adapter
 import cryptotrading.client.artifact.service as artifact_service
-from contextlib import asynccontextmanager
-
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("predict_service")
@@ -44,8 +42,11 @@ CONFIGS = dotdict({
     "model": "WAVESTATE"
 })
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+service = ServiceServer(title="Predict Service", description="Time series forecasting and signal generation service")
+app = service.app
+
+@service.on_startup
+async def startup_event():
     """Initializes the database connection, loads pre-trained model checkpoints, or performs training if necessary."""
     global model, scaler, model_device
     checkpoint_dir = os.environ.get("CHECKPOINT_DIR", "/app/checkpoints")
@@ -88,9 +89,6 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("No checkpoint found. Training new model on historical data...")
         await train_and_save_model(price_adapter, checkpoint_path, scaler_path)
-    yield
-
-app = FastAPI(title="Predict Service", description="Time series forecasting and signal generation service", lifespan=lifespan)
 
 
 async def train_and_save_model(price_adapter, checkpoint_path, scaler_path):

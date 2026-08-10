@@ -112,22 +112,18 @@ class MockPolymarketBroker:
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from contextlib import asynccontextmanager
+from cryptotrading.service import ServiceServer
+
+service = ServiceServer(title="Trade Service", description="Mock Polymarket Trade Broker Service")
+app = service.app
 
 broker = MockPolymarketBroker()
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+@service.on_startup
+async def startup_event():
     import threading
     t = threading.Thread(target=broker.run, daemon=True)
     t.start()
-    yield
-
-app = FastAPI(title="Trade Service", description="Mock Polymarket Trade Broker Service", lifespan=lifespan)
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "balance": broker.usd_balance}
 
 class OrderInput(BaseModel):
     asset: str = "BTC"

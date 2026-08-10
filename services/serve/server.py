@@ -40,18 +40,21 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("fastapi_server")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+from cryptotrading.service import ServiceServer
+
+service = ServiceServer(
+    title="Crypto Price API",
+    description="Provides candlestick data for cryptocurrency prices with WebSocket support for real-time updates.",
+    version="1.0"
+)
+app = service.app
+
+@service.on_startup
+async def startup_event():
     # Start change stream watchers
     asyncio.create_task(watch_price_changes())
     asyncio.create_task(watch_order_book_changes())
     logger.info("Started database change stream watchers")
-    yield
-
-app = FastAPI(title="Crypto Price API", 
-             description="Provides candlestick data for cryptocurrency prices with WebSocket support for real-time updates.", 
-             version="1.0",
-             lifespan=lifespan)
 
 # --- CORS (Cross-Origin Resource Sharing) Configuration ---
 origins = [
