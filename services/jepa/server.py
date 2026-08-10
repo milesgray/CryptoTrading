@@ -12,7 +12,7 @@ from trading_integration import JEPAStateAugmentation, RegimeAwareLeverageContro
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("jepa_service")
 
-app = FastAPI(title="JEPA Service", description="Koopman-JEPA Market Regime & Dynamic Leverage Controller")
+from contextlib import asynccontextmanager
 
 model = None
 state_augmentation = None
@@ -23,8 +23,8 @@ class RegimeRequest(BaseModel):
     timestamps: Optional[List[float]] = None
     token: str = "BTC"
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global model, state_augmentation, leverage_controller
     checkpoint_dir = os.environ.get("CHECKPOINT_DIR", "./checkpoints")
     checkpoint_path = os.path.join(checkpoint_dir, "jepa_best.pth")
@@ -45,6 +45,9 @@ async def startup_event():
     model.eval()
     state_augmentation = JEPAStateAugmentation(jepa_model=model)
     leverage_controller = RegimeAwareLeverageController(jepa_augmentation=state_augmentation)
+    yield
+
+app = FastAPI(title="JEPA Service", description="Koopman-JEPA Market Regime & Dynamic Leverage Controller", lifespan=lifespan)
 
 @app.get("/health")
 async def health():

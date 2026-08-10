@@ -144,7 +144,8 @@ class AppState:
 app = FastAPI(
     title="Trade Setup Embedding API",
     description="Real-time trade pattern matching using contrastive learning",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -456,8 +457,10 @@ async def auto_populate_db():
 # Lifecycle Events
 # ============================================================================
 
-@app.on_event("startup")
-async def startup():
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     logger.info("Starting up Trade Embedding API...")
     
     # Load config
@@ -547,12 +550,9 @@ async def startup():
     asyncio.create_task(auto_populate_db())
     
     logger.info("Startup complete!")
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    logger.info("Shutting down...")
+    yield
     
+    logger.info("Shutting down...")
     if state.store:
         if isinstance(state.store, TradeEmbeddingDB):
             await state.store.disconnect()

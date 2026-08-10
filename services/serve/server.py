@@ -4,6 +4,7 @@ import datetime as dt
 from datetime import datetime
 import pytz
 import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -39,9 +40,18 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("fastapi_server")
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start change stream watchers
+    asyncio.create_task(watch_price_changes())
+    asyncio.create_task(watch_order_book_changes())
+    logger.info("Started database change stream watchers")
+    yield
+
 app = FastAPI(title="Crypto Price API", 
              description="Provides candlestick data for cryptocurrency prices with WebSocket support for real-time updates.", 
-             version="1.0")
+             version="1.0",
+             lifespan=lifespan)
 
 # --- CORS (Cross-Origin Resource Sharing) Configuration ---
 origins = [
@@ -280,12 +290,7 @@ async def watch_order_book_changes():
             await asyncio.sleep(5)  # Wait before retrying
 
 
-@app.on_event("startup")
-async def startup_event():
-    # Start change stream watchers
-    asyncio.create_task(watch_price_changes())
-    asyncio.create_task(watch_order_book_changes())
-    logger.info("Started database change stream watchers")
+
 
 
 # --- REST API Endpoints ---

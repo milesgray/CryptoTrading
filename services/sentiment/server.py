@@ -13,15 +13,15 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("sentiment_service")
 
-app = FastAPI(title="Sentiment Service", description="Crypto Sentiment Analysis FastAPI Microservice")
+from contextlib import asynccontextmanager
 
 analyzer = None
 
 class SentimentTextRequest(BaseModel):
     text: str
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global analyzer
     if CryptoSentimentAnalyzer is not None:
         try:
@@ -29,6 +29,9 @@ async def startup_event():
             logger.info("CryptoSentimentAnalyzer initialized successfully.")
         except Exception as e:
             logger.warning(f"Could not initialize CryptoSentimentAnalyzer: {e}")
+    yield
+
+app = FastAPI(title="Sentiment Service", description="Crypto Sentiment Analysis FastAPI Microservice", lifespan=lifespan)
 
 @app.get("/health")
 async def health():

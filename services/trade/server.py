@@ -112,15 +112,18 @@ class MockPolymarketBroker:
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="Trade Service", description="Mock Polymarket Trade Broker Service")
 broker = MockPolymarketBroker()
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     import threading
     t = threading.Thread(target=broker.run, daemon=True)
     t.start()
+    yield
+
+app = FastAPI(title="Trade Service", description="Mock Polymarket Trade Broker Service", lifespan=lifespan)
 
 @app.get("/health")
 async def health():

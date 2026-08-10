@@ -12,14 +12,13 @@ import logging
 import asyncio
 import numpy as np
 import os
-import torch
-from typing import Dict, Any
 from fastapi import FastAPI, HTTPException
 from encoder import RetrievalServiceEncoder
 from forecaster import RetrievalForecaster, SpecReTFForecaster, ChronosRAFForecaster
 from chronos import ChronosPipeline
 from cryptotrading.data.factory import get_price_adapter
 from cryptotrading.config import SYMBOLS
+from contextlib import asynccontextmanager
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +27,8 @@ logger = logging.getLogger("retrieval_service")
 app = FastAPI(
     title="Retrieval Service API",
     description="Microservice for real-time shape-similarity quantitative timeseries matching.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Initialize encoder and forecasters with dim=184 for combined embedding compatibility (128D deep learning + 56D local features)
@@ -307,10 +307,10 @@ async def get_forecaster(token: str, granularity_sec: int, window_size: int, met
             forecasters_cache[key] = forecasters_dict
         return forecasters_cache[key][method]
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """
-    FastAPI Startup Event Handler.
+    FastAPI Lifespan Event Handler.
 
     Initializes the database adapters, triggers CCXT historical data bootstrapping,
     queries the database to retrieve historical prices, parses sliding window segments,
@@ -323,25 +323,28 @@ async def startup_event():
     
     # 0. Check Artifact Service connectivity
     try:
-        from cryptotrading.client.artifact.service import list_category_files
-        artifacts = list_category_files("retrieval")
-        logger.info(f"Connected to Artifact Service (found {len(artifacts)} retrieval artifacts).")
+        from cryptotrading.client.artifact.service import ping_artifact_service
+        connected = ping_artifact_service()
+        if connected:
+            logger.info("Artifact Service is reachable.")
+        else:
+            logger.warning("Artifact Service is unreachable.")
     except Exception as art_err:
-        logger.warning(f"Could not connect to Artifact Service on startup: {art_err}")
-
-    # 1. Initialize Chronos pipeline first (needed by forecasters during build_index)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    logger.info(f"Loading Chronos pipeline for RAF from {CHRONOS_MODEL_ID} on device {device}...")
+        logger.warning(f"Artifact Service check error: {art_err}")
+        
+    logger.info(f"Loading Chronos pipeline ({CHRONOS_MODEL_ID})...")
     try:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        torch_dtype = torch.bfloat16 if device == "cuda" else torch.float32
         chronos_pipeline = ChronosPipeline.from_pretrained(
             CHRONOS_MODEL_ID,
-            torch_dtype=torch.float32,
+            device_map=device,
+            torch_dtype=torch_dtype,
         )
         chronos_pipeline.model.to(device)
         logger.info("Chronos pipeline loaded successfully.")
     except Exception as e:
         logger.error(f"Failed to load Chronos pipeline: {e}", exc_info=True)
-        raise e
 
     logger.info("Initializing database adapters...")
     price_adapter = get_price_adapter()
@@ -364,7 +367,9 @@ async def startup_event():
         encoder_service = default_forecaster.encoder_service
         logger.info("Default BTC retrieval index pre-built successfully.")
     except Exception as e:
-        logger.error(f"Failed to pre-build default BTC retrieval index: {e}", exc_info=True)
+        logger.error(f"Failed to pre-build default index: {e}", exc_info=True)
+        logger.warning("Service will continue, but first query may experience cold-start latency.")
+    yield
 
 @app.get("/forecast")
 async def forecast(

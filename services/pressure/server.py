@@ -19,8 +19,6 @@ from train import TrainingConfig
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("pressure_service")
 
-app = FastAPI(title="Pressure Service", description="Order book pressure model and features")
-
 model = None
 featurizer = OrderBookFeaturizer()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -44,8 +42,10 @@ class SnapshotInput(BaseModel):
     asks: List[Tuple[float, float]]
     mid_price: float
 
-@app.on_event("startup")
-async def startup_event():
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global model, featurizer
     logger.info("Initializing featurizer...")
     featurizer = OrderBookFeaturizer()
@@ -81,6 +81,9 @@ async def startup_event():
         logger.warning(f"No checkpoint found at {checkpoint_path}. Model will use untrained weights.")
         
     model.eval()
+    yield
+
+app = FastAPI(title="Pressure Service", description="Order book pressure model and features", lifespan=lifespan)
 
 @app.post("/features")
 async def get_features(snapshot: SnapshotInput):
