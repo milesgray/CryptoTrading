@@ -29,6 +29,5 @@ build-backend = "hatchling.build"
 package = false
 
 [tool.uv.sources]
-retrieval = { path="./", editable = true }
 cryptotrading = { path = "../../src", editable = true }
 
