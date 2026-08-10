@@ -13,6 +13,8 @@ logger = logging.getLogger("mock_polymarket_broker")
 
 class MockPolymarketBroker:
     def __init__(self):
+        import threading
+        self.lock = threading.Lock()
         self.usd_balance = 10000.0
         self.btc_position = 0.0
         self.eth_position = 0.0
@@ -58,54 +60,55 @@ class MockPolymarketBroker:
                 logger.error(f"Broker error: {e}")
 
     def execute_mock_trade(self):
-        assets = ["BTC", "ETH"]
-        asset = random.choice(assets)
-        price = self.btc_price if asset == "BTC" else self.eth_price
-        side = "BUY" if random.random() > 0.4 else "SELL"
-        
-        if side == "BUY":
-            # Spend 5-15% of cash
-            spend = self.usd_balance * random.uniform(0.05, 0.15)
-            if spend > 10.0:
-                amount = spend / price
-                self.usd_balance -= spend
-                if asset == "BTC":
-                    self.btc_position += amount
-                else:
-                    self.eth_position += amount
-                
-                trade = {
-                    "timestamp": datetime.now(dt.timezone.utc).isoformat(),
-                    "side": "BUY",
-                    "asset": asset,
-                    "amount": round(amount, 4),
-                    "price": round(price, 2),
-                    "total": round(spend, 2)
-                }
-                self.trades.append(trade)
-                logger.info(f"TRADE EXECUTED | BUY {amount:.4f} {asset} @ ${price:,.2f} (Total: ${spend:,.2f})")
-        else:
-            # Sell 20-50% of position
-            pos = self.btc_position if asset == "BTC" else self.eth_position
-            if pos > 0.001:
-                amount = pos * random.uniform(0.20, 0.50)
-                revenue = amount * price
-                self.usd_balance += revenue
-                if asset == "BTC":
-                    self.btc_position -= amount
-                else:
-                    self.eth_position -= amount
-                
-                trade = {
-                    "timestamp": datetime.now(dt.timezone.utc).isoformat(),
-                    "side": "SELL",
-                    "asset": asset,
-                    "amount": round(amount, 4),
-                    "price": round(price, 2),
-                    "total": round(revenue, 2)
-                }
-                self.trades.append(trade)
-                logger.info(f"TRADE EXECUTED | SELL {amount:.4f} {asset} @ ${price:,.2f} (Total: ${revenue:,.2f})")
+        with self.lock:
+            assets = ["BTC", "ETH"]
+            asset = random.choice(assets)
+            price = self.btc_price if asset == "BTC" else self.eth_price
+            side = "BUY" if random.random() > 0.4 else "SELL"
+            
+            if side == "BUY":
+                # Spend 5-15% of cash
+                spend = self.usd_balance * random.uniform(0.05, 0.15)
+                if spend > 10.0:
+                    amount = spend / price
+                    self.usd_balance -= spend
+                    if asset == "BTC":
+                        self.btc_position += amount
+                    else:
+                        self.eth_position += amount
+                    
+                    trade = {
+                        "timestamp": datetime.now(dt.timezone.utc).isoformat(),
+                        "side": "BUY",
+                        "asset": asset,
+                        "amount": round(amount, 4),
+                        "price": round(price, 2),
+                        "total": round(spend, 2)
+                    }
+                    self.trades.append(trade)
+                    logger.info(f"TRADE EXECUTED | BUY {amount:.4f} {asset} @ ${price:,.2f} (Total: ${spend:,.2f})")
+            else:
+                # Sell 20-50% of position
+                pos = self.btc_position if asset == "BTC" else self.eth_position
+                if pos > 0.001:
+                    amount = pos * random.uniform(0.20, 0.50)
+                    revenue = amount * price
+                    self.usd_balance += revenue
+                    if asset == "BTC":
+                        self.btc_position -= amount
+                    else:
+                        self.eth_position -= amount
+                    
+                    trade = {
+                        "timestamp": datetime.now(dt.timezone.utc).isoformat(),
+                        "side": "SELL",
+                        "asset": asset,
+                        "amount": round(amount, 4),
+                        "price": round(price, 2),
+                        "total": round(revenue, 2)
+                    }
+                    self.trades.append(trade)
+                    logger.info(f"TRADE EXECUTED | SELL {amount:.4f} {asset} @ ${price:,.2f} (Total: ${revenue:,.2f})")
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -130,36 +133,37 @@ class OrderInput(BaseModel):
 
 @app.post("/order")
 async def execute_order(order: OrderInput):
-    price = broker.btc_price if order.asset.upper() == "BTC" else broker.eth_price
-    total = order.amount * price
-    if order.side.upper() == "BUY":
-        if broker.usd_balance < total:
-            raise HTTPException(status_code=400, detail="Insufficient USD balance")
-        broker.usd_balance -= total
-        if order.asset.upper() == "BTC":
-            broker.btc_position += order.amount
+    with broker.lock:
+        price = broker.btc_price if order.asset.upper() == "BTC" else broker.eth_price
+        total = order.amount * price
+        if order.side.upper() == "BUY":
+            if broker.usd_balance < total:
+                raise HTTPException(status_code=400, detail="Insufficient USD balance")
+            broker.usd_balance -= total
+            if order.asset.upper() == "BTC":
+                broker.btc_position += order.amount
+            else:
+                broker.eth_position += order.amount
         else:
-            broker.eth_position += order.amount
-    else:
-        if order.asset.upper() == "BTC" and broker.btc_position < order.amount:
-            raise HTTPException(status_code=400, detail="Insufficient BTC position")
-        elif order.asset.upper() == "ETH" and broker.eth_position < order.amount:
-            raise HTTPException(status_code=400, detail="Insufficient ETH position")
-        broker.usd_balance += total
-        if order.asset.upper() == "BTC":
-            broker.btc_position -= order.amount
-        else:
-            broker.eth_position -= order.amount
+            if order.asset.upper() == "BTC" and broker.btc_position < order.amount:
+                raise HTTPException(status_code=400, detail="Insufficient BTC position")
+            elif order.asset.upper() == "ETH" and broker.eth_position < order.amount:
+                raise HTTPException(status_code=400, detail="Insufficient ETH position")
+            broker.usd_balance += total
+            if order.asset.upper() == "BTC":
+                broker.btc_position -= order.amount
+            else:
+                broker.eth_position -= order.amount
 
-    trade = {
-        "timestamp": datetime.now(dt.timezone.utc).isoformat(),
-        "side": order.side.upper(),
-        "asset": order.asset.upper(),
-        "amount": round(order.amount, 4),
-        "price": round(price, 2),
-        "total": round(total, 2)
-    }
-    broker.trades.append(trade)
+        trade = {
+            "timestamp": datetime.now(dt.timezone.utc).isoformat(),
+            "side": order.side.upper(),
+            "asset": order.asset.upper(),
+            "amount": round(order.amount, 4),
+            "price": round(price, 2),
+            "total": round(total, 2)
+        }
+        broker.trades.append(trade)
     return {"status": "success", "trade": trade}
 
 if __name__ == "__main__":
