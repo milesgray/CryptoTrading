@@ -391,7 +391,10 @@ class JEPATrainer:
                     }
                     model_path = save_dir / 'best_model.pt'
                     torch.save(checkpoint, model_path)
-                    upload_artifact(str(model_path), category="jepa", filename=f'best_model.pt')
+                    try:
+                        artifact_service.upload_artifact(str(model_path), category="jepa", filename='best_model.pt')
+                    except Exception as art_err:
+                        logger.warning(f"Failed uploading best jepa artifact to Artifact Service: {art_err}")
                     logger.info(f"✓ Saved best model (val_loss={best_val_loss:.6f})")
             
             # Update learning rate

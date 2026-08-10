@@ -18,6 +18,7 @@ dependencies = [
     "fastapi[standard]>=0.115.11",
     "cryptotrading>=0.1.0",
     "uvicorn>=0.51.0",
+    "torch>=2.13.0",
 ]
 
 [build-system]
@@ -28,4 +29,6 @@ build-backend = "hatchling.build"
 package = false
 
 [tool.uv.sources]
+retrieval = { path="./", editable = true }
 cryptotrading = { path = "../../src", editable = true }
+

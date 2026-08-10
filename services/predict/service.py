@@ -219,7 +219,7 @@ async def get_prediction(
     except Exception as e:
         logger.error(f"Error in prediction endpoint: {e}", exc_info=True)
         # Fallback response
-        return HTTPException(
+        raise HTTPException(
             status_code=500,
             detail={
                 "symbol": symbol,
