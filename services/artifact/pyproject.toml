@@ -11,7 +11,6 @@ dependencies = [
     "fastapi[standard]>=0.115.11",
     "uvicorn>=0.51.0",
     "python-multipart>=0.0.32",
-    "cryptotrading>=0.1.0",
 ]
 
 [build-system]
@@ -20,6 +19,3 @@ build-backend = "hatchling.build"
 
 [tool.uv]
 package = false
-
-[tool.uv.sources]
-cryptotrading = { path = "../../src", editable = true }

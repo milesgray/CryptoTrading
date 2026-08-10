@@ -16,7 +16,6 @@ dependencies = [
     "six>=1.17.0",
     "numpy>=2.2.3",
     "fastapi[standard]>=0.115.11",
-    "cryptotrading>=0.1.0",
     "twipy>=0.0.10",
     "textblob>=0.20.1",
     "vadersentiment>=3.3.2",
@@ -33,6 +32,3 @@ build-backend = "hatchling.build"
 
 [tool.uv]
 package = false
-
-[tool.uv.sources]
-cryptotrading = { path = "../../src", editable = true }
