@@ -314,3 +314,10 @@ app.include_router(retrieval_router)
 app.include_router(services_router)
 app.include_router(services_ws_router)
 app.include_router(broker_router)
+
+
+if __name__ == "__main__":
+    import os
+    import uvicorn
+    port = int(os.getenv("PORT", 8362))
+    uvicorn.run(app, host="0.0.0.0", port=port)

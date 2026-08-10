@@ -36,4 +36,4 @@ COPY ./services /services
 EXPOSE 8006
 
 # Run artifact service
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8006"]
+CMD ["uv", "run", "python", "server.py"]

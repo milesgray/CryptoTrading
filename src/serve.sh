@@ -1,1 +1,1 @@
-uv run fastapi ../services/serve/app.py
+uv run python ../services/serve/server.py

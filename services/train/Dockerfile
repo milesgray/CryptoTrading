@@ -21,4 +21,4 @@ COPY ./services/train .
 
 EXPOSE 8000
 
-CMD ["uv", "run", "python", "main.py"]
+CMD ["uv", "run", "python", "server.py"]

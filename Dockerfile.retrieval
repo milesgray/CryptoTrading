@@ -32,4 +32,4 @@ COPY ./services/retrieval .
 EXPOSE 8000
 
 # Run application
-CMD ["uv", "run", "python", "main.py"]
+CMD ["uv", "run", "python", "server.py"]

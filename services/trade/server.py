@@ -107,6 +107,62 @@ class MockPolymarketBroker:
                 self.trades.append(trade)
                 logger.info(f"TRADE EXECUTED | SELL {amount:.4f} {asset} @ ${price:,.2f} (Total: ${revenue:,.2f})")
 
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+app = FastAPI(title="Trade Service", description="Mock Polymarket Trade Broker Service")
+broker = MockPolymarketBroker()
+
+@app.on_event("startup")
+async def startup_event():
+    import threading
+    t = threading.Thread(target=broker.run, daemon=True)
+    t.start()
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "balance": broker.usd_balance}
+
+class OrderInput(BaseModel):
+    asset: str = "BTC"
+    side: str = "BUY"
+    amount: float = 1.0
+
+@app.post("/order")
+async def execute_order(order: OrderInput):
+    price = broker.btc_price if order.asset.upper() == "BTC" else broker.eth_price
+    total = order.amount * price
+    if order.side.upper() == "BUY":
+        if broker.usd_balance < total:
+            raise HTTPException(status_code=400, detail="Insufficient USD balance")
+        broker.usd_balance -= total
+        if order.asset.upper() == "BTC":
+            broker.btc_position += order.amount
+        else:
+            broker.eth_position += order.amount
+    else:
+        if order.asset.upper() == "BTC" and broker.btc_position < order.amount:
+            raise HTTPException(status_code=400, detail="Insufficient BTC position")
+        elif order.asset.upper() == "ETH" and broker.eth_position < order.amount:
+            raise HTTPException(status_code=400, detail="Insufficient ETH position")
+        broker.usd_balance += total
+        if order.asset.upper() == "BTC":
+            broker.btc_position -= order.amount
+        else:
+            broker.eth_position -= order.amount
+
+    trade = {
+        "timestamp": datetime.now(dt.timezone.utc).isoformat(),
+        "side": order.side.upper(),
+        "asset": order.asset.upper(),
+        "amount": round(order.amount, 4),
+        "price": round(price, 2),
+        "total": round(total, 2)
+    }
+    broker.trades.append(trade)
+    return {"status": "success", "trade": trade}
+
 if __name__ == "__main__":
-    broker = MockPolymarketBroker()
-    broker.run()
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

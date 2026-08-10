@@ -1,19 +1,20 @@
 # Project Memory
 
 ## Last Completed Task
-Created Artifact Service microservice for saving, retrieving, listing, and serving model artifacts and system files, with Docker/Docker Compose support and cross-service client integrations across `train`, `predict`, `pressure`, `embed`, `jepa`, and `retrieval`.
+Created standardized service client package in `cryptotrading.client` for all microservices (`artifact`, `embed`, `jepa`, `predict`, `pressure`, `price`, `retrieval`, `sentiment`, `serve`, `trade`, `train`) and standardized FastAPI server definitions (`server.py`) across all microservice directories.
 
 ## Architecture Notes
-- Artifact Service runs as a standalone FastAPI service (`services/artifact/main.py`) on port `8006`.
-- Centralized Python helper client created under `cryptotrading.client.artifact.service` (exposing `upload_artifact`, `download_artifact`, and `list_category_files`).
-- Models in `train`, `predict`, `pressure`, `embed`, and `jepa` auto-sync to the Artifact Service on save and attempt automatic download on service startup if missing locally.
+- All service clients are cleanly exported from `cryptotrading.client.*` (e.g. `EmbedServiceClient`, `RetrievalServiceClient`).
+- Every microservice standardizes on a `server.py` file exposing FastAPI `app` and invoking `uvicorn.run(app, host="0.0.0.0", port=port)` reading from `os.getenv("PORT", <default_port>)`.
+- Inter-service calls and Docker entrypoints updated to target `server.py`.
 
 ## Environment / Config
-- `ARTIFACT_SERVICE_URL`: Base URL of the Artifact Service (default: `http://artifact:8006`).
-- `ARTIFACT_STORAGE_DIR`: Local path inside the artifact container (default: `/app/checkpoints`).
+- `PORT`: Standard environment variable used across all service `server.py` entrypoints to configure FastAPI / Uvicorn server ports.
+- Service URLs (`EMBED_SERVICE_URL`, `RETRIEVAL_SERVICE_URL`, `PREDICT_SERVICE_URL`, etc.) are supported as defaults in client wrappers.
 
 ## Dependencies Added
-- `python-multipart` added to `services/artifact/pyproject.toml`.
+- None.
 
 ## Known Blockers / Next Steps
 - None.
+

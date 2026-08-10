@@ -43,4 +43,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 EXPOSE 8080
 
 # Default command
-CMD ["python", "service_runner.py"]
+CMD ["python", "server.py"]

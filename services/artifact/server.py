@@ -175,4 +175,5 @@ def delete_artifact(category: str, filename: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8006)
+    port = int(os.getenv("PORT", 8006))
+    uvicorn.run(app, host="0.0.0.0", port=port)

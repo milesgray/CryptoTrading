@@ -111,24 +111,21 @@ class RetrievalServiceEncoder:
             return local_emb
             
         try:
-            payload = {"prices": prices.tolist()}
-            response = httpx.post(f"{self.embed_service_url}/embed", json=payload, timeout=3.0)
-            if response.status_code == 200:
-                data = response.json()
-                embed_emb = np.array(data["embedding"], dtype=np.float32)
+            from cryptotrading.client import EmbedServiceClient
+            client = EmbedServiceClient(base_url=self.embed_service_url)
+            res = client.generate_embedding(prices.tolist())
+            embed_emb = np.array(res["embedding"], dtype=np.float32)
+            
+            # Check dynamic dimension match
+            if len(embed_emb) != self.embed_dim:
+                self.embed_dim = len(embed_emb)
                 
-                # Check dynamic dimension match
-                if len(embed_emb) != self.embed_dim:
-                    self.embed_dim = len(embed_emb)
-                    
-                combined = np.concatenate([embed_emb, local_emb])
-                if len(combined) != self.dim:
-                    if len(combined) < self.dim:
-                        return np.pad(combined, (0, self.dim - len(combined)), 'constant')
-                    return combined[:self.dim]
-                return combined
-            else:
-                logger.warning(f"Embed service returned {response.status_code}, falling back to padded local representation.")
+            combined = np.concatenate([embed_emb, local_emb])
+            if len(combined) != self.dim:
+                if len(combined) < self.dim:
+                    return np.pad(combined, (0, self.dim - len(combined)), 'constant')
+                return combined[:self.dim]
+            return combined
         except Exception as e:
             logger.error(f"Error encoding segment via embed service: {e}. Falling back to padded local representation.")
             
