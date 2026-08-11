@@ -2,10 +2,8 @@ import json
 import logging
 import datetime as dt
 from datetime import datetime
-import pytz
 import asyncio
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from cryptotrading.data.mongo import get_db
@@ -62,7 +60,7 @@ origins = [
     "http://localhost:8000",  # Default FastAPI port
     "http://localhost:8080",  # Common alternative port
     "http://localhost:5173",  # Vite dev server
-    "https://your-frontend-domain.com",  # Production frontend
+    "https://crypto.resatiate.com",
 ]
 
 app.add_middleware(

@@ -57,7 +57,7 @@ services:
             - train
             - pressure
             - artifact
-            - record
+            - price
             - embed
 
     retrieval:
@@ -76,7 +76,7 @@ services:
         depends_on:
             - timescaledb
             - embed
-            - record
+            - price
 
     embed:
         build:
@@ -93,13 +93,13 @@ services:
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
-            - record
-    record:
+            - price
+    price:
         build:
             context: .
-            dockerfile: Dockerfile.record
+            dockerfile: Dockerfile.price
         ports:
-            - "${RECORD_PORT:-8300}:8000"
+            - "${PRICE_PORT:-8300}:8000"
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
@@ -121,7 +121,7 @@ services:
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
-            - record
+            - price
 
     train:
         build:
@@ -136,7 +136,7 @@ services:
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
-            - record
+            - price
 
     pressure:
         build:
@@ -151,7 +151,7 @@ services:
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
-            - record
+            - price
 
     artifact:
         build:
