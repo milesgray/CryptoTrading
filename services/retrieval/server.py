@@ -349,42 +349,37 @@ async def startup_event():
     """
     FastAPI Lifespan Event Handler.
 
-    Initializes the database adapters, triggers CCXT historical data bootstrapping,
-    queries the database to retrieve historical prices, parses sliding window segments,
-    indexes them using the encoder service, and constructs the vector index.
-    
-    If bootstrapping fails or database is empty, the service aborts startup with an
-    exception (no mock data fallback is permitted).
+    Asynchronously initializes background resources (Chronos model, database adapters,
+    CCXT bootstrapping, and pre-building index) so the server opens its HTTP port instantly.
     """
-    global chronos_pipeline, encoder_service, forecaster, raf_forecaster
-    
-    # 0. Check Artifact Service connectivity
-    try:
-        from cryptotrading.client.artifact.service import ping_artifact_service
-        connected = ping_artifact_service()
-        if connected:
-            logger.info("Artifact Service is reachable.")
-        else:
-            logger.warning("Artifact Service is unreachable.")
-    except Exception as art_err:
-        logger.warning(f"Artifact Service check error: {art_err}")
-        
-    logger.info(f"Loading Chronos pipeline ({CHRONOS_MODEL_ID})...")
-    try:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        torch_dtype = torch.bfloat16 if device == "cuda" else torch.float32
-        chronos_pipeline = ChronosPipeline.from_pretrained(
-            CHRONOS_MODEL_ID,
-            device_map=device,
-            torch_dtype=torch_dtype,
-        )
-        chronos_pipeline.model.to(device)
-        logger.info("Chronos pipeline loaded successfully.")
-    except Exception as e:
-        logger.error(f"Failed to load Chronos pipeline: {e}", exc_info=True)
-
     async def async_startup_tasks():
-        global forecaster, raf_forecaster, encoder_service
+        global chronos_pipeline, forecaster, raf_forecaster, encoder_service
+        
+        # 0. Check Artifact Service connectivity
+        try:
+            from cryptotrading.client.artifact.service import ping_artifact_service
+            connected = ping_artifact_service()
+            if connected:
+                logger.info("Artifact Service is reachable.")
+            else:
+                logger.warning("Artifact Service is unreachable.")
+        except Exception as art_err:
+            logger.warning(f"Artifact Service check error: {art_err}")
+            
+        logger.info(f"Loading Chronos pipeline ({CHRONOS_MODEL_ID})...")
+        try:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            torch_dtype = torch.bfloat16 if device == "cuda" else torch.float32
+            chronos_pipeline = ChronosPipeline.from_pretrained(
+                CHRONOS_MODEL_ID,
+                device_map=device,
+                torch_dtype=torch_dtype,
+            )
+            chronos_pipeline.model.to(device)
+            logger.info("Chronos pipeline loaded successfully.")
+        except Exception as e:
+            logger.error(f"Failed to load Chronos pipeline: {e}", exc_info=True)
+
         logger.info("Initializing database adapters...")
         price_adapter = get_price_adapter()
         await price_adapter.initialize()
