@@ -39,6 +39,7 @@ ml = [
     "einops>=0.8.2",
     "pmdarima>=2.1.1",
     "numba>=0.66.0",
+    "accelerate>=0.26.0",
 ]
 
 [build-system]
