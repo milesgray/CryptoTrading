@@ -16,6 +16,7 @@ import numpy as np
 from typing import Dict, Any, List, Optional
 from cryptotrading.analysis.retrieval import RetrievalEncoder
 from cryptotrading.data.index import VectorIndex
+from cryptotrading.client import EmbedServiceClient
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class RetrievalServiceEncoder:
         self.index = VectorIndex(dim=dim)
         self.dim = dim
         self.is_built = False
-        self.embed_service_url = embed_service_url or os.getenv("EMBED_SERVICE_URL", "http://embed:8380")
+        self.embed_service = EmbedServiceClient()
         
         # Determine deep learning embedding dimension dynamically if not provided
         if embed_dim is not None:
@@ -72,11 +73,8 @@ class RetrievalServiceEncoder:
             import time
             for attempt in range(5):
                 try:
-                    response = httpx.get(f"{self.embed_service_url}/health", timeout=5.0)
-                    if response.status_code == 200:
-                        self.embed_dim = response.json().get("embedding_dim", 128)
-                        logger.info(f"Dynamically determined embed service embedding dimension: {self.embed_dim}")
-                        break
+                    self.embed_dim = self.embed_service.health().get("embedding_dim", 128)
+                    break
                 except Exception as e:
                     logger.warning(f"Could not connect to embed service to determine dimension (attempt {attempt+1}/5): {e}.")
                     if attempt < 4:
@@ -116,10 +114,8 @@ class RetrievalServiceEncoder:
             return local_emb
             
         try:
-            from cryptotrading.client import EmbedServiceClient
-            client = EmbedServiceClient(base_url=self.embed_service_url)
-            res = client.generate_embedding(prices.tolist())
-            embed_emb = np.array(res["embedding"], dtype=np.float32)
+            client = self.embed_service
+            embed_emb = np.array(client.generate_embedding(prices.tolist()), dtype=np.float32)
             
             # Check dynamic dimension match
             if len(embed_emb) != self.embed_dim:

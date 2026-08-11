@@ -5,7 +5,7 @@ import requests
 
 logger = logging.getLogger("cryptotrading.client.embed")
 
-EMBED_SERVICE_URL = os.environ.get("EMBED_SERVICE_URL", "http://embed:8380")
+EMBED_SERVICE_URL = os.environ.get("EMBED_SERVICE_URL", "http://embed:8000")
 
 class EmbedServiceClient:
     """Client for services/embed (Contrastive Pattern Matching / Embedding Service)"""

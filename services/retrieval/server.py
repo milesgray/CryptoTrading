@@ -245,18 +245,17 @@ async def build_index_for_combination(
     import os
     import asyncio
     from cryptotrading.client import EmbedServiceClient
-    embed_url = os.getenv("EMBED_SERVICE_URL", "http://embed:8380")
-    embed_client = EmbedServiceClient(base_url=embed_url, timeout=5.0)
+    embed_client = EmbedServiceClient(timeout=5.0)
     try:
         health_data = embed_client.health()
         embed_dim = health_data.get("embedding_dim", 128)
         logger.info(f"Fetched embed service health: embedding_dim={embed_dim}")
     except Exception as e:
-        logger.warning(f"Could not fetch health from embed service at {embed_url}, defaulting embedding_dim=128: {e}")
+        logger.warning(f"Could not fetch health from embed service at {embed_client.base_url}, defaulting embedding_dim=128: {e}")
         
     combined_dim = embed_dim + local_dim
     logger.info(f"Initializing encoder with window_size={window_size}, n_fft={n_fft}, frame_size={frame_size}, hop_size={hop_size}, horizon={horizon}, combined_dim={combined_dim} ({embed_dim} embed + {local_dim} local)")
-    encoder = RetrievalServiceEncoder(window_size=window_size, n_fft=n_fft, dim=combined_dim, embed_service_url=embed_url, embed_dim=embed_dim)
+    encoder = RetrievalServiceEncoder(window_size=window_size, n_fft=n_fft, dim=combined_dim, embed_dim=embed_dim)
     
     # Build sliding window segments in batch
     prices_list = []

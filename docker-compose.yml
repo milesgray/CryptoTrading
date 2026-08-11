@@ -69,7 +69,7 @@ services:
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
-            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8380}
+            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8000}
             - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8383}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
             - DATABASE_STATEMENT_TIMEOUT=180000
