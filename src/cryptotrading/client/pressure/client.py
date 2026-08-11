@@ -5,7 +5,7 @@ import requests
 
 logger = logging.getLogger("cryptotrading.client.pressure")
 
-PRESSURE_SERVICE_URL = os.environ.get("PRESSURE_SERVICE_URL", "http://pressure:8382")
+PRESSURE_SERVICE_URL = os.environ.get("PRESSURE_SERVICE_URL", "http://pressure:8000")
 
 class PressureServiceClient:
     """Client for services/pressure (Pressure Service)"""

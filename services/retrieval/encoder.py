@@ -164,23 +164,16 @@ class RetrievalServiceEncoder:
         try:
             for i in range(0, n, batch_size):
                 sub_prices = [p.tolist() for p in prices_list[i:i+batch_size]]
-                payload = {"prices_list": sub_prices}
-                response = httpx.post(f"{self.embed_service_url}/embed/batch", json=payload, timeout=30.0)
-                if response.status_code == 200:
-                    data = response.json()
-                    embs = data.get("embeddings", [])
-                    if len(embs) == len(sub_prices):
-                        for emb in embs:
-                            emb_arr = np.array(emb, dtype=np.float32)
-                            if len(emb_arr) != self.embed_dim:
-                                self.embed_dim = len(emb_arr)
-                            embeddings_embed.append(emb_arr)
-                    else:
-                        logger.warning(f"Embed service returned {len(embs)} embeddings for {len(sub_prices)} requests. Using fallback.")
-                        for _ in range(len(sub_prices)):
-                            embeddings_embed.append(np.zeros(self.embed_dim, dtype=np.float32))
+                response = self.embed_service.generate_batch_embedding(sub_prices)
+                embs = response.get("embeddings", [])
+                if len(embs) == len(sub_prices):
+                    for emb in embs:
+                        emb_arr = np.array(emb, dtype=np.float32)
+                        if len(emb_arr) != self.embed_dim:
+                            self.embed_dim = len(emb_arr)
+                        embeddings_embed.append(emb_arr)
                 else:
-                    logger.warning(f"Embed service batch returned {response.status_code}, falling back to padded local representation for this batch.")
+                    logger.warning(f"Embed service returned {len(embs)} embeddings for {len(sub_prices)} requests. Using fallback.")
                     for _ in range(i, min(i + batch_size, n)):
                         embeddings_embed.append(np.zeros(self.embed_dim, dtype=np.float32))
         except Exception as e:
