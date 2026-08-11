@@ -106,6 +106,8 @@ def json_serial(obj):
     """JSON serializer for objects not serializable by default json code"""
     if isinstance(obj, (datetime, dt.date)):
         return obj.isoformat()
+    if hasattr(obj, 'model_dump'):
+        return obj.model_dump()
     if hasattr(obj, 'dict'):
         return obj.dict()
     raise TypeError(f"Type {type(obj)} not serializable")
@@ -327,5 +329,5 @@ app.include_router(broker_router)
 if __name__ == "__main__":
     import os
     import uvicorn
-    port = int(os.getenv("PORT", 8362))
+    port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

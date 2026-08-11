@@ -61,7 +61,7 @@ class RetrievalServiceEncoder:
         self.index = VectorIndex(dim=dim)
         self.dim = dim
         self.is_built = False
-        self.embed_service_url = embed_service_url or os.getenv("EMBED_SERVICE_URL", "http://embed:8301")
+        self.embed_service_url = embed_service_url or os.getenv("EMBED_SERVICE_URL", "http://embed:8000")
         
         # Determine deep learning embedding dimension dynamically if not provided
         if embed_dim is not None:

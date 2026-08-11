@@ -5,7 +5,7 @@ import requests
 
 logger = logging.getLogger("cryptotrading.client.serve")
 
-SERVE_SERVICE_URL = os.environ.get("SERVE_SERVICE_URL", "http://serve:8362")
+SERVE_SERVICE_URL = os.environ.get("SERVE_SERVICE_URL", "http://serve:8000")
 
 class ServeServiceClient:
     """Client for services/serve (API Serving Server)"""

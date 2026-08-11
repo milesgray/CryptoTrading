@@ -12,30 +12,53 @@ services:
         volumes:
             - pgdata:/var/lib/postgresql/data
 
+    frontend:
+        build:
+            context: .
+            dockerfile: Dockerfile.frontend
+            target: development
+        ports:
+            - "${FRONTEND_PORT:-8080}:8080"
+        environment:
+            - VITE_BACKEND_URL=http://serve:8000
+            - VITE_TRAIN_URL=http://train:8000
+            - VITE_PRESSURE_URL=http://pressure:8000
+        depends_on:
+            - serve
+            - train
+            - pressure
+
     serve:
         build:
             context: .
             dockerfile: Dockerfile.serve
         ports:
-            - "${SERVE_PORT:-8362}:8000"
+            - "${SERVE_PORT:-8000}:8000"
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
             - RETRIEVAL_SERVICE_URL=${RETRIEVAL_SERVICE_URL:-http://retrieval:8000}
-            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8301}
+            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8000}
             - PREDICT_SERVICE_URL=${PREDICT_SERVICE_URL:-http://predict:8000}
             - PRESSURE_SERVICE_URL=${PRESSURE_SERVICE_URL:-http://pressure:8000}
             - JEPA_SERVICE_URL=${JEPA_SERVICE_URL:-http://jepa:8000}
             - SENTIMENT_SERVICE_URL=${SENTIMENT_SERVICE_URL:-http://sentiment:8080}
             - TRADE_SERVICE_URL=${TRADE_SERVICE_URL:-http://trade:8000}
             - TRAIN_SERVICE_URL=${TRAIN_SERVICE_URL:-http://train:8000}
-            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8006}
+            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8000}
+            - PORT=8000
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
             - retrieval
+            - predict
+            - train
+            - pressure
+            - artifact
+            - record
+            - embed
 
     retrieval:
         build:
@@ -46,8 +69,8 @@ services:
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
-            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8301}
-            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8006}
+            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8000}
+            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8000}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
             - DATABASE_STATEMENT_TIMEOUT=180000
         depends_on:
@@ -60,13 +83,13 @@ services:
             context: .
             dockerfile: Dockerfile.embed
         ports:
-            - "8301:8301"
+            - "${EMBED_PORT:-8000}:8000"
         volumes:
             - ./services/embed/models/trained:/app/models/trained
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
-            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8006}
+            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8000}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
@@ -76,7 +99,7 @@ services:
             context: .
             dockerfile: Dockerfile.record
         ports:
-            - "${RECORD_PORT:-8300}:8300"
+            - "${RECORD_PORT:-8000}:8000"
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
@@ -85,28 +108,16 @@ services:
         depends_on:
             - timescaledb
 
-    frontend:
-        build:
-            context: .
-            dockerfile: Dockerfile.frontend
-            target: development
-        ports:
-            - "${FRONTEND_PORT:-8080}:8080"
-        environment:
-            - VITE_BACKEND_URL=http://serve:8000
-            - VITE_TRAIN_URL=http://train:8000
-            - VITE_PRESSURE_URL=http://pressure:8000
-
     predict:
         build:
             context: .
             dockerfile: Dockerfile.predict
         ports:
-            - "${PREDICT_PORT:-8388}:8000"
+            - "${PREDICT_PORT:-8000}:8000"
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
-            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8006}
+            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8000}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
@@ -121,7 +132,7 @@ services:
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
-            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8006}
+            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8000}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
@@ -132,11 +143,11 @@ services:
             context: .
             dockerfile: Dockerfile.pressure
         ports:
-            - "${PRESSURE_PORT:-8390}:8000"
+            - "${PRESSURE_PORT:-8000}:8000"
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
-            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8006}
+            - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8000}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
@@ -147,7 +158,7 @@ services:
             context: .
             dockerfile: Dockerfile.artifact
         ports:
-            - "${ARTIFACT_PORT:-8006}:8006"
+            - "${ARTIFACT_PORT:-8000}:8000"
         volumes:
             - ./checkpoints:/app/checkpoints
         environment:

@@ -3,7 +3,7 @@
 ## Goal
 Enhance the retrieval service to:
 1. Bootstraps 7 days of 1-minute historical candlestick data via CCXT on startup if not already done, inserting into Postgres `price_data` under `exchange = 'index'` with `ON CONFLICT DO NOTHING`.
-2. Connect to the embed service (`http://embed:8301/embed`) to fetch 128D embeddings for price segments rather than using local handcrafted features (56D).
+2. Connect to the embed service (`http://embed:8000/embed`) to fetch 128D embeddings for price segments rather than using local handcrafted features (56D).
 3. Remove all mock price/consensuses fallbacks on startup or when forecast has empty matching results. Raise clean HTTP/Value errors.
 4. Update the React frontend dashboard to display clean error/warning panels if `/forecast` returns an error status.
 
