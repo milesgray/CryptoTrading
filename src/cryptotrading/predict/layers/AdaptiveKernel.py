@@ -19,11 +19,19 @@ class AdaptiveKernelLayer(nn.Module):
         self.output_proj = nn.Linear(num_kernels, output_dim)
         
     def forward(self, x):
-        batch_size, seq_len, _ = x.shape
+        if x.dim() == 2:
+            # Input is (batch, input_dim), temporarily unsqueeze to (batch, 1, input_dim)
+            x_seq = x.unsqueeze(1)
+            is_2d = True
+        else:
+            x_seq = x
+            is_2d = False
+
+        batch_size, seq_len, _ = x_seq.shape
         
         # Calculate kernel activations
         # Reshape x for broadcasting: (batch, seq, 1, input_dim)
-        x_expanded = x.unsqueeze(2)
+        x_expanded = x_seq.unsqueeze(2)
         
         # Reshape kernels for broadcasting: (1, 1, num_kernels, input_dim)
         kernels_expanded = self.kernels.unsqueeze(0).unsqueeze(0)
@@ -33,11 +41,11 @@ class AdaptiveKernelLayer(nn.Module):
         kernel_activations = torch.exp(-kernel_distances)
         
         # Get adaptive mixing weights: (batch, seq, num_kernels)
-        mixing_weights = torch.softmax(self.mixer(x), dim=-1)
+        mixing_weights = torch.softmax(self.mixer(x_seq), dim=-1)
         
         # Apply weighted kernel activations
         weighted_activations = kernel_activations * mixing_weights
         
         # Project to output dimension
         output = self.output_proj(weighted_activations)
-        return output
+        return output.squeeze(1) if is_2d else output
