@@ -471,7 +471,7 @@ async def forecast(
             start_time=start_time,
             end_time=end_time,
             granularity=granularity_sec,
-            include_book=True
+            include_book=False
         )
         
         if not candles or len(candles) < window_size:

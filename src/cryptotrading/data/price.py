@@ -725,8 +725,10 @@ class PricePostgresAdapter(PriceAdapter):
             chunk_duration = datetime.timedelta(days=3)
         elif total_duration > datetime.timedelta(days=7):
             chunk_duration = datetime.timedelta(days=2)
-        else:
+        elif total_duration > datetime.timedelta(days=1):
             chunk_duration = datetime.timedelta(days=1)
+        else:
+            chunk_duration = total_duration
 
         current_start = start_time
         
