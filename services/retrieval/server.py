@@ -262,7 +262,7 @@ async def build_index_for_combination(
     order_books = []
     metadatas = []
     
-    for i in range(len(candles) - window_size - horizon + 1):
+    for i in range(0, len(candles) - window_size - horizon + 1, 5):
         window = candles[i : i + window_size]
         future_window = candles[i + window_size : i + window_size + horizon]
         
