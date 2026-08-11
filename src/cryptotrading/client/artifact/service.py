@@ -5,7 +5,7 @@ import requests
 
 logger = logging.getLogger("cryptotrading.artifact_client")
 
-ARTIFACT_SERVICE_URL = os.environ.get("ARTIFACT_SERVICE_URL", "http://artifact:8000")
+ARTIFACT_SERVICE_URL = os.environ.get("ARTIFACT_SERVICE_URL", "http://artifact:8383")
 
 
 def download_artifact(category: str, filename: str, local_destination_path: str) -> bool:

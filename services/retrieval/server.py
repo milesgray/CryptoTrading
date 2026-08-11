@@ -247,16 +247,12 @@ async def build_index_for_combination(
     from cryptotrading.client import EmbedServiceClient
     embed_url = os.getenv("EMBED_SERVICE_URL", "http://embed:8000")
     embed_client = EmbedServiceClient(base_url=embed_url, timeout=5.0)
-    for attempt in range(5):
-        try:
-            health_data = embed_client.health()
-            embed_dim = health_data.get("embedding_dim", 128)
-            logger.info(f"Fetched embed service health: embedding_dim={embed_dim}")
-            break
-        except Exception as e:
-            logger.warning(f"Could not fetch health from embed service at {embed_url} (attempt {attempt+1}/5): {e}")
-            if attempt < 4:
-                await asyncio.sleep(2.0)
+    try:
+        health_data = embed_client.health()
+        embed_dim = health_data.get("embedding_dim", 128)
+        logger.info(f"Fetched embed service health: embedding_dim={embed_dim}")
+    except Exception as e:
+        logger.warning(f"Could not fetch health from embed service at {embed_url}, defaulting embedding_dim=128: {e}")
         
     combined_dim = embed_dim + local_dim
     logger.info(f"Initializing encoder with window_size={window_size}, n_fft={n_fft}, frame_size={frame_size}, hop_size={hop_size}, horizon={horizon}, combined_dim={combined_dim} ({embed_dim} embed + {local_dim} local)")
