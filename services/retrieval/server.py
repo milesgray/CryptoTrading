@@ -394,18 +394,22 @@ async def startup_event():
         except Exception as e:
             logger.error(f"Failed to bootstrap historical data for {symbol}: {e}", exc_info=True)
     
-    # Pre-build default retrieval index for primary token (BTC)
-    logger.info("Pre-building default retrieval index for BTC...")
-    try:
-        default_forecaster = await get_forecaster("BTC", granularity_sec=60, window_size=60, method="specretf")
-        default_raf_forecaster = await get_forecaster("BTC", granularity_sec=60, window_size=60, method="raf")
-        forecaster = default_forecaster
-        raf_forecaster = default_raf_forecaster
-        encoder_service = default_forecaster.encoder_service
-        logger.info("Default BTC retrieval index pre-built successfully.")
-    except Exception as e:
-        logger.error(f"Failed to pre-build default index: {e}", exc_info=True)
-        logger.warning("Service will continue, but first query may experience cold-start latency.")
+    # Pre-build default retrieval index for primary token (BTC) asynchronously in background
+    async def prebuild_default_index():
+        global forecaster, raf_forecaster, encoder_service
+        logger.info("Pre-building default retrieval index for BTC...")
+        try:
+            default_forecaster = await get_forecaster("BTC", granularity_sec=60, window_size=60, method="specretf")
+            default_raf_forecaster = await get_forecaster("BTC", granularity_sec=60, window_size=60, method="raf")
+            forecaster = default_forecaster
+            raf_forecaster = default_raf_forecaster
+            encoder_service = default_forecaster.encoder_service
+            logger.info("Default BTC retrieval index pre-built successfully.")
+        except Exception as e:
+            logger.error(f"Failed to pre-build default index: {e}", exc_info=True)
+            logger.warning("Service will continue, but first query may experience cold-start latency.")
+
+    asyncio.create_task(prebuild_default_index())
 
 @app.get("/forecast")
 async def forecast(
