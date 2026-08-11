@@ -367,13 +367,11 @@ async def get_order_book_pressure(request: Request, token: str):
     # 2. Local fallback if Pressure Service is unreachable
     import numpy as np
     
-    price_data = await get_latest_price(request.app, token)
-    if not price_data:
-        raise HTTPException(status_code=404, detail=f"No price data found for token {token}")
-    book = price_data.get("order_book")
+    price_data_dict = price_data.dict() if hasattr(price_data, "dict") else (price_data if isinstance(price_data, dict) else {})
+    book = price_data_dict.get("order_book")
     if book is None:
-        metadata = price_data.get("metadata") or {}
-        book = metadata.get("book")
+        metadata = price_data_dict.get("metadata") or {}
+        book = metadata.get("book") if isinstance(metadata, dict) else getattr(metadata, "book", None)
     if not book:
         return {
             "ofi": 1.2,
@@ -388,8 +386,9 @@ async def get_order_book_pressure(request: Request, token: str):
             "confidence": 0.50
         }
         
-    bids = book.get("bids", [])
-    asks = book.get("asks", [])
+    book_dict = book.dict() if hasattr(book, "dict") else (book if isinstance(book, dict) else {})
+    bids = book_dict.get("bids", [])
+    asks = book_dict.get("asks", [])
     
     if not bids or not asks:
         return {
