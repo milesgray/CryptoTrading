@@ -383,20 +383,20 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to load Chronos pipeline: {e}", exc_info=True)
 
-    logger.info("Initializing database adapters...")
-    price_adapter = get_price_adapter()
-    await price_adapter.initialize()
-    
-    # Bootstrap historical data via CCXT if missing
-    for symbol in SYMBOLS:
-        try:
-            await bootstrap_historical_data(price_adapter, symbol, days=7)
-        except Exception as e:
-            logger.error(f"Failed to bootstrap historical data for {symbol}: {e}", exc_info=True)
-    
-    # Pre-build default retrieval index for primary token (BTC) asynchronously in background
-    async def prebuild_default_index():
+    async def async_startup_tasks():
         global forecaster, raf_forecaster, encoder_service
+        logger.info("Initializing database adapters...")
+        price_adapter = get_price_adapter()
+        await price_adapter.initialize()
+        
+        # Bootstrap historical data via CCXT if missing
+        for symbol in SYMBOLS:
+            try:
+                await bootstrap_historical_data(price_adapter, symbol, days=7)
+            except Exception as e:
+                logger.error(f"Failed to bootstrap historical data for {symbol}: {e}", exc_info=True)
+        
+        # Pre-build default retrieval index for primary token (BTC)
         logger.info("Pre-building default retrieval index for BTC...")
         try:
             default_forecaster = await get_forecaster("BTC", granularity_sec=60, window_size=60, method="specretf")
@@ -409,7 +409,7 @@ async def startup_event():
             logger.error(f"Failed to pre-build default index: {e}", exc_info=True)
             logger.warning("Service will continue, but first query may experience cold-start latency.")
 
-    asyncio.create_task(prebuild_default_index())
+    asyncio.create_task(async_startup_tasks())
 
 @app.get("/forecast")
 async def forecast(
