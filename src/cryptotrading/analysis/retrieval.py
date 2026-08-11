@@ -37,6 +37,14 @@ class RetrievalEncoder:
         formatted_bids = [(float(p), float(v)) for p, v in bids] if bids else []
         formatted_asks = [(float(p), float(v)) for p, v in asks] if asks else []
 
+        if formatted_bids and formatted_asks:
+            best_bid = formatted_bids[0][0]
+            best_ask = formatted_asks[0][0]
+            if best_bid >= best_ask:
+                # Crossed book detected - fallback to synthetic uncrossed snapshot around current_price
+                formatted_bids = []
+                formatted_asks = []
+
         if not formatted_bids or not formatted_asks:
             snapshot = OrderBookSnapshot(
                 timestamp=dt.datetime.now(dt.timezone.utc).timestamp(),
@@ -45,9 +53,7 @@ class RetrievalEncoder:
                 mid_price=current_price
             )
         else:
-            best_bid = formatted_bids[0][0]
-            best_ask = formatted_asks[0][0]
-            mid_price = (best_bid + best_ask) / 2.0 if best_ask > best_bid else current_price
+            mid_price = (best_bid + best_ask) / 2.0
             snapshot = OrderBookSnapshot(
                 timestamp=dt.datetime.now(dt.timezone.utc).timestamp(),
                 bids=formatted_bids,
