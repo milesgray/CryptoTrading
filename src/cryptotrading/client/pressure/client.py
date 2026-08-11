@@ -19,6 +19,12 @@ class PressureServiceClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_pressure(self, token: str) -> Dict[str, Any]:
+        url = f"{self.base_url}/pressure/{token}"
+        resp = requests.get(url, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.json()
+
     def compute_pressure(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         url = f"{self.base_url}/compute"
         resp = requests.post(url, json=payload, timeout=self.timeout)
