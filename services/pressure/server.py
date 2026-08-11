@@ -335,6 +335,9 @@ async def get_token_pressure(token: str):
                 preds = output.squeeze(0).tolist()
                 if len(preds) >= 3:
                     buy_pressure, sell_pressure, total_pressure = preds[:3]
+                elif len(preds) == 2:
+                    buy_pressure, sell_pressure = preds[0], preds[1]
+                    total_pressure = buy_pressure - sell_pressure
 
         if total_pressure > 0.15:
             recommendation = "BUY"
