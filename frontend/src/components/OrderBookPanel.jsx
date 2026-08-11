@@ -25,7 +25,7 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
     };
     
     fetchPressure();
-    const interval = setInterval(fetchPressure, 1000);
+    const interval = setInterval(fetchPressure, 3000);
     return () => clearInterval(interval);
   }, [token]);
 
