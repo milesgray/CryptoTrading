@@ -349,10 +349,15 @@ async def get_token_pressure(token: str):
             recommendation = "STANDBY"
             confidence = 0.50
 
-        ofi = float(features_dict.get("ofi", np.array([0.0]))[0]) if "ofi" in features_dict else 0.0
-        cvd = float(features_dict.get("depth_imbalance", np.array([0.0]))[0]) if "depth_imbalance" in features_dict else 0.0
-        bap = float(features_dict.get("bid_ask_spread", np.array([0.0]))[0]) if "bid_ask_spread" in features_dict else 0.0
-        volatility = float(features_dict.get("volatility", np.array([0.001]))[0]) if "volatility" in features_dict else 0.001
+        # Extract features safely from featurizer output
+        micro = features_dict.get("micro_structure", np.zeros(9))
+        imb_buckets = features_dict.get("imbalance_buckets", np.zeros(8))
+        spread_arr = features_dict.get("spread", np.zeros(1))
+        
+        ofi = float(imb_buckets[0]) if len(imb_buckets) > 0 else 0.0
+        cvd = float(micro[2]) if len(micro) > 2 else 0.0  # total depth imbalance
+        bap = float(spread_arr[0] * 100.0) if len(spread_arr) > 0 else 50.0
+        volatility = float(micro[5]) if len(micro) > 5 else 0.001
         
         market_regime = "trending_up" if total_pressure > 0.2 else ("trending_down" if total_pressure < -0.2 else "sideways")
 

@@ -25,6 +25,12 @@ class EmbedServiceClient:
         resp.raise_for_status()
         return resp.json()
 
+    def generate_batch_embedding(self, price_windows: List[List[float]]) -> Dict[str, Any]:
+        url = f"{self.base_url}/embed/batch"
+        resp = requests.post(url, json={"price_windows": price_windows}, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.json()
+
     def search_matches(self, returns_window: List[float], top_k: int = 5) -> Dict[str, Any]:
         url = f"{self.base_url}/search"
         payload = {"returns": returns_window, "top_k": top_k}
