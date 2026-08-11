@@ -5,7 +5,7 @@ import requests
 
 logger = logging.getLogger("cryptotrading.client.train")
 
-TRAIN_SERVICE_URL = os.environ.get("TRAIN_SERVICE_URL", "http://train:8000")
+TRAIN_SERVICE_URL = os.environ.get("TRAIN_SERVICE_URL", "http://train:8389")
 
 class TrainServiceClient:
     """Client for services/train (Forecasting Model Trainer Service)"""

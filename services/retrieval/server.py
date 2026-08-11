@@ -245,7 +245,7 @@ async def build_index_for_combination(
     import os
     import asyncio
     from cryptotrading.client import EmbedServiceClient
-    embed_url = os.getenv("EMBED_SERVICE_URL", "http://embed:8000")
+    embed_url = os.getenv("EMBED_SERVICE_URL", "http://embed:8380")
     embed_client = EmbedServiceClient(base_url=embed_url, timeout=5.0)
     try:
         health_data = embed_client.health()

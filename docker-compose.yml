@@ -21,8 +21,8 @@ services:
             - "${FRONTEND_PORT:-8080}:8080"
         environment:
             - VITE_BACKEND_URL=http://serve:8000
-            - VITE_TRAIN_URL=http://train:8000
-            - VITE_PRESSURE_URL=http://pressure:8000
+            - VITE_TRAIN_URL=http://train:8389
+            - VITE_PRESSURE_URL=http://pressure:8382
         depends_on:
             - serve
             - train
@@ -40,13 +40,13 @@ services:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
             - RETRIEVAL_SERVICE_URL=${RETRIEVAL_SERVICE_URL:-http://retrieval:8000}
-            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8000}
-            - PREDICT_SERVICE_URL=${PREDICT_SERVICE_URL:-http://predict:8000}
-            - PRESSURE_SERVICE_URL=${PRESSURE_SERVICE_URL:-http://pressure:8000}
+            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8380}
+            - PREDICT_SERVICE_URL=${PREDICT_SERVICE_URL:-http://predict:8381}
+            - PRESSURE_SERVICE_URL=${PRESSURE_SERVICE_URL:-http://pressure:8382}
             - JEPA_SERVICE_URL=${JEPA_SERVICE_URL:-http://jepa:8000}
             - SENTIMENT_SERVICE_URL=${SENTIMENT_SERVICE_URL:-http://sentiment:8080}
             - TRADE_SERVICE_URL=${TRADE_SERVICE_URL:-http://trade:8000}
-            - TRAIN_SERVICE_URL=${TRAIN_SERVICE_URL:-http://train:8000}
+            - TRAIN_SERVICE_URL=${TRAIN_SERVICE_URL:-http://train:8389}
             - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8383}
             - PORT=8000
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
@@ -69,7 +69,7 @@ services:
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
-            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8000}
+            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8380}
             - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8383}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
             - DATABASE_STATEMENT_TIMEOUT=180000

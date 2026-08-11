@@ -5,7 +5,7 @@ import requests
 
 logger = logging.getLogger("cryptotrading.client.predict")
 
-PREDICT_SERVICE_URL = os.environ.get("PREDICT_SERVICE_URL", "http://predict:8000")
+PREDICT_SERVICE_URL = os.environ.get("PREDICT_SERVICE_URL", "http://predict:8381")
 
 class PredictServiceClient:
     """Client for services/predict (Prediction Service)"""

@@ -24,7 +24,7 @@ services:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
             - RETRIEVAL_SERVICE_URL=${RETRIEVAL_SERVICE_URL:-http://retrieval:8000}
-            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8000}
+            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8380}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
             - PORT=8000
         depends_on:
@@ -40,7 +40,7 @@ services:
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
-            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8000}
+            - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8380}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
@@ -68,7 +68,7 @@ services:
             - "${FRONTEND_PORT:-8080}:8080"
         environment:
             - VITE_BACKEND_URL=http://serve:8000
-            - VITE_TRAIN_URL=http://train:8000
+            - VITE_TRAIN_URL=http://train:8389
 
     embed:
         build:
