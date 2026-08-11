@@ -4,18 +4,19 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 # pyrefly: ignore [missing-import]
-from main import app
+# pyrefly: ignore [missing-import]
+from server import app
 # pyrefly: ignore [missing-import]
 from cryptotrading.analysis.book import OrderBookSnapshot
 
 class TestRealtimeTokenPressure(unittest.TestCase):
     def setUp(self):
         # pyrefly: ignore [missing-import]
-        import main
-        if main.featurizer is None:
+        import server
+        if server.featurizer is None:
             # pyrefly: ignore [missing-import]
             from cryptotrading.analysis.book import OrderBookFeaturizer
-            main.featurizer = OrderBookFeaturizer()
+            server.featurizer = OrderBookFeaturizer()
         self.client = TestClient(app)
 
     @patch("data_loader.OrderBookDataLoader.initialize", new_callable=AsyncMock)
