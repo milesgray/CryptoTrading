@@ -15,7 +15,7 @@ data:
   PREDICT_PORT: "8388"
   DB_BACKEND: "postgres"
   POSTGRES_URI: "postgresql://postgres:postgres@timescaledb:5432/crypto_trading"
-  RETRIEVAL_SERVICE_URL: "http://retrieval:8000"
+  RETRIEVAL_SERVICE_URL: "http://retrieval:8388"
   PYTHONUNBUFFERED: "1"
   MIN_VALID_FEEDS: "2"
   VITE_BACKEND_URL: "http://serve:8000"

@@ -23,7 +23,7 @@ services:
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
-            - RETRIEVAL_SERVICE_URL=${RETRIEVAL_SERVICE_URL:-http://retrieval:8000}
+            - RETRIEVAL_SERVICE_URL=${RETRIEVAL_SERVICE_URL:-http://retrieval:8388}
             - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8380}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
             - PORT=8000

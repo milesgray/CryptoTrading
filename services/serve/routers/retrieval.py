@@ -82,7 +82,7 @@ async def add_realized_setup(request: StoreSetupRequest):
     
     # 1. Proxy to embed service to save setup
     embed_url = os.getenv("EMBED_SERVICE_URL", "http://localhost:8301")
-    retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://retrieval:8000")
+    retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://retrieval:8388")
     
     setup_id = None
     try:
@@ -129,7 +129,7 @@ async def forecast(
     method: str = "raf"
 ):
     """Proxy to retrieval service with robust timeout and error handling."""
-    retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://retrieval:8000")
+    retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://retrieval:8388")
     try:
         async with httpx.AsyncClient(timeout=90.0) as client:
             response = await client.get(

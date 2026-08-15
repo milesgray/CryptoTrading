@@ -5,7 +5,7 @@ import requests
 
 logger = logging.getLogger("cryptotrading.client.retrieval")
 
-RETRIEVAL_SERVICE_URL = os.environ.get("RETRIEVAL_SERVICE_URL", "http://retrieval:8000")
+RETRIEVAL_SERVICE_URL = os.environ.get("RETRIEVAL_SERVICE_URL", "http://retrieval:8388")
 
 class RetrievalServiceClient:
     """Client for services/retrieval (Retrieval Service)"""
