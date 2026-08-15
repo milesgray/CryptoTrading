@@ -19,7 +19,7 @@ import torch
 # pyrefly: ignore [missing-import]
 from fastapi import HTTPException
 # pyrefly: ignore [missing-import]
-from encoder import RetrievalServiceEncoder
+from encoder import RetrievalEncoderService
 # pyrefly: ignore [missing-import]
 from forecaster import RetrievalForecaster, SpecReTFForecaster, ChronosRAFForecaster
 # pyrefly: ignore [missing-import]
@@ -45,7 +45,7 @@ service = ServiceServer(
 app = service.app
 
 # Initialize encoder and forecasters with dim=184 for combined embedding compatibility (128D deep learning + 56D local features)
-encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=184, embed_dim=128)
+encoder_service = RetrievalEncoderService(window_size=60, n_fft=32, dim=184, embed_dim=128)
 forecaster = SpecReTFForecaster(encoder_service, frame_size=16, hop_size=4)
 raf_forecaster = None
 chronos_pipeline = None
@@ -255,7 +255,7 @@ async def build_index_for_combination(
         
     combined_dim = embed_dim + local_dim
     logger.info(f"Initializing encoder with window_size={window_size}, n_fft={n_fft}, frame_size={frame_size}, hop_size={hop_size}, horizon={horizon}, combined_dim={combined_dim} ({embed_dim} embed + {local_dim} local)")
-    encoder = RetrievalServiceEncoder(window_size=window_size, n_fft=n_fft, dim=combined_dim, embed_dim=embed_dim)
+    encoder = RetrievalEncoderService(window_size=window_size, n_fft=n_fft, dim=combined_dim, embed_dim=embed_dim)
     
     # Build sliding window segments in batch
     prices_list = []

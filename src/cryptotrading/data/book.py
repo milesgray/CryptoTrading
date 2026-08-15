@@ -4,7 +4,13 @@ from datetime import datetime, timezone
 from typing import Any, Optional, Union
 from abc import ABC, abstractmethod
 
-from cryptotrading.data.postgres import get_connection, init_pool, _pool, resolve_matching_symbols
+from cryptotrading.data.postgres import (
+    get_connection,
+    init_pool,
+    _pool,
+    resolve_matching_symbols,
+    order_book_repo,
+)
 
 from pymongo import ASCENDING
 
@@ -508,11 +514,18 @@ class OrderBookPostgresAdapter:
         
         async with get_connection() as conn:
             for book in raw_data:
-                exchange = book.get('exchange', 'unknown')
+                if isinstance(book, dict):
+                    exchange = book.get('exchange', 'unknown')
+                    bids_raw = book.get('bids')
+                    asks_raw = book.get('asks')
+                else:
+                    exchange = getattr(book, 'exchange', 'unknown')
+                    bids_raw = getattr(book, 'bids', None)
+                    asks_raw = getattr(book, 'asks', None)
                 
                 # Check bids and asks
-                if book.get('bids') and book.get('asks'):
-                    df = order_book_to_df(book['bids'], book['asks'])
+                if bids_raw and asks_raw:
+                    df = order_book_to_df(bids_raw, asks_raw)
                     
                     ask_filter = df['side'] == 'a'
                     bid_filter = df['side'] == 'b'
@@ -529,11 +542,11 @@ class OrderBookPostgresAdapter:
                     spread = abs(lowest_ask - highest_bid)
                     mid_price = (lowest_ask + highest_bid) / 2
                     
-                    book['bids'].sort(key=lambda x: x[1], reverse=True)
-                    book['asks'].sort(key=lambda x: x[1], reverse=True)
+                    sorted_bids = sorted(bids_raw, key=lambda x: x[1], reverse=True)
+                    sorted_asks = sorted(asks_raw, key=lambda x: x[1], reverse=True)
  
-                    highest_volume_bid = book['bids'][0]
-                    highest_volume_ask = book['asks'][0]
+                    highest_volume_bid = sorted_bids[0]
+                    highest_volume_ask = sorted_asks[0]
  
                     total_bid_size = float(bids["size"].sum())
                     total_ask_size = float(asks["size"].sum())
@@ -565,6 +578,16 @@ class OrderBookPostgresAdapter:
                         SET close = EXCLUDED.close, metadata = EXCLUDED.metadata;
                     ''', timestamp, symbol, f"exchange_raw_{exchange}", mid_price, metadata)
 
+                    # Store full order book into order_book_data
+                    await order_book_repo.store_order_book(
+                        symbol=symbol,
+                        exchange=exchange,
+                        bids=bids_raw,
+                        asks=asks_raw,
+                        time=timestamp,
+                        conn=conn
+                    )
+
     async def store_composite_order_book_data(
         self, 
         symbol: str, 
@@ -592,11 +615,11 @@ class OrderBookPostgresAdapter:
         spread = abs(lowest_ask - highest_bid)
         midpoint = (lowest_ask + highest_bid) / 2
  
-        book['bids'].sort(key=lambda x: x[1], reverse=True)
-        book['asks'].sort(key=lambda x: x[1], reverse=True)
+        sorted_bids = sorted(book['bids'], key=lambda x: x[1], reverse=True)
+        sorted_asks = sorted(book['asks'], key=lambda x: x[1], reverse=True)
  
-        largest_size_bid = book['bids'][0]
-        largest_size_ask = book['asks'][0]
+        largest_size_bid = sorted_bids[0]
+        largest_size_ask = sorted_asks[0]
  
         total_bid_size = float(bids["size"].sum())
         total_ask_size = float(asks["size"].sum())
@@ -637,6 +660,17 @@ class OrderBookPostgresAdapter:
                 "book": serializable_book,
                 "exchanges_count": len(raw_data)
             })
+
+            # Store full composite order book into order_book_data
+            if book.get('bids') or book.get('asks'):
+                await order_book_repo.store_order_book(
+                    symbol=symbol,
+                    exchange='composite',
+                    bids=book.get('bids', []),
+                    asks=book.get('asks', []),
+                    time=timestamp,
+                    conn=conn
+                )
  
     async def store_transformed_order_book_data(
         self, 

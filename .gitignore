@@ -8,3 +8,6 @@ logs
 *kube.conf
 checkpoints/
 services/embed/models/trained/
+.ipynb_checkpoints/
+papers/
+remote_db_access.ipynb

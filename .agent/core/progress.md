@@ -227,3 +227,11 @@
 - [x] Implement database-side JSONB slicing using `jsonb_path_query_array` in `get_orderbook_data` in `book.py`.
 - [x] Add lightweight `get_orderbook_summary` query in `book.py`.
 - [x] Verify database adapter query executions successfully.
+
+### Phase 33: Full Order Book Ingestion into Postgres `order_book_data` (Completed ✅)
+- [x] Add composite index `idx_order_book_data_symbol_exchange_time` on `order_book_data(symbol, exchange, time DESC)`.
+- [x] Enhance `OrderBookRepository` in `postgres.py` with bulk `store_order_book` using `executemany`, deduplicated price levels, and conflict handling.
+- [x] Update `get_order_book_snapshot` in `OrderBookRepository` to accurately query the latest snapshot with subquery matching.
+- [x] Add `get_order_books` time-range snapshot query in `OrderBookRepository`.
+- [x] Update `OrderBookPostgresAdapter` in `book.py` to persist granular order book bids/asks into `order_book_data` table for exchange and composite books.
+- [x] Create and verify comprehensive unit tests in `tests/test_order_book_postgres.py`.

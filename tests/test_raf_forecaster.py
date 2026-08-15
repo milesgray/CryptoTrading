@@ -10,7 +10,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT / "services" / "retrieval"))
 
-from services.retrieval.encoder import RetrievalServiceEncoder
+from services.retrieval.encoder import RetrievalEncoderService
 from services.retrieval.forecaster import ChronosRAFForecaster
 
 class MockChronosModel:
@@ -42,7 +42,7 @@ def test_raf_forecaster_normalization_and_offset():
     """Verify that ChronosRAFForecaster correctly performs separate normalization and offset alignment."""
     # Initialize encoder service with dimension matching local dimension (n_fft=32: local_dim = 32 + 17 + 3 + 4 = 56)
     # We set dim=56 and bypass HTTP calls to embed service (which defaults to local fallback when dim != embed_dim + local_dim)
-    encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+    encoder_service = RetrievalEncoderService(window_size=60, n_fft=32, dim=56)
     
     # Add a historical upward segment
     # Context window values (length 60): linear 100 to 110

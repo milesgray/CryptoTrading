@@ -9,12 +9,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT / "services" / "retrieval"))
 
-from services.retrieval.encoder import RetrievalServiceEncoder
+from services.retrieval.encoder import RetrievalEncoderService
 from services.retrieval.forecaster import SpecReTFForecaster
 
 def test_specretf_forecaster_stft():
     """Verify that the STFT method correctly partitions and transforms signals."""
-    encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+    encoder_service = RetrievalEncoderService(window_size=60, n_fft=32, dim=56)
     forecaster = SpecReTFForecaster(encoder_service, frame_size=16, hop_size=4)
     
     # 60 points should partition into: (60 - 16) // 4 + 1 = 12 frames
@@ -26,7 +26,7 @@ def test_specretf_forecaster_stft():
 
 def test_specretf_similarity_metrics():
     """Verify JSD and phase coherence calculations and bounds."""
-    encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+    encoder_service = RetrievalEncoderService(window_size=60, n_fft=32, dim=56)
     forecaster = SpecReTFForecaster(encoder_service, frame_size=16, hop_size=4)
     
     # Distributions for JSD
@@ -51,7 +51,7 @@ def test_specretf_similarity_metrics():
 
 def test_specretf_forecaster_end_to_end_heuristic():
     """Verify end-to-end forecasting using heuristic mode."""
-    encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+    encoder_service = RetrievalEncoderService(window_size=60, n_fft=32, dim=56)
     
     # Add an upward segment
     prices_1 = np.linspace(100.0, 110.0, 60)
@@ -100,7 +100,7 @@ def test_specretf_forecaster_end_to_end_heuristic():
 
 def test_specretf_forecaster_weighted_mode():
     """Verify forecasting when linear projection weights are supplied."""
-    encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+    encoder_service = RetrievalEncoderService(window_size=60, n_fft=32, dim=56)
     
     prices_1 = np.linspace(100.0, 110.0, 60)
     future_prices_1 = np.linspace(110.0, 120.0, 60)
@@ -143,7 +143,7 @@ def test_specretf_forecaster_weighted_mode():
 
 def test_specretf_forecaster_empty_prices():
     """Verify that forecasting with an empty prices array raises a ValueError."""
-    encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+    encoder_service = RetrievalEncoderService(window_size=60, n_fft=32, dim=56)
     forecaster = SpecReTFForecaster(encoder_service)
     
     empty_prices = np.array([])
@@ -154,7 +154,7 @@ def test_specretf_forecaster_empty_prices():
 
 def test_specretf_scale_invariance_and_alignment():
     """Verify that retrieved forecast paths are aligned to connect seamlessly to query_last_price and scale-invariant."""
-    encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+    encoder_service = RetrievalEncoderService(window_size=60, n_fft=32, dim=56)
     
     # Add a base segment
     prices = np.linspace(10.0, 11.0, 60)
@@ -194,10 +194,10 @@ def test_specretf_scale_invariance_and_alignment():
 
 
 def test_specretf_dynamic_embedding_dimension():
-    """Verify that RetrievalServiceEncoder adjusts expected dimension based on n_fft/window_size."""
+    """Verify that RetrievalEncoderService adjusts expected dimension based on n_fft/window_size."""
     # Test for window_size=15 -> n_fft=8 -> local_dim = 8 + 5 + 3 + 4 = 20
     # Combined with embed service dim (default 128) -> 148
-    encoder_15 = RetrievalServiceEncoder(window_size=15, n_fft=8, dim=148)
+    encoder_15 = RetrievalEncoderService(window_size=15, n_fft=8, dim=148)
     assert encoder_15.dim == 148
     assert encoder_15.embed_dim == 128
     

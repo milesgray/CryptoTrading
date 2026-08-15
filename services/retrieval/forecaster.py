@@ -15,7 +15,7 @@ import numpy as np
 from typing import Dict, Any, Optional  
 
 # pyrefly: ignore [missing-import]
-from encoder import RetrievalServiceEncoder
+from encoder import RetrievalEncoderService
 # pyrefly: ignore [missing-import]
 from chronos import ChronosPipeline
 
@@ -27,12 +27,12 @@ class RetrievalForecaster:
     and optionally uses Chronos pipeline to project future predictions.
     """
     
-    def __init__(self, encoder_service: RetrievalServiceEncoder, chronos_pipeline: Optional[ChronosPipeline] = None):
+    def __init__(self, encoder_service: RetrievalEncoderService, chronos_pipeline: Optional[ChronosPipeline] = None):
         """
         Initialize the RetrievalForecaster.
 
         Args:
-            encoder_service (RetrievalServiceEncoder): Vector encoder service instance.
+            encoder_service (RetrievalEncoderService): Vector encoder service instance.
             chronos_pipeline (Optional[ChronosPipeline]): Chronos forecasting pipeline instance.
         """
         self.encoder_service = encoder_service
@@ -181,7 +181,7 @@ class SpecReTFForecaster:
     
     def __init__(
         self,
-        encoder_service: RetrievalServiceEncoder,
+        encoder_service: RetrievalEncoderService,
         frame_size: int = 16,
         hop_size: int = 4,
         alpha: float = 0.2,
@@ -198,7 +198,7 @@ class SpecReTFForecaster:
         Initialize the SpecReTFForecaster.
 
         Args:
-            encoder_service (RetrievalServiceEncoder): Vector encoder service instance.
+            encoder_service (RetrievalEncoderService): Vector encoder service instance.
             frame_size (int): Temporal frame width for Fourier windowing. Defaults to 16.
             hop_size (int): Shift width between consecutive frames. Defaults to 4.
             alpha (float): Exponential decay factor for recency weighting. Defaults to 0.2.
@@ -528,12 +528,12 @@ class ChronosRAFForecaster:
     6. Denormalize the generated predictions using the original context's mean and std.
     """
 
-    def __init__(self, encoder_service: RetrievalServiceEncoder, chronos_pipeline: ChronosPipeline):
+    def __init__(self, encoder_service: RetrievalEncoderService, chronos_pipeline: ChronosPipeline):
         """
         Initialize the ChronosRAFForecaster.
 
         Args:
-            encoder_service (RetrievalServiceEncoder): Vector encoder service instance.
+            encoder_service (RetrievalEncoderService): Vector encoder service instance.
             chronos_pipeline (ChronosPipeline): Pre-trained Chronos pipeline instance.
         """
         self.encoder_service = encoder_service

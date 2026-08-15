@@ -3,7 +3,7 @@
 """
 Retrieval Service Encoder Module.
 
-This module provides the RetrievalServiceEncoder class, which wraps the pattern matching
+This module provides the RetrievalEncoderService class, which wraps the pattern matching
 representation logic. It combines the 128-dimensional deep learning embeddings from the
 Embed Service with local handcrafted 56-dimensional spectral/orderbook features into a
 combined 184-dimensional representation vector.
@@ -20,7 +20,7 @@ from cryptotrading.client import EmbedServiceClient
 
 logger = logging.getLogger(__name__)
 
-class RetrievalServiceEncoder:
+class RetrievalEncoderService:
     """
     Encoder service for converting price segments and order book data into embedding vectors.
     
@@ -38,7 +38,7 @@ class RetrievalServiceEncoder:
         embed_dim: int = None
     ):
         """
-        Initialize the RetrievalServiceEncoder.
+        Initialize the RetrievalEncoderService.
 
         Args:
             forecast_size (int): Size of prediction horizon window. Defaults to 15.
@@ -67,7 +67,7 @@ class RetrievalServiceEncoder:
         # Determine deep learning embedding dimension dynamically if not provided
         if embed_dim is not None:
             self.embed_dim = embed_dim
-            logger.info(f"RetrievalServiceEncoder initialized with embed_dim: {self.embed_dim}")
+            logger.info(f"RetrievalEncoderService initialized with embed_dim: {self.embed_dim}")
         else:
             self.embed_dim = 128
             import time

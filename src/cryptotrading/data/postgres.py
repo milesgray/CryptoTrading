@@ -350,6 +350,9 @@ async def _init_schema_impl(conn: Connection):
             CREATE INDEX IF NOT EXISTS idx_order_book_data_symbol_time 
                 ON order_book_data(symbol, time DESC);
                 
+            CREATE INDEX IF NOT EXISTS idx_order_book_data_symbol_exchange_time 
+                ON order_book_data(symbol, exchange, time DESC);
+                
             CREATE INDEX IF NOT EXISTS idx_trade_data_symbol_time 
                 ON trade_data(symbol, time DESC);
                 
@@ -939,6 +942,52 @@ class OrderBookRepository(Database):
     
     def __init__(self):
         super().__init__('order_book_data', 'time')
+
+    async def store_order_book(
+        self,
+        symbol: str,
+        exchange: str,
+        bids: List[Union[List[float], Tuple[float, float]]],
+        asks: List[Union[List[float], Tuple[float, float]]],
+        time: Optional[datetime] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        conn: Optional[Connection] = None
+    ) -> int:
+        """Store full order book depth into order_book_data table."""
+        if time is None:
+            time = datetime.now(timezone.utc)
+        elif time.tzinfo is None:
+            time = time.replace(tzinfo=timezone.utc)
+
+        book_records = {}
+        for item in bids:
+            if item is not None and len(item) >= 2:
+                book_records[(True, float(item[0]))] = float(item[1])
+        for item in asks:
+            if item is not None and len(item) >= 2:
+                book_records[(False, float(item[0]))] = float(item[1])
+
+        if not book_records:
+            return 0
+
+        records = [
+            (time, symbol, exchange, is_bid, price, amount, metadata)
+            for (is_bid, price), amount in book_records.items()
+        ]
+
+        query = '''
+        INSERT INTO order_book_data (time, symbol, exchange, is_bid, price, amount, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (time, symbol, exchange, is_bid, price) DO UPDATE
+        SET amount = EXCLUDED.amount, metadata = EXCLUDED.metadata;
+        '''
+
+        if conn:
+            await conn.executemany(query, records)
+        else:
+            async with get_connection() as conn:
+                await conn.executemany(query, records)
+        return len(records)
     
     async def get_order_book_snapshot(
         self,
@@ -951,28 +1000,36 @@ class OrderBookRepository(Database):
         """Get order book snapshot for a specific time or the latest."""
         if time is None:
             time = datetime.now(timezone.utc)
+        elif time.tzinfo is None:
+            time = time.replace(tzinfo=timezone.utc)
         
-        # Get bids
+        # Get bids for latest snapshot at or before target time
         bids_query = '''
         SELECT price, amount
         FROM order_book_data
         WHERE symbol = $1 
           AND exchange = $2
           AND is_bid = TRUE
-          AND time <= $3
-        ORDER BY price DESC, time DESC
+          AND time = (
+              SELECT MAX(time) FROM order_book_data 
+              WHERE symbol = $1 AND exchange = $2 AND time <= $3
+          )
+        ORDER BY price DESC
         LIMIT $4;
         '''
         
-        # Get asks
+        # Get asks for latest snapshot at or before target time
         asks_query = '''
         SELECT price, amount
         FROM order_book_data
         WHERE symbol = $1 
           AND exchange = $2
           AND is_bid = FALSE
-          AND time <= $3
-        ORDER BY price ASC, time DESC
+          AND time = (
+              SELECT MAX(time) FROM order_book_data 
+              WHERE symbol = $1 AND exchange = $2 AND time <= $3
+          )
+        ORDER BY price ASC
         LIMIT $4;
         '''
         
@@ -988,6 +1045,62 @@ class OrderBookRepository(Database):
             'bids': [{'price': float(bid['price']), 'amount': float(bid['amount'])} for bid in bids],
             'asks': [{'price': float(ask['price']), 'amount': float(ask['amount'])} for ask in asks]
         }
+
+    async def get_order_books(
+        self,
+        symbol: str,
+        exchange: str,
+        start_time: datetime,
+        end_time: datetime,
+        depth: int = 10,
+        conn: Optional[Connection] = None
+    ) -> List[Dict[str, Any]]:
+        """Get list of order book snapshots between start_time and end_time."""
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=timezone.utc)
+        if end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=timezone.utc)
+
+        query = '''
+        WITH ranked_levels AS (
+            SELECT 
+                time,
+                is_bid,
+                price,
+                amount,
+                ROW_NUMBER() OVER (
+                    PARTITION BY time, is_bid 
+                    ORDER BY CASE WHEN is_bid THEN -price ELSE price END
+                ) as rank
+            FROM order_book_data
+            WHERE symbol = $1 
+              AND exchange = $2 
+              AND time >= $3 
+              AND time <= $4
+        )
+        SELECT time, is_bid, price, amount
+        FROM ranked_levels
+        WHERE rank <= $5
+        ORDER BY time ASC, is_bid DESC, price DESC;
+        '''
+
+        if conn:
+            rows = await conn.fetch(query, symbol, exchange, start_time, end_time, depth)
+        else:
+            async with get_connection() as conn:
+                rows = await conn.fetch(query, symbol, exchange, start_time, end_time, depth)
+
+        snapshots = {}
+        for row in rows:
+            t = row['time']
+            if t not in snapshots:
+                snapshots[t] = {'timestamp': t, 'symbol': symbol, 'exchange': exchange, 'bids': [], 'asks': []}
+            if row['is_bid']:
+                snapshots[t]['bids'].append((float(row['price']), float(row['amount'])))
+            else:
+                snapshots[t]['asks'].append((float(row['price']), float(row['amount'])))
+
+        return list(snapshots.values())
 
 class DocumentEmbeddingRepository(Database):
     """Repository for document embeddings with pgvector support."""

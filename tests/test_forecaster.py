@@ -9,13 +9,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT / "services" / "retrieval"))
 
-from services.retrieval.encoder import RetrievalServiceEncoder
+from services.retrieval.encoder import RetrievalEncoderService
 from services.retrieval.forecaster import RetrievalForecaster
 
 def test_retrieval_forecaster_math():
     """Verify that the forecasting math (correlation, alignment, and weighted averaging) is correct."""
     # 1. Initialize the encoder (window_size=60, dim=56)
-    encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+    encoder_service = RetrievalEncoderService(window_size=60, n_fft=32, dim=56)
     
     # 2. Add two distinct segments
     # Segment 1: Upward trending past, upward trending future
@@ -88,7 +88,7 @@ def test_retrieval_forecaster_math():
 
 def test_retrieval_forecaster_fallback():
     """Verify that the forecaster raises an error with an unbuilt/empty index."""
-    encoder_service = RetrievalServiceEncoder(window_size=60, n_fft=32, dim=56)
+    encoder_service = RetrievalEncoderService(window_size=60, n_fft=32, dim=56)
     # Notice we do NOT add segments or build the index here
     
     forecaster = RetrievalForecaster(encoder_service)

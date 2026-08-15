@@ -1,21 +1,19 @@
-# Active Context: Retrieval Encoder & Service Improvements
+# Active Context: Save Full Order Book Data to Postgres `order_book_data`
 
 ## Quick Reference
-- **Feature**: Retrieval Service & RetrievalEncoder Improvements
-- **Branch**: `feature/retrieval-encoder-improvements`
-- **Plan File**: `.agent/plans/retrieval-encoder-improvements-plan.md`
+- **Feature**: Full Order Book Data Ingestion in Postgres
+- **Plan File**: `.agent/plans/order-book-postgres-plan.md`
 - **Status**: Completed ✅
 
 ## Executive Summary
-Enhanced `RetrievalEncoder` and retrieval service architecture to incorporate `OrderBookFeaturizer` (microstructure, depth, slope), `PriceLevels` (support/resistance level proximity and strength), and decoupled historic price window size from prediction horizon size (defaulting historic window to 4x forecast size).
+Implemented granular order book level ingestion into the `order_book_data` hypertable in PostgreSQL. Updated `OrderBookRepository` with high-performance batch insertion and snapshot queries, and updated `OrderBookPostgresAdapter` to persist full bids and asks for both raw exchange feeds and composite order books.
 
-## Tech Stack for This Feature
-- **Python / NumPy / SciPy**: Spectral, orderbook featurization, and price level calculations.
-- **OrderBookFeaturizer & PriceLevels**: Vectorized order book and support/resistance level feature extraction.
-- **pgvector**: Auto-detects vector dimension mismatches and alters table column types accordingly.
+## Tech Stack & Components
+- **PostgreSQL / TimescaleDB**: `order_book_data` hypertable with composite indexes `(symbol, time DESC)` and `(symbol, exchange, time DESC)`.
+- **Asyncpg Batch Insertion**: `executemany` with in-memory `(is_bid, price)` deduplication and `ON CONFLICT DO UPDATE` handling.
+- **OrderBookPostgresAdapter**: Dual-writes summary metadata to `price_data` and full level depth to `order_book_data`.
 
 ## Key Files Modified
-- [src/cryptotrading/analysis/retrieval.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/analysis/retrieval.py): Integrated OrderBookFeaturizer, PriceLevels, and 4x historic window sizing.
-- [services/retrieval/encoder.py](file:///home/miles/Development/notebooks/CryptoTrading/services/retrieval/encoder.py): Updated RetrievalServiceEncoder for variable forecast and historic window sizes.
-- [src/cryptotrading/data/pgvector_store.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/pgvector_store.py): Implemented dynamic vector column dimension migration.
-- [tests/test_retrieval_encoder.py](file:///home/miles/Development/notebooks/CryptoTrading/tests/test_retrieval_encoder.py): Unit tests for updated RetrievalEncoder.
+- [src/cryptotrading/data/postgres.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/postgres.py): Added index, implemented `store_order_book`, fixed `get_order_book_snapshot`, and added `get_order_books`.
+- [src/cryptotrading/data/book.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/book.py): Updated `store_exchange_order_book` and `store_composite_order_book_data` to save full bids/asks to `order_book_data`.
+- [tests/test_order_book_postgres.py](file:///home/miles/Development/notebooks/CryptoTrading/tests/test_order_book_postgres.py): Unit tests for repository and adapter order book persistence.
