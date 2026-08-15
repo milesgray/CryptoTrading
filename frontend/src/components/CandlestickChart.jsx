@@ -24,7 +24,7 @@ const CandlestickChart = ({ token }) => {
   const [error, setError] = useState(null);
   const [startDate, setStartDate] = useState(subDays(new Date(), 7)); // Default: 7 days ago
   const [endDate, setEndDate] = useState(new Date());
-  const [granularity, setGranularity] = useState(300); // Default: 5 minutes (300 seconds)
+  const [granularity, setGranularity] = useState(60); // Default: 1 minute (60 seconds)
   const isCustomRangeRef = useRef(false);
   const loadedStartRef = useRef(null);
   const isFetchingHistoryRef = useRef(false);
@@ -58,71 +58,14 @@ const CandlestickChart = ({ token }) => {
       if (!isMounted.current || !priceData || priceData.price === undefined) return;
 
       // Only process updates if historical data has been loaded
-      if (!historicalDataLoaded) {
-        console.log('Historical data not loaded yet, ignoring price update');
+      if (!historicalDataLoaded || !dataTable.current) {
+        console.log('Historical data or data table not loaded yet, ignoring price update');
         return;
       }
 
       console.log('Received price update:', priceData);
       const now = new Date(priceData.timestamp || Date.now());
       setLatestPrice(priceData.price);
-
-      // If we don't have a data table yet, initialize it with minimal setup
-      if (!dataTable.current) {
-        console.log('No data table, creating minimal one for live updates...');
-        try {
-          const table = anychart.data.table('x');
-          dataTable.current = {
-            table: table,
-            mapping: table.mapAs({
-              x: 'x',
-              open: 'open',
-              high: 'high',
-              low: 'low',
-              close: 'close',
-              value: 'close'
-            })
-          };
-
-          if (!chart.current && chartContainer.current && !chartInitializing.current) {
-            if (chartContainer.current.offsetWidth === 0 || chartContainer.current.offsetHeight === 0) {
-              return;
-            }
-            chartInitializing.current = true;
-            import('anychart').then((anychart) => {
-              try {
-                const stockChart = anychart.stock();
-                const table = dataTable.current.table;
-                const mapping = dataTable.current.mapping;
-                const plot = stockChart.plot(0);
-                plot.yGrid(true).xGrid(true);
-                plot.yMinorGrid(true).xMinorGrid(true);
-
-                const candlestickSeries = plot.candlestick(mapping);
-                candlestickSeries.name(token + ' Price');
-                candlestickSeries.risingStroke('#0f9d58');
-                candlestickSeries.risingFill('#0f9d58');
-                candlestickSeries.fallingStroke('#db4437');
-                candlestickSeries.fallingFill('#db4437');
-                candlestickSeries.pointWidth('90%');
-
-                stockChart.title(`${token} Price Chart (Live)`);
-                stockChart.container(chartContainer.current);
-                stockChart.draw();
-
-                chart.current = stockChart;
-                chartInitializing.current = false;
-              } catch (err) {
-                console.error(err);
-                chartInitializing.current = false;
-              }
-            });
-          }
-        } catch (error) {
-          console.error(error);
-          return;
-        }
-      }
 
       try {
         // Aggregate ticks into the current granularity time bucket

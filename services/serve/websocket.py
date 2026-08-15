@@ -18,7 +18,8 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, Set[WebSocket]] = {
             'price': set(),
-            'order_book': set()
+            'order_book': set(),
+            'pressure': set()
         }
         self.lock = asyncio.Lock()
 

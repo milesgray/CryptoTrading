@@ -15,7 +15,8 @@ import {
   getTrainedModels,
   runModelInference,
   startPressureTraining,
-  getPressureTrainingStatus
+  getPressureTrainingStatus,
+  webSocketService
 } from '../services/api';
 
 // ============================================================================
@@ -560,29 +561,25 @@ export const OrderBookPressurePanel = () => {
   };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const data = await getBookPressure("BTC");
-        if (data) {
-          if (data.ofi !== undefined) setOfi(data.ofi);
-          if (data.cvd !== undefined) setCvd(data.cvd);
-          if (data.bap !== undefined) setBap(data.bap);
-          if (data.buy_pressure !== undefined) setBuyPressure(data.buy_pressure);
-          if (data.sell_pressure !== undefined) setSellPressure(data.sell_pressure);
-          if (data.total_pressure !== undefined) setTotalPressure(data.total_pressure);
-          if (data.market_regime !== undefined) setMarketRegime(data.market_regime);
-          if (data.volatility !== undefined) setVolatility(data.volatility);
-          if (data.recommendation !== undefined) setRecommendation(data.recommendation);
-          if (data.confidence !== undefined) setConfidence(data.confidence);
-        }
-      } catch (err) {
-        console.error("Error fetching order book pressure:", err);
+    webSocketService.connect("BTC");
+    const cleanup = webSocketService.onPressureUpdate((data) => {
+      if (data) {
+        if (data.ofi !== undefined) setOfi(data.ofi);
+        if (data.cvd !== undefined) setCvd(data.cvd);
+        if (data.bap !== undefined) setBap(data.bap);
+        if (data.buy_pressure !== undefined) setBuyPressure(data.buy_pressure);
+        if (data.sell_pressure !== undefined) setSellPressure(data.sell_pressure);
+        if (data.total_pressure !== undefined) setTotalPressure(data.total_pressure);
+        if (data.market_regime !== undefined) setMarketRegime(data.market_regime);
+        if (data.volatility !== undefined) setVolatility(data.volatility);
+        if (data.recommendation !== undefined) setRecommendation(data.recommendation);
+        if (data.confidence !== undefined) setConfidence(data.confidence);
       }
-    };
+    });
 
-    fetchData();
-    const interval = setInterval(fetchData, 3000);
-    return () => clearInterval(interval);
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, []);
 
   const getRecommendationStyle = (rec) => {

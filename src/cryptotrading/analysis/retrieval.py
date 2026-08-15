@@ -11,11 +11,13 @@ class RetrievalEncoder:
     def __init__(
         self,
         forecast_size: int = 15,
+        window_factor: int = 4,
         historic_window_size: Optional[int] = None,
         n_fft: int = 32
     ):
         self.forecast_size = forecast_size
-        self.historic_window_size = historic_window_size if historic_window_size is not None else 4 * forecast_size
+        self.window_factor = window_factor
+        self.historic_window_size = historic_window_size if historic_window_size is not None else window_factor * forecast_size
         self.n_fft = n_fft
         self.orderbook_featurizer = OrderBookFeaturizer()
         self.price_levels_detector = PriceLevels()

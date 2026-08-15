@@ -18,6 +18,7 @@ class WebSocketService {
     this.callbacks = {
       price: [],
       orderBook: [],
+      pressure: [],
       status: []
     };
     this.fallbackInterval = null;
@@ -34,7 +35,7 @@ class WebSocketService {
   }
 
   getSubscriberCount() {
-    return this.callbacks.price.length + this.callbacks.orderBook.length;
+    return this.callbacks.price.length + this.callbacks.orderBook.length + this.callbacks.pressure.length;
   }
 
   startFallbackPolling() {
@@ -64,6 +65,23 @@ class WebSocketService {
                 console.error('[WebSocket Fallback] Error in order book callback:', err);
               }
             });
+          }
+        }
+
+        if (this.callbacks.pressure.length > 0) {
+          try {
+            const pressureData = await getBookPressure(this.token);
+            if (pressureData) {
+              this.callbacks.pressure.forEach(callback => {
+                try {
+                  callback(pressureData);
+                } catch (err) {
+                  console.error('[WebSocket Fallback] Error in pressure callback:', err);
+                }
+              });
+            }
+          } catch (err) {
+            console.error('[WebSocket Fallback] Pressure polling failed:', err);
           }
         }
       } catch (error) {
@@ -279,6 +297,14 @@ class WebSocketService {
                   console.error('[WebSocket] Error in order book update callback:', err);
                 }
               });
+            } else if (data.type === 'pressure_update' && this.callbacks.pressure.length > 0) {
+              this.callbacks.pressure.forEach(callback => {
+                try {
+                  callback(data.data || data);
+                } catch (err) {
+                  console.error('[WebSocket] Error in pressure update callback:', err);
+                }
+              });
             } else if (data.type === 'pong') {
               this.lastPong = Date.now();
               return;
@@ -320,6 +346,7 @@ class WebSocketService {
     if (!preserveCallbacks) {
       this.callbacks.price = [];
       this.callbacks.orderBook = [];
+      this.callbacks.pressure = [];
     }
     
     console.log('[WebSocket] Disconnected');
@@ -419,6 +446,27 @@ class WebSocketService {
     
     return () => {
       this.callbacks.orderBook = this.callbacks.orderBook.filter(cb => cb !== callback);
+      if (this.getSubscriberCount() === 0) {
+        this.disconnect();
+      }
+    };
+  }
+
+  onPressureUpdate(callback) {
+    if (typeof callback !== 'function') {
+      console.error('[WebSocket] onPressureUpdate requires a function as callback');
+      return () => {};
+    }
+    
+    console.log('[WebSocket] Adding pressure update callback');
+    this.callbacks.pressure.push(callback);
+    
+    if (this.token) {
+      this.connect(this.token);
+    }
+    
+    return () => {
+      this.callbacks.pressure = this.callbacks.pressure.filter(cb => cb !== callback);
       if (this.getSubscriberCount() === 0) {
         this.disconnect();
       }

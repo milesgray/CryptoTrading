@@ -1,19 +1,23 @@
-# Active Context: Save Full Order Book Data to Postgres `order_book_data`
+# Active Context: Retrieval Forecast Method Routing & Real-time Pressure WebSocket
 
 ## Quick Reference
-- **Feature**: Full Order Book Data Ingestion in Postgres
-- **Plan File**: `.agent/plans/order-book-postgres-plan.md`
+- **Feature**: Forecast Method Routing & Real-time Order Book Pressure WebSocket
 - **Status**: Completed ✅
 
 ## Executive Summary
-Implemented granular order book level ingestion into the `order_book_data` hypertable in PostgreSQL. Updated `OrderBookRepository` with high-performance batch insertion and snapshot queries, and updated `OrderBookPostgresAdapter` to persist full bids and asks for both raw exchange feeds and composite order books.
+Fixed the frontend double-chart rendering bug, changed default chart granularity to 1m, wired the forecasting method dropdown in the frontend through the serve service proxy to the retrieval service, and converted frontend order book pressure updates to stream in real-time over WebSockets via `/ws/pressure/{token}`.
 
 ## Tech Stack & Components
-- **PostgreSQL / TimescaleDB**: `order_book_data` hypertable with composite indexes `(symbol, time DESC)` and `(symbol, exchange, time DESC)`.
-- **Asyncpg Batch Insertion**: `executemany` with in-memory `(is_bid, price)` deduplication and `ON CONFLICT DO UPDATE` handling.
-- **OrderBookPostgresAdapter**: Dual-writes summary metadata to `price_data` and full level depth to `order_book_data`.
+- **Frontend (React / Vite / ECharts / AnyStock)**: Real-time subscriptions for price, order book, and pressure updates in `WebSocketService`.
+- **FastAPI / Uvicorn (`services/serve`)**: Added `/ws/pressure/{token}` endpoint streaming pressure features, and forwarded `method` query parameter in `/api/retrieval/forecast`.
+- **Analysis (`cryptotrading.analysis.retrieval`)**: Updated `RetrievalEncoder` constructor to support `window_factor` with backwards compatibility.
 
 ## Key Files Modified
-- [src/cryptotrading/data/postgres.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/postgres.py): Added index, implemented `store_order_book`, fixed `get_order_book_snapshot`, and added `get_order_books`.
-- [src/cryptotrading/data/book.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/data/book.py): Updated `store_exchange_order_book` and `store_composite_order_book_data` to save full bids/asks to `order_book_data`.
-- [tests/test_order_book_postgres.py](file:///home/miles/Development/notebooks/CryptoTrading/tests/test_order_book_postgres.py): Unit tests for repository and adapter order book persistence.
+- [frontend/src/components/CandlestickChart.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/CandlestickChart.jsx): Removed duplicate chart init and set default granularity to 1m.
+- [frontend/src/services/api.js](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/services/api.js): Added `onPressureUpdate` and `pressure_update` event handler.
+- [frontend/src/components/OrderBookPanel.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/OrderBookPanel.jsx): Converted pressure fetching to WebSocket.
+- [frontend/src/components/SpecializedServicePanels.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/SpecializedServicePanels.jsx): Converted pressure panel to WebSocket.
+- [services/serve/routers/retrieval.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/routers/retrieval.py): Added `method` parameter to `/forecast`.
+- [services/serve/routers/market.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/routers/market.py): Added `/ws/pressure/{token}` WebSocket route.
+- [services/serve/websocket.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/websocket.py): Added `pressure` channel to `ConnectionManager`.
+- [src/cryptotrading/analysis/retrieval.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/analysis/retrieval.py): Supported `window_factor` and `historic_window_size`.

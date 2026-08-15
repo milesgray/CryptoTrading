@@ -1,20 +1,19 @@
 # Project Memory
 
 ## Last Completed Task
-Created standardized service client package in `cryptotrading.client` for all microservices (`artifact`, `embed`, `jepa`, `predict`, `pressure`, `price`, `retrieval`, `sentiment`, `serve`, `trade`, `train`) and standardized FastAPI server definitions (`server.py`) across all microservice directories.
+Fixed duplicate AnyChart chart rendering, changed default chart granularity to 1m, added `method` parameter support (`raf`, `specretf`, `retrieval`) through serve service to retrieval forecasting endpoint, converted order book pressure frontend data delivery to real-time WebSockets (`/ws/pressure/{token}`), and updated `RetrievalEncoder` with backward-compatible `window_factor` support.
 
 ## Architecture Notes
-- All service clients are cleanly exported from `cryptotrading.client.*` (e.g. `EmbedServiceClient`, `RetrievalServiceClient`).
-- Every microservice standardizes on a `server.py` file exposing FastAPI `app` and invoking `uvicorn.run(app, host="0.0.0.0", port=port)` reading from `os.getenv("PORT", <default_port>)`.
-- Inter-service calls and Docker entrypoints updated to target `server.py`.
+- Serve service proxies forecasting requests to retrieval service including `method` (`raf`, `specretf`, `retrieval`).
+- WebSocket manager in `services/serve/websocket.py` supports `price`, `order_book`, and `pressure` channels.
+- Frontend `WebSocketService` in `frontend/src/services/api.js` subscribes to real-time `pressure_update` events with automatic HTTP polling fallback.
+- `RetrievalEncoder` supports both `historic_window_size` and `window_factor`.
 
 ## Environment / Config
-- `PORT`: Standard environment variable used across all service `server.py` entrypoints to configure FastAPI / Uvicorn server ports.
-- Service URLs (`EMBED_SERVICE_URL`, `RETRIEVAL_SERVICE_URL`, `PREDICT_SERVICE_URL`, etc.) are supported as defaults in client wrappers.
+- None.
 
 ## Dependencies Added
 - None.
 
 ## Known Blockers / Next Steps
 - None.
-

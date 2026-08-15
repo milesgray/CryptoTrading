@@ -136,6 +136,43 @@ async def websocket_order_book(websocket: WebSocket, token: str):
         await websocket_manager.disconnect(websocket, 'order_book')
 
 
+@router.websocket("/ws/pressure/{token}")
+async def websocket_pressure(websocket: WebSocket, token: str):
+    await websocket_manager.connect(websocket, 'pressure')
+    
+    async def send_message(message: dict):
+        try:
+            await websocket.send_text(json.dumps(message, default=json_serial))
+            return True
+        except (WebSocketDisconnect, RuntimeError) as e:
+            logger.debug(f"Failed to send pressure message (connection closed): {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error sending pressure message: {e}")
+            return False
+    
+    try:
+        # Loop periodically to push pressure updates over WebSocket
+        while True:
+            pressure_data = await get_order_book_pressure(websocket, token)
+            if pressure_data:
+                sent = await send_message({
+                    'type': 'pressure_update',
+                    'token': token,
+                    'data': pressure_data
+                })
+                if not sent:
+                    break
+            await asyncio.sleep(2)  # Stream pressure every 2 seconds
+    except WebSocketDisconnect:
+        logger.info(f"Pressure WebSocket disconnected for token {token}")
+    except Exception as e:
+        logger.error(f"Pressure WebSocket error for token {token}: {e}")
+    finally:
+        await websocket_manager.disconnect(websocket, 'pressure')
+
+
+
 # --- REST API Endpoints ---
 @router.get("/historic/price/{token}", response_model=PaginatedResponse)
 async def read_historic_price(

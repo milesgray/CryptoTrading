@@ -11,27 +11,9 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
   const chartInstance = useRef(null);
 
   useEffect(() => {
-    if (!token) return;
-    
-    const fetchPressure = async () => {
-      try {
-        const data = await getBookPressure(token);
-        if (data) {
-          setPressureAnalysis(data);
-        }
-      } catch (error) {
-        console.error('Error fetching pressure analysis:', error);
-      }
-    };
-    
-    fetchPressure();
-    const interval = setInterval(fetchPressure, 3000);
-    return () => clearInterval(interval);
-  }, [token]);
-
-  useEffect(() => {
     let cleanupCallback = null;
     let priceCleanup = null;
+    let pressureCleanup = null;
     let statusCleanup = null;
 
     const connectWebSocket = async () => {
@@ -61,9 +43,17 @@ const OrderBookPanel = ({ token, latestPriceData }) => {
       }
     });
 
+    pressureCleanup = webSocketService.onPressureUpdate((data) => {
+      console.log('Pressure update received:', data);
+      if (data) {
+        setPressureAnalysis(data);
+      }
+    });
+
     return () => {
       if (cleanupCallback) cleanupCallback();
       if (priceCleanup) priceCleanup();
+      if (pressureCleanup) pressureCleanup();
       if (statusCleanup) statusCleanup();
     };
   }, [token]);
