@@ -82,12 +82,38 @@ async def websocket_price(websocket: WebSocket, token: str):
             'data': price_data.dict() if hasattr(price_data, 'dict') else price_data
         }):
             return  # Stop if we couldn't send the initial message
+
+        # Send initial pressure immediately on connection
+        try:
+            init_pressure = await get_order_book_pressure(websocket, token)
+            if init_pressure:
+                await send_message({
+                    'type': 'pressure_update',
+                    'token': token,
+                    'data': init_pressure
+                })
+        except Exception as e:
+            logger.debug(f"Error fetching initial pressure: {e}")
         
-        # Keep connection alive with heartbeats
+        # Keep connection alive with heartbeats and stream periodic pressure updates
+        counter = 0
         while True:
-            await asyncio.sleep(30)  # Send heartbeat every 30 seconds
-            if not await send_message({'type': 'ping'}):
-                break  # Stop if we can't send a heartbeat
+            await asyncio.sleep(2)
+            counter += 1
+            if counter % 15 == 0:  # Every 30 seconds
+                if not await send_message({'type': 'ping'}):
+                    break
+            try:
+                pressure_data = await get_order_book_pressure(websocket, token)
+                if pressure_data:
+                    if not await send_message({
+                        'type': 'pressure_update',
+                        'token': token,
+                        'data': pressure_data
+                    }):
+                        break
+            except Exception as e:
+                logger.debug(f"Error streaming pressure: {e}")
                 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for token {token}")
