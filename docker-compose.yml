@@ -63,12 +63,13 @@ services:
             context: .
             dockerfile: Dockerfile.retrieval
         ports:
-            - "${RETRIEVAL_PORT:-8388}:8000"
+            - "${RETRIEVAL_PORT:-8388}:${RETRIEVAL_PORT:-8388}"
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
             - EMBED_SERVICE_URL=${EMBED_SERVICE_URL:-http://embed:8380}
             - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8383}
+            - PORT=${RETRIEVAL_PORT:-8388}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
             - DATABASE_STATEMENT_TIMEOUT=180000
         depends_on:
@@ -81,13 +82,14 @@ services:
             context: .
             dockerfile: Dockerfile.embed
         ports:
-            - "${EMBED_PORT:-8380}:8000"
+            - "${EMBED_PORT:-8380}:${EMBED_PORT:-8380}"
         volumes:
             - ./services/embed/models/trained:/app/models/trained
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
             - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8383}
+            - PORT=${EMBED_PORT:-8380}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
@@ -98,11 +100,12 @@ services:
             context: .
             dockerfile: Dockerfile.price
         ports:
-            - "${PRICE_PORT:-8387}:8000"
+            - "${PRICE_PORT:-8387}:${PRICE_PORT:-8387}"
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
             - MIN_VALID_FEEDS=${MIN_VALID_FEEDS:-2}
+            - PORT=${PRICE_PORT:-8387}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
@@ -112,11 +115,12 @@ services:
             context: .
             dockerfile: Dockerfile.predict
         ports:
-            - "${PREDICT_PORT:-8381}:8000"
+            - "${PREDICT_PORT:-8381}:${PREDICT_PORT:-8381}"
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
             - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8383}
+            - PORT=${PREDICT_PORT:-8381}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
@@ -127,11 +131,12 @@ services:
             context: .
             dockerfile: Dockerfile.train
         ports:
-            - "${TRAIN_PORT:-8389}:8000"
+            - "${TRAIN_PORT:-8389}:${TRAIN_PORT:-8389}"
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
             - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8383}
+            - PORT=${TRAIN_PORT:-8389}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
@@ -142,11 +147,12 @@ services:
             context: .
             dockerfile: Dockerfile.pressure
         ports:
-            - "${PRESSURE_PORT:-8382}:8000"
+            - "${PRESSURE_PORT:-8382}:${PRESSURE_PORT:-8382}"
         environment:
             - DB_BACKEND=${DB_BACKEND:-postgres}
             - POSTGRES_URI=${POSTGRES_URI:-postgresql://postgres:postgres@timescaledb:5432/crypto_trading}
             - ARTIFACT_SERVICE_URL=${ARTIFACT_SERVICE_URL:-http://artifact:8383}
+            - PORT=${PRESSURE_PORT:-8382}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
         depends_on:
             - timescaledb
@@ -157,11 +163,12 @@ services:
             context: .
             dockerfile: Dockerfile.artifact
         ports:
-            - "${ARTIFACT_PORT:-8383}:8000"
+            - "${ARTIFACT_PORT:-8383}:${ARTIFACT_PORT:-8383}"
         volumes:
             - ./checkpoints:/app/checkpoints
         environment:
             - ARTIFACT_STORAGE_DIR=/app/checkpoints
+            - PORT=${ARTIFACT_PORT:-8383}
             - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
 
     portainer:

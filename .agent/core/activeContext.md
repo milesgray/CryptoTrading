@@ -1,23 +1,24 @@
-# Active Context: Retrieval Forecast Method Routing & Real-time Pressure WebSocket
+# Active Context: Microservice Port Alignment & Service Client Health Methods
 
 ## Quick Reference
-- **Feature**: Forecast Method Routing & Real-time Order Book Pressure WebSocket
+- **Feature**: Docker Compose Internal Service Port Alignment & Standardized Service Client Health Checks
 - **Status**: Completed ✅
 
 ## Executive Summary
-Fixed the frontend double-chart rendering bug, changed default chart granularity to 1m, wired the forecasting method dropdown in the frontend through the serve service proxy to the retrieval service, and converted frontend order book pressure updates to stream in real-time over WebSockets via `/ws/pressure/{token}`.
+Resolved `[Errno 111] Connection refused` errors when `serve` calls `pressure` (`http://pressure:8382`) by setting explicit `PORT` environment variables and matching container-to-host port mappings across all microservices in `docker-compose.yml`. Standardized client implementations in `src/cryptotrading/client/` with `is_healthy()` and `check_health()` methods across all service clients.
 
 ## Tech Stack & Components
-- **Frontend (React / Vite / ECharts / AnyStock)**: Real-time subscriptions for price, order book, and pressure updates in `WebSocketService`.
-- **FastAPI / Uvicorn (`services/serve`)**: Added `/ws/pressure/{token}` endpoint streaming pressure features, and forwarded `method` query parameter in `/api/retrieval/forecast`.
-- **Analysis (`cryptotrading.analysis.retrieval`)**: Updated `RetrievalEncoder` constructor to support `window_factor` with backwards compatibility.
+- **Docker Compose**: Set `PORT` environment variable and mapped `${PORT}:${PORT}` for `pressure` (8382), `retrieval` (8388), `embed` (8380), `price` (8387), `predict` (8381), `train` (8389), and `artifact` (8383).
+- **Service Clients (`src/cryptotrading/client`)**: Added standardized health check and monitoring helpers across all microservice client classes.
 
 ## Key Files Modified
-- [frontend/src/components/CandlestickChart.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/CandlestickChart.jsx): Removed duplicate chart init and set default granularity to 1m.
-- [frontend/src/services/api.js](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/services/api.js): Added `onPressureUpdate` and `pressure_update` event handler.
-- [frontend/src/components/OrderBookPanel.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/OrderBookPanel.jsx): Converted pressure fetching to WebSocket.
-- [frontend/src/components/SpecializedServicePanels.jsx](file:///home/miles/Development/notebooks/CryptoTrading/frontend/src/components/SpecializedServicePanels.jsx): Converted pressure panel to WebSocket.
-- [services/serve/routers/retrieval.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/routers/retrieval.py): Added `method` parameter to `/forecast`.
-- [services/serve/routers/market.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/routers/market.py): Added `/ws/pressure/{token}` WebSocket route.
-- [services/serve/websocket.py](file:///home/miles/Development/notebooks/CryptoTrading/services/serve/websocket.py): Added `pressure` channel to `ConnectionManager`.
-- [src/cryptotrading/analysis/retrieval.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/analysis/retrieval.py): Supported `window_factor` and `historic_window_size`.
+- [docker-compose.yml](file:///home/miles/Development/notebooks/CryptoTrading/docker-compose.yml): Added internal `PORT` variables and aligned port bindings.
+- [src/cryptotrading/client/pressure/client.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/client/pressure/client.py): Added health check methods.
+- [src/cryptotrading/client/price/client.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/client/price/client.py): Created PriceServerClient.
+- [src/cryptotrading/client/embed/client.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/client/embed/client.py): Added health checks.
+- [src/cryptotrading/client/retrieval/client.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/client/retrieval/client.py): Added health checks.
+- [src/cryptotrading/client/predict/client.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/client/predict/client.py): Added health checks.
+- [src/cryptotrading/client/train/client.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/client/train/client.py): Added health checks.
+- [src/cryptotrading/client/sentiment/client.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/client/sentiment/client.py): Added health checks.
+- [src/cryptotrading/client/serve/client.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/client/serve/client.py): Added health checks.
+- [src/cryptotrading/client/trade/client.py](file:///home/miles/Development/notebooks/CryptoTrading/src/cryptotrading/client/trade/client.py): Added health checks.
